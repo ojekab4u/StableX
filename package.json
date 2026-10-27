@@ -1,0 +1,22 @@
+{
+  "name": "currency-exchange",
+  "version": "1.0.0",
+  "description": "Currency quote comparison with Solana Devnet connectivity",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "dotenv": "^16.6.1",
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  },
+  "type": "module"
+}

@@ -1,0 +1,129 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX — Exchange Comparator</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <div class="network-label">
+      <span class="dot"></span> Solana Devnet
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">STABLECOIN EXCHANGE COMPARATOR</p>
+      <h1>Compare rates.<br>Choose with confidence.</h1>
+      <p>
+        Compare estimated exchange offers for USDT, USDC and NGN.
+      </p>
+      <div class="demo-warning">
+        DEMO MODE — Rates are simulated, not live market quotes.
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">01 / CALCULATOR</p>
+          <h2>What would you like to exchange?</h2>
+        </div>
+      </div>
+
+      <form id="quote-form">
+        <div class="form-grid">
+          <div class="field">
+            <label for="amount">Amount</label>
+            <input
+              id="amount"
+              type="number"
+              value="100"
+              min="0.000001"
+              max="1000000"
+              step="any"
+              required
+            >
+          </div>
+
+          <div class="field">
+            <label for="from">From</label>
+            <select id="from">
+              <option value="USDT">USDT — Tether</option>
+              <option value="USDC">USDC — USD Coin</option>
+              <option value="NGN">NGN — Nigerian Naira</option>
+            </select>
+          </div>
+
+          <button type="button" id="reverse" class="reverse-btn"
+            aria-label="Reverse currencies" title="Reverse currencies">
+            ⇄
+          </button>
+
+          <div class="field">
+            <label for="to">To</label>
+            <select id="to">
+              <option value="NGN">NGN — Nigerian Naira</option>
+              <option value="USDT">USDT — Tether</option>
+              <option value="USDC">USDC — USD Coin</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="compare" type="submit" class="primary-btn">
+          Compare 3 providers
+        </button>
+      </form>
+
+      <p id="message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="offers-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">02 / PROVIDER MARKETPLACE</p>
+          <h2>Compare offers</h2>
+          <p class="muted">Best estimated net output appears first.</p>
+        </div>
+        <span class="demo-tag">SIMULATED QUOTES</span>
+      </div>
+
+      <div id="offers" class="offers-grid">
+        <p class="muted">Loading demo offers...</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">03 / YOUR DECISION</p>
+      <h2>Selected provider</h2>
+      <div id="selection" class="selection-content">
+        <p class="muted">Choose a provider to see your selection.</p>
+      </div>
+      <p class="notice">
+        Selecting a provider records a demo choice only.
+      </p>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">04 / BLOCKCHAIN CONNECTION</p>
+      <h2>Solana network status</h2>
+      <div id="solana-status" aria-live="polite">
+        Checking network...
+      </div>
+      <button id="refresh-solana" class="secondary-btn" type="button">
+        Refresh connection
+      </button>
+    </section>
+
+    <footer>
+      <p>StableX · Educational prototype · No real transactions</p>
+    </footer>
+  </main>
+</body>
+</html>
