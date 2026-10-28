@@ -4,6 +4,8 @@ import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { checkBaseConnection, getBaseWalletBalance, } from "./baseConnection.js";
 import { Connection } from "@solana/web3.js";
 import { getQuotes } from "./providers/demoProviders.js";
 
@@ -155,6 +157,72 @@ app.get("/api/solana/status", async (req, res) => {
   }
 });
 
+
+/**
+ * Check Base Mainnet RPC connectivity.
+ * This endpoint performs read-only blockchain requests.
+ */
+app.get("/api/base/status", async (req, res) => {
+  try {
+    const status = await checkBaseConnection();
+
+    res.json({
+      application: "StableX",
+      ...status,
+    });
+  } catch (error) {
+    console.error("Base RPC error:", error.message);
+
+    res.status(503).json({
+      application: "StableX",
+      connected: false,
+      network: "Base Mainnet",
+      expectedChainId: 8453,
+      error: "Unable to connect to Base Mainnet or verify its chain ID.",
+      details: error.message,
+    });
+  }
+});
+
+
+/**
+ * Read a wallet's native ETH balance on Base Mainnet.
+ * Example: /api/base/balance?address=0x...
+ */
+app.get("/api/base/balance", async (req, res) => {
+  try {
+    const address = req.query.address;
+
+    if (typeof address !== "string" || !address.trim()) {
+      return res.status(400).json({
+        application: "StableX",
+        error: "Please provide a wallet address using ?address=0x...",
+      });
+    }
+
+    const balance = await getBaseWalletBalance(address.trim());
+
+    return res.json({
+      application: "StableX",
+      ...balance,
+    });
+  } catch (error) {
+    console.error("Base balance error:", error.message);
+
+    const isInvalidAddress =
+      error.message === "Invalid Ethereum wallet address.";
+
+    return res.status(isInvalidAddress ? 400 : 503).json({
+      application: "StableX",
+      error: isInvalidAddress
+        ? error.message
+        : "Unable to retrieve the Base wallet balance.",
+      details: error.message,
+    });
+  }
+});
+
+
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
@@ -162,6 +230,7 @@ app.use("/api", (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`StableX running at http://localhost:${PORT}`);
+  console.log(`Base RPC: ${process.env.BASE_RPC_URL || "https://mainnet.base.org"}`);
   console.log("Quote mode: DEMO (no live prices or transactions)");
   console.log(`Solana RPC: ${rpcUrl}`);
 });
