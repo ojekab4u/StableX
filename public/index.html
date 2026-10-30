@@ -8,6 +8,7 @@
   <title>StableX — Exchange Comparator</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
+  <script type="module" src="/base-wallet.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -120,6 +121,116 @@
         Refresh connection
       </button>
     </section>
+
+<section class="panel" id="base-wallet-panel">
+  <p class="eyebrow">05 / BASE SEPOLIA SMART CONTRACT</p>
+  <h2>Connect your wallet</h2>
+
+  <p class="muted">
+    Connect MetaMask to interact with the StableX learning contract
+    on Base Sepolia.
+  </p>
+
+    <div class="wallet-picker">
+  <label for="base-wallet-select">Choose your wallet</label>
+
+  <div class="wallet-picker-row">
+    <select id="base-wallet-select">
+      <option value="">Detecting available wallets...</option>
+    </select>
+
+    <button
+      id="refresh-base-wallets"
+      type="button"
+      class="secondary-btn"
+    >
+      Refresh
+    </button>
+  </div>
+</div>
+
+<button
+  id="connect-base-wallet"
+  class="primary-btn"
+  type="button"
+  disabled
+>
+  Connect Wallet
+</button>
+  <!-- <button
+    id="connect-base-wallet"
+    class="primary-btn"
+    type="button"
+  >
+    Connect MetaMask
+  </button> -->
+
+  <p id="base-wallet-status" class="message" aria-live="polite">
+    Wallet not connected.
+  </p>
+
+  <div id="base-wallet-details" class="base-wallet-details" hidden>
+    <div class="detail-row">
+      <span>Connected wallet</span>
+      <strong id="base-wallet-address">—</strong>
+    </div>
+
+    <div class="detail-row">
+      <span>Contract owner</span>
+      <strong id="base-contract-owner">—</strong>
+    </div>
+
+    <div class="detail-row">
+    <span>Wallet provider</span>
+    <strong id="base-wallet-provider">—</strong>
+  </div>
+
+    <div class="detail-row">
+      <span>Wallet ETH balance</span>
+      <strong id="base-wallet-balance">—</strong>
+    </div>
+
+    <div class="detail-row">
+      <span>Current stored number</span>
+      <strong id="base-stored-number">—</strong>
+    </div>
+
+    <div class="field wallet-field">
+      <label for="base-new-number">New stored number</label>
+      <input
+        id="base-new-number"
+        type="number"
+        min="0"
+        step="1"
+        value="200"
+      >
+    </div>
+
+    <button
+      id="base-update-number"
+      class="primary-btn"
+      type="button"
+      disabled
+    >
+      Update contract
+    </button>
+
+    <p id="base-wallet-message" class="message" aria-live="polite">
+      Only the contract owner can update this value.
+    </p>
+  </div>
+
+  <p class="muted">
+    Contract:
+    <a
+      href="https://sepolia.basescan.org/address/0x8d81e0d3e58af36404a9f1223f9858430f4f8073"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      View on BaseScan
+    </a>
+  </p>
+</section>
 
     <footer>
       <p>StableX · Educational prototype · No real transactions</p>
