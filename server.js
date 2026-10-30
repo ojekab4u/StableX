@@ -1,4 +1,11 @@
 
+import {
+  checkVaultConnection,
+  getVaultDetails,
+  getVaultOwner,
+  getStoredNumber,
+  updateStoredNumber,
+} from "./baseVault.js";
 import { randomUUID } from "node:crypto";
 import "dotenv/config";
 import express from "express";
@@ -223,10 +230,76 @@ app.get("/api/base/balance", async (req, res) => {
 });
 
 
+// Base Sepolia smart contract connection
+app.get("/api/base/vault/status", async (req, res) => {
+  try {
+    const result = await checkVaultConnection();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+// Retrieve all vault information
+app.get("/api/base/vault", async (req, res) => {
+  try {
+    const result = await getVaultDetails();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+// Read the contract owner
+app.get("/api/base/vault/owner", async (req, res) => {
+  try {
+    const owner = await getVaultOwner();
+
+    res.json({ owner });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+// Read the stored number
+app.get("/api/base/vault/number", async (req, res) => {
+  try {
+    const storedNumber = await getStoredNumber();
+
+    res.json({ storedNumber });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+app.post("/api/base/vault/update", async (req, res) => {
+  try {
+    const { newNumber } = req.body;
+
+    const result = await updateStoredNumber(newNumber);
+
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.shortMessage || error.message,
+    });
+  }
+});
+
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
+
 
 app.listen(PORT, () => {
   console.log(`StableX running at http://localhost:${PORT}`);
