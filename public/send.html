@@ -19,8 +19,8 @@
     <section class="hero">
       <p class="eyebrow">STABLEX / SEND & SETTLEMENT</p>
       <h1>Move value across<br>currencies.</h1>
-      <p>Prepare a transfer, check route readiness and create a traceable draft before execution.</p>
-      <div class="demo-warning">EXECUTION DISABLED — No live liquidity provider, KYC/KYB or payout institution is connected.</div>
+      <p>Prepare a transfer, review the configured route and create a traceable draft.</p>
+      <div class="demo-warning">DEMO MODE — No live liquidity, KYC/KYB or financial-institution payout service is connected. No funds can be sent.</div>
     </section>
 
     <section class="panel">
@@ -32,34 +32,34 @@
           <div class="field"><label for="send-amount">Amount to send</label><input id="send-amount" type="number" min="0.000001" max="1000000" step="any" value="100" required></div>
           <div class="field"><label for="send-from">Send from</label><select id="send-from" required></select></div>
           <div class="field"><label for="send-to">Recipient receives</label><select id="send-to" required></select></div>
-          <div class="field"><label for="recipient-type">Recipient destination</label><select id="recipient-type"><option value="WALLET">Base-compatible wallet</option><option value="PAYOUT_REFERENCE">Financial institution / payout reference</option></select></div>
-          <div class="field recipient-field"><label id="recipient-label" for="recipient-reference">Recipient wallet address</label><input id="recipient-reference" type="text" maxlength="160" placeholder="0x..." required></div>
+          <div class="field"><label for="recipient-type">Recipient destination</label><select id="recipient-type"><option value="WALLET">Base-compatible wallet</option><option value="PAYOUT_REFERENCE">Financial institution payout</option></select></div>
+          <div class="field recipient-field"><label id="recipient-label" for="recipient-reference">Recipient wallet address</label><input id="recipient-reference" type="text" maxlength="160" placeholder="0x..." required><small id="recipient-help">Enter the recipient's Base-compatible wallet address.</small></div>
         </div>
-        <div id="route-status" class="route-status" aria-live="polite">Loading supported routes…</div>
-        <button id="check-route" class="secondary-btn" type="button">Check route availability</button>
+        <div id="route-status" class="route-status" aria-live="polite">Loading configured routes…</div>
+        <button id="check-route" class="secondary-btn" type="button">Check route configuration</button>
         <button id="create-draft" class="primary-btn" type="submit" disabled>Create transfer draft</button>
       </form>
       <p id="send-message" class="message" aria-live="polite"></p>
     </section>
 
     <section class="panel">
-      <p class="eyebrow">02 / TRANSFER READINESS</p>
-      <h2>What must be connected</h2>
+      <p class="eyebrow">02 / INTEGRATION READINESS</p>
+      <h2>What is connected?</h2>
       <div id="readiness-summary" class="route-status" aria-live="polite">Checking integration configuration…</div>
       <div class="readiness-grid">
-        <article><span class="readiness-dot pending"></span><h3>KYC / KYB</h3><p>Identity and business verification provider required.</p></article>
-        <article><span class="readiness-dot pending"></span><h3>Liquidity</h3><p>Live provider quotes and destination asset availability required.</p></article>
-        <article><span class="readiness-dot pending"></span><h3>Base execution</h3><p>Verified token contracts, wallet authorization and swap/liquidity route required.</p></article>
-        <article><span class="readiness-dot pending"></span><h3>Fiat payout</h3><p>Financial institution API, beneficiary validation and settlement confirmation required.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>KYC / KYB</h3><p>Customer and business verification service.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>Liquidity</h3><p>Live availability, executable quotes and asset acquisition.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>Base settlement</h3><p>Verified token contracts, wallet authorization and liquidity route.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>Institution payout</h3><p>Beneficiary validation, payout initiation and settlement confirmation.</p></article>
       </div>
     </section>
 
     <section class="panel" id="draft-panel" hidden>
-      <p class="eyebrow">03 / TRANSFER REFERENCE</p>
+      <p class="eyebrow">03 / DRAFT REFERENCE</p>
       <h2>Transfer draft created</h2>
       <div id="draft-result"></div>
     </section>
-    <footer><p>StableX · Sending workflow prototype · Drafts do not move funds.</p></footer>
+    <footer><p>StableX · Sending workflow prototype · Creating a draft does not move funds.</p></footer>
   </main>
 </body>
 </html>
