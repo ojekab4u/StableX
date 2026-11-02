@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX — Send & Settle</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/send.css">
+  <script src="/send.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav><a href="/">Exchange comparator</a></nav>
+    <div class="network-label"><span class="dot"></span> Base integration preparation</div>
+  </header>
+  <main class="container send-container">
+    <section class="hero">
+      <p class="eyebrow">STABLEX / SEND & SETTLEMENT</p>
+      <h1>Move value across<br>currencies.</h1>
+      <p>Prepare a transfer, check route readiness and create a traceable draft before execution.</p>
+      <div class="demo-warning">EXECUTION DISABLED — No live liquidity provider, KYC/KYB or payout institution is connected.</div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <div><p class="eyebrow">01 / TRANSFER INSTRUCTIONS</p><h2>Create a sending request</h2></div>
+      </div>
+      <form id="send-form">
+        <div class="send-grid">
+          <div class="field"><label for="send-amount">Amount to send</label><input id="send-amount" type="number" min="0.000001" max="1000000" step="any" value="100" required></div>
+          <div class="field"><label for="send-from">Send from</label><select id="send-from" required></select></div>
+          <div class="field"><label for="send-to">Recipient receives</label><select id="send-to" required></select></div>
+          <div class="field"><label for="recipient-type">Recipient destination</label><select id="recipient-type"><option value="WALLET">Base-compatible wallet</option><option value="PAYOUT_REFERENCE">Financial institution / payout reference</option></select></div>
+          <div class="field recipient-field"><label id="recipient-label" for="recipient-reference">Recipient wallet address</label><input id="recipient-reference" type="text" maxlength="160" placeholder="0x..." required></div>
+        </div>
+        <div id="route-status" class="route-status" aria-live="polite">Loading supported routes…</div>
+        <button id="check-route" class="secondary-btn" type="button">Check route availability</button>
+        <button id="create-draft" class="primary-btn" type="submit" disabled>Create transfer draft</button>
+      </form>
+      <p id="send-message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">02 / TRANSFER READINESS</p>
+      <h2>What must be connected</h2>
+      <div class="readiness-grid">
+        <article><span class="readiness-dot pending"></span><h3>KYC / KYB</h3><p>Identity and business verification provider required.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>Liquidity</h3><p>Live provider quotes and destination asset availability required.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>Base execution</h3><p>Verified token contracts, wallet authorization and swap/liquidity route required.</p></article>
+        <article><span class="readiness-dot pending"></span><h3>Fiat payout</h3><p>Financial institution API, beneficiary validation and settlement confirmation required.</p></article>
+      </div>
+    </section>
+
+    <section class="panel" id="draft-panel" hidden>
+      <p class="eyebrow">03 / TRANSFER REFERENCE</p>
+      <h2>Transfer draft created</h2>
+      <div id="draft-result"></div>
+    </section>
+    <footer><p>StableX · Sending workflow prototype · Drafts do not move funds.</p></footer>
+  </main>
+</body>
+</html>

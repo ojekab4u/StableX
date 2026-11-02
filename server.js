@@ -19,7 +19,7 @@ import {
 } from "./config/assets.js";
 import { checkBaseConnection, getBaseWalletBalance, } from "./baseConnection.js";
 import { Connection } from "@solana/web3.js";
-import { getQuotes,
+import { getQuotes, 
   getDemoSupportedPairs, } from "./providers/demoProviders.js";
 
 const app = express();
@@ -443,6 +443,8 @@ app.post("/api/base/vault/update", async (req, res) => {
     });
   }
 });
+
+app.use("/api/send", sendRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
