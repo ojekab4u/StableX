@@ -261,42 +261,56 @@ function renderSelection() {
   selectionContainer.append(heading, amount, status);
 }
 
+
+
 async function loadSelectionHistory() {
   const historyBody = document.getElementById("history-body");
 
+  if (!historyBody) {
+    console.error("Transaction history table was not found.");
+    return;
+  }
+
   try {
+    historyBody.innerHTML = `
+      <tr>
+        <td colspan="6">Loading transaction history...</td>
+      </tr>
+    `;
+
     const response = await fetch("/api/selections");
+    const data = await response.json();
 
     if (!response.ok) {
-      throw new Error("Unable to load transaction history.");
+      throw new Error(data.error || "Unable to load transaction history.");
     }
 
-    const selections = await response.json();
+    const records = Array.isArray(data.records) ? data.records : [];
 
     historyBody.replaceChildren();
 
-    if (!selections.length) {
+    if (records.length === 0) {
       const row = document.createElement("tr");
       const cell = document.createElement("td");
 
       cell.colSpan = 6;
-      cell.textContent = "No transactions recorded yet.";
       cell.className = "muted";
+      cell.textContent = "No transactions recorded yet.";
 
       row.appendChild(cell);
       historyBody.appendChild(row);
       return;
     }
 
-    selections.forEach((item) => {
+    records.forEach((item) => {
       const row = document.createElement("tr");
 
       const values = [
         item.selectionId,
         `${item.from} → ${item.to}`,
-        `${item.amount} ${item.from}`,
+        `${formatAmount(item.amount, item.from)} ${item.from}`,
         item.provider || "Demo provider",
-        `${item.netAmount} ${item.to}`,
+        `${formatAmount(item.netAmount, item.to)} ${item.to}`,
         item.status
       ];
 
@@ -309,9 +323,19 @@ async function loadSelectionHistory() {
       historyBody.appendChild(row);
     });
   } catch (error) {
-    historyBody.textContent = error.message;
+    historyBody.replaceChildren();
+
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+
+    cell.colSpan = 6;
+    cell.textContent = error.message;
+
+    row.appendChild(cell);
+    historyBody.appendChild(row);
   }
 }
+
 
 async function checkSolana() {
   refreshSolanaButton.disabled = true;
