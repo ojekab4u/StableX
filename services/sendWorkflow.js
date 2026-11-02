@@ -53,7 +53,7 @@ export function describeRoute(fromInput, toInput) {
     executionEnabled: false,
     sourceAssetReady: sourceReady,
     destinationAssetReady: destinationReady,
-    reason: "Route registered. Live pricing, liquidity and settlement providers are not connected yet.",
+    reason: `Route registered, but asset readiness is not established (source: ${source.status}; destination: ${destination.status}). Live pricing, liquidity, compliance and settlement providers are not connected yet.`,
     stages: [
       { id: "compliance", label: "KYC/KYB eligibility", status: "NOT_CONNECTED" },
       { id: "liquidity", label: "Liquidity and quote", status: "NOT_CONNECTED" },
