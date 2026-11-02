@@ -237,3 +237,25 @@ This project is intended for demonstration and development purposes. Add a `LICE
 ---
 
 **StableX** — Compare simulated exchange offers and explore Solana blockchain connectivity with Node.js.
+
+
+## Send & Settle integration readiness
+
+The prototype includes a separate Send & Settle workflow. It currently supports route registration, availability metadata and in-memory transfer drafts only. It does not execute swaps, token transfers, KYC/KYB checks or fiat payouts.
+
+Check the integration configuration with:
+
+```http
+GET /api/send/readiness
+```
+
+The endpoint reports whether the following StableX configuration placeholders are present:
+
+- `KYC_API_BASE_URL` and `KYC_API_KEY`
+- `LIQUIDITY_API_BASE_URL` and `LIQUIDITY_API_KEY`
+- `BASE_RPC_URL` and `BASE_USDC_CONTRACT_ADDRESS`
+- `PAYOUT_API_BASE_URL` and `PAYOUT_API_KEY`
+
+These are **StableX placeholder variable names**, not confirmed provider-specific requirements. Replace or extend them after receiving the actual provider documentation. The endpoint checks configuration presence only; it does not authenticate or call external services. Never commit real credentials to source control.
+
+A route being registered does not mean it has live liquidity or is executable. Verify each asset's issuer, network, chain ID, contract address, decimals, liquidity and redemption path before enabling a production route.

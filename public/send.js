@@ -13,6 +13,33 @@ const draftResult = document.querySelector("#draft-result");
 
 let currentRoute = null;
 
+
+async function loadIntegrationReadiness() {
+  const summary = document.querySelector("#readiness-summary");
+  if (!summary) return;
+  try {
+    const response = await fetch("/api/send/readiness");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Readiness check failed.");
+    summary.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.textContent = data.readyForLiveTransfers
+      ? "All configuration fields are present (connection tests still required)."
+      : `${data.blockers.length} integration area(s) still need configuration`;
+    const details = document.createElement("p");
+    details.textContent = data.note;
+    const list = document.createElement("ul");
+    data.integrations.forEach(item => {
+      const entry = document.createElement("li");
+      entry.textContent = `${item.name}: ${item.status.replaceAll("_", " ")}`;
+      list.append(entry);
+    });
+    summary.append(heading, details, list);
+  } catch (error) {
+    summary.textContent = error.message;
+  }
+}
+
 async function loadRoutes() {
   try {
     const [routeResponse, assetResponse] = await Promise.all([
@@ -150,3 +177,4 @@ document.querySelector("#check-route").addEventListener("click", checkAvailabili
 recipientType.addEventListener("change", updateRecipientInput);
 updateRecipientInput();
 loadRoutes();
+loadIntegrationReadiness();
