@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { isAddress } from "viem";
+import { getIntegrationReadiness } from "../services/integrationReadiness.js";
 import {
   getSendRoutes,
   describeRoute,
@@ -8,6 +9,10 @@ import {
 } from "../services/sendWorkflow.js";
 
 export const sendRouter = Router();
+
+sendRouter.get("/readiness", (req, res) => {
+  return res.json(getIntegrationReadiness());
+});
 
 sendRouter.get("/routes", (req, res) => {
   const routes = getSendRoutes();
