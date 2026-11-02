@@ -5,6 +5,7 @@ const amountInput = document.querySelector("#send-amount");
 const recipientType = document.querySelector("#recipient-type");
 const recipientInput = document.querySelector("#recipient-reference");
 const recipientLabel = document.querySelector("#recipient-label");
+const recipientHelp = document.querySelector("#recipient-help");
 const routeStatus = document.querySelector("#route-status");
 const message = document.querySelector("#send-message");
 const createButton = document.querySelector("#create-draft");
@@ -12,7 +13,6 @@ const draftPanel = document.querySelector("#draft-panel");
 const draftResult = document.querySelector("#draft-result");
 
 let currentRoute = null;
-
 
 async function loadIntegrationReadiness() {
   const summary = document.querySelector("#readiness-summary");
@@ -23,9 +23,7 @@ async function loadIntegrationReadiness() {
     if (!response.ok) throw new Error(data.error || "Readiness check failed.");
     summary.replaceChildren();
     const heading = document.createElement("strong");
-    heading.textContent = data.readyForLiveTransfers
-      ? "All configuration fields are present (connection tests still required)."
-      : `${data.blockers.length} integration area(s) still need configuration`;
+    heading.textContent = "Integration configuration overview";
     const details = document.createElement("p");
     details.textContent = data.note;
     const list = document.createElement("ul");
@@ -43,13 +41,11 @@ async function loadIntegrationReadiness() {
 async function loadRoutes() {
   try {
     const [routeResponse, assetResponse] = await Promise.all([
-      fetch("/api/send/routes"),
-      fetch("/api/assets")
+      fetch("/api/send/routes"), fetch("/api/assets")
     ]);
     const routeData = await routeResponse.json();
     const assetData = await assetResponse.json();
-    if (!routeResponse.ok || !assetResponse.ok) throw new Error("Unable to load registered assets and routes.");
-
+    if (!routeResponse.ok || !assetResponse.ok) throw new Error("Unable to load configured assets and routes.");
     const routes = routeData.routes || [];
     const assets = assetData.assets || [];
     const codes = [...new Set(routes.flatMap(route => [route.from, route.to]))];
@@ -57,7 +53,6 @@ async function loadRoutes() {
       const asset = assets.find(item => item.code === code);
       return { code, label: asset ? asset.name : code };
     });
-
     fromSelect.replaceChildren();
     toSelect.replaceChildren();
     options.forEach(asset => {
@@ -91,14 +86,16 @@ async function checkAvailability() {
     createButton.disabled = !currentRoute.supported;
     routeStatus.replaceChildren();
     const heading = document.createElement("strong");
-    heading.textContent = currentRoute.supported ? `${from} → ${to}: route registered` : `${from} → ${to}: route not configured`;
+    heading.textContent = currentRoute.supported
+      ? `${from} → ${to}: configured route`
+      : `${from} → ${to}: route not configured`;
     const explanation = document.createElement("p");
     explanation.textContent = currentRoute.reason || "No route information available.";
     const state = document.createElement("p");
     state.className = "muted";
     state.textContent = currentRoute.supported
-      ? "Route registration only. Live liquidity, compliance and execution have not been verified."
-      : "Choose a route registered in StableX.";
+      ? "This confirms only that the route is listed in StableX. It does not check live liquidity, a provider quote or payout availability."
+      : "Choose a route listed in StableX.";
     routeStatus.append(heading, explanation, state);
   } catch (error) {
     currentRoute = null;
@@ -109,14 +106,17 @@ async function checkAvailability() {
 
 function updateRecipientInput() {
   const isWallet = recipientType.value === "WALLET";
-  recipientLabel.textContent = isWallet ? "Recipient wallet address" : "Institution / payout reference";
-  recipientInput.placeholder = isWallet ? "0x..." : "Enter beneficiary or payout reference";
+  recipientLabel.textContent = isWallet ? "Recipient wallet address" : "Beneficiary / payout ID";
+  recipientInput.placeholder = isWallet ? "0x..." : "Enter the identifier required by the payout institution";
+  recipientHelp.textContent = isWallet
+    ? "Enter the recipient's Base-compatible wallet address."
+    : "Use the beneficiary or payout identifier supplied by the financial institution. The exact format depends on its API.";
 }
 
 form.addEventListener("submit", async event => {
   event.preventDefault();
   if (!currentRoute?.supported) {
-    message.textContent = "Check a registered route before creating a draft.";
+    message.textContent = "Check a configured route before creating a draft.";
     return;
   }
   createButton.disabled = true;
@@ -126,10 +126,8 @@ form.addEventListener("submit", async event => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: fromSelect.value,
-        to: toSelect.value,
-        amount: Number(amountInput.value),
-        recipientType: recipientType.value,
+        from: fromSelect.value, to: toSelect.value,
+        amount: Number(amountInput.value), recipientType: recipientType.value,
         recipientReference: recipientInput.value.trim()
       })
     });
@@ -148,10 +146,10 @@ function renderDraft(draft) {
   draftPanel.hidden = false;
   draftResult.replaceChildren();
   const rows = [
-    ["Reference", draft.draftId],
+    ["Draft reference", draft.draftId],
     ["Transfer", `${draft.amount} ${draft.from} → ${draft.to}`],
-    ["Recipient type", draft.recipientType],
-    ["Recipient", draft.recipientReference],
+    ["Recipient destination", draft.recipientType === "WALLET" ? "Base-compatible wallet" : "Financial institution payout"],
+    [draft.recipientType === "WALLET" ? "Wallet address" : "Beneficiary / payout ID", draft.recipientReference],
     ["Status", draft.status],
     ["Execution", "DISABLED — no funds moved"]
   ];

@@ -1,132 +1,68 @@
-
-
-
 export const ASSETS = {
   CAD: {
-    code: "CAD",
-    name: "Canadian Dollar",
-    type: "FIAT",
-    issuer: null,
-    networks: [],
-    contractAddresses: {},
-    decimals: 2,
-    settlement: "FIAT_RAIL",
-    status: "REGISTERED",
+    code: "CAD", name: "Canadian Dollar", type: "FIAT", issuer: null,
+    networks: [], contractAddresses: {}, decimals: 2,
+    settlement: "FIAT_RAIL", status: "REGISTERED",
   },
-
   NGN: {
-    code: "NGN",
-    name: "Nigerian Naira",
-    type: "FIAT",
-    issuer: null,
-    networks: [],
-    contractAddresses: {},
-    decimals: 2,
-    settlement: "FIAT_RAIL",
-    status: "REGISTERED",
+    code: "NGN", name: "Nigerian Naira", type: "FIAT", issuer: null,
+    networks: [], contractAddresses: {}, decimals: 2,
+    settlement: "FIAT_RAIL", status: "REGISTERED",
   },
-
   USDC: {
-    code: "USDC",
-    name: "USD Coin",
-    type: "STABLECOIN",
-    issuer: "Circle",
+    code: "USDC", name: "USD Coin", type: "STABLECOIN", issuer: "Circle",
     networks: ["BASE", "BASE_SEPOLIA"],
     contractAddresses: {
-      BASE: null,
+      BASE: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       BASE_SEPOLIA: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     },
-    decimals: 6,
-    settlement: "ONCHAIN",
-    status: "TESTNET_CONFIGURED",
+    decimals: 6, settlement: "ONCHAIN",
+    status: "PUBLIC_MAINNET_METADATA_CONFIGURED",
+    metadataSource: "https://www.circle.com/multi-chain-usdc/base",
   },
-
   USDT: {
-    code: "USDT",
-    name: "Tether USD",
-    type: "STABLECOIN",
-    issuer: "Tether",
-    networks: [],
-    contractAddresses: {},
-    decimals: 6,
-    settlement: "ONCHAIN",
-    status: "PENDING_VERIFICATION",
+    code: "USDT", name: "Tether USD", type: "STABLECOIN", issuer: "Tether",
+    networks: [], contractAddresses: {}, decimals: null,
+    settlement: "ONCHAIN", status: "PENDING_VERIFICATION",
   },
-
   CADD: {
-    code: "CADD",
-    name: "Canadian Dollar Digital",
-    type: "STABLECOIN",
-    issuer: "Tetra Trust",
-    networks: [],
-    contractAddresses: {},
-    decimals: null,
-    settlement: "ONCHAIN",
-    status: "PENDING_VERIFICATION",
+    code: "CADD", name: "Canadian Dollar Digital", type: "STABLECOIN",
+    issuer: "Tetra Trust Company", networks: ["BASE", "ETHEREUM", "SOLANA", "TEMPO"],
+    contractAddresses: { BASE: null }, decimals: null, settlement: "ONCHAIN",
+    status: "NETWORK_SUPPORT_CONFIRMED_ADDRESS_PENDING",
+    metadataSource: "https://tetradg.com/frequently-asked-questions",
   },
-
   CADC: {
-    code: "CADC",
-    name: "Canadian Dollar Coin",
-    type: "STABLECOIN",
-    issuer: "Loon",
-    networks: [],
-    contractAddresses: {},
-    decimals: null,
-    settlement: "ONCHAIN",
-    status: "PENDING_VERIFICATION",
+    code: "CADC", name: "Canadian Dollar Coin", type: "STABLECOIN",
+    issuer: "CADC Reserve Trust (serviced by Loon Payments)",
+    networks: ["BASE"],
+    contractAddresses: {
+      BASE: "0x5e63E9C06c3F2c779EF29a8071F94F5a724eB5e4",
+    },
+    decimals: null, settlement: "ONCHAIN",
+    status: "PUBLIC_MAINNET_CONTRACT_CONFIGURED",
+    metadataSource: "https://loon.finance/cadc/",
+    metadataNote: "Use upgraded Base contract; Loon states legacy CADC contracts are being migrated.",
   },
-
   QCAD: {
-    code: "QCAD",
-    name: "QCAD",
-    type: "STABLECOIN",
-    issuer: "To be verified",
-    networks: [],
-    contractAddresses: {},
-    decimals: null,
-    settlement: "ONCHAIN",
-    status: "PENDING_VERIFICATION",
+    code: "QCAD", name: "QCAD", type: "STABLECOIN", issuer: "To be verified",
+    networks: [], contractAddresses: {}, decimals: null,
+    settlement: "ONCHAIN", status: "PENDING_VERIFICATION",
   },
-
   CNGN: {
-    code: "CNGN",
-    name: "CNGN",
-    type: "STABLECOIN",
-    issuer: "To be verified",
-    networks: [],
-    contractAddresses: {},
-    decimals: null,
-    settlement: "ONCHAIN",
-    status: "PENDING_VERIFICATION",
+    code: "CNGN", name: "CNGN", type: "STABLECOIN", issuer: "To be verified",
+    networks: [], contractAddresses: {}, decimals: null,
+    settlement: "ONCHAIN", status: "PENDING_VERIFICATION",
   },
-
   EURC: {
-    code: "EURC",
-    name: "Euro Coin",
-    type: "STABLECOIN",
-    issuer: "Circle",
+    code: "EURC", name: "Euro Coin", type: "STABLECOIN", issuer: "Circle",
     networks: ["BASE_SEPOLIA"],
     contractAddresses: {
       BASE_SEPOLIA: "0x808456652fdb597867f38412077A9182bf77359F",
     },
-    decimals: 6,
-    settlement: "ONCHAIN",
-    status: "TESTNET_CONFIGURED",
+    decimals: 6, settlement: "ONCHAIN", status: "TESTNET_CONFIGURED",
   },
-
-  GBP: {
-    code: "GBP",
-    name: "British Pound",
-    type: "FIAT",
-    issuer: null,
-    networks: [],
-    contractAddresses: {},
-    decimals: 2,
-    settlement: "FIAT_RAIL",
-    status: "REGISTERED",
-  },
-
+  GBP: { code: "GBP", name: "British Pound", type: "FIAT", networks: [], contractAddresses: {}, decimals: 2, settlement: "FIAT_RAIL", status: "REGISTERED" },
   XAF: { code: "XAF", name: "Central African CFA Franc", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
   KES: { code: "KES", name: "Kenyan Shilling", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
   TZS: { code: "TZS", name: "Tanzanian Shilling", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
@@ -135,17 +71,10 @@ export const ASSETS = {
   ZAR: { code: "ZAR", name: "South African Rand", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
 };
 
-export const getAsset = (code) =>
-  ASSETS[String(code).toUpperCase()] ?? null;
-
-export const getAllAssets = () =>
-  Object.values(ASSETS);
-
+export const getAsset = (code) => ASSETS[String(code).toUpperCase()] ?? null;
+export const getAllAssets = () => Object.values(ASSETS);
 export const getTradableAssets = () =>
-  getAllAssets().filter(
-    (asset) => asset.status === "TESTNET_CONFIGURED" ||
-               asset.status === "ACTIVE"
-  );
+  getAllAssets().filter((asset) => asset.status === "TESTNET_CONFIGURED" || asset.status === "ACTIVE");
 
 export const getAssetPairs = () => [
   { from: "CAD", to: "USDC", category: "FIAT_TO_STABLECOIN" },
