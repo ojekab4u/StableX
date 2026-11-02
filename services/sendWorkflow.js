@@ -32,12 +32,9 @@ export function describeRoute(fromInput, toInput) {
 
   if (!source || !destination || from === to || !route) {
     return {
-      from,
-      to,
-      supported: false,
-      quoteMode: "NOT_CONFIGURED",
+      from, to, supported: false, quoteMode: "NOT_CONFIGURED",
       executionEnabled: false,
-      reason: "This sending route has not been configured.",
+      reason: "This currency route has not been added to the StableX route list.",
     };
   }
 
@@ -49,11 +46,11 @@ export function describeRoute(fromInput, toInput) {
     supported: true,
     sourceAsset: source,
     destinationAsset: destination,
-    quoteMode: "INTEGRATION_REQUIRED",
+    quoteMode: "PROVIDER_INTEGRATION_REQUIRED",
     executionEnabled: false,
     sourceAssetReady: sourceReady,
     destinationAssetReady: destinationReady,
-    reason: `Route registered, but asset readiness is not established (source: ${source.status}; destination: ${destination.status}). Live pricing, liquidity, compliance and settlement providers are not connected yet.`,
+    reason: "This route is configured in StableX. Live provider availability, executable pricing, compliance checks and settlement have not been tested or connected.",
     stages: [
       { id: "compliance", label: "KYC/KYB eligibility", status: "NOT_CONNECTED" },
       { id: "liquidity", label: "Liquidity and quote", status: "NOT_CONNECTED" },
@@ -65,22 +62,17 @@ export function describeRoute(fromInput, toInput) {
 
 export function createSendDraft({ from, to, amount, recipientType, recipientReference }) {
   const route = describeRoute(from, to);
-  if (!route.supported) {
-    throw new Error("This sending route is not configured.");
-  }
-
+  if (!route.supported) throw new Error("This currency route is not configured in StableX.");
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
     throw new Error("Amount must be greater than zero and at most 1,000,000.");
   }
-
   if (!["WALLET", "PAYOUT_REFERENCE"].includes(recipientType)) {
-    throw new Error("Choose a valid recipient type.");
+    throw new Error("Choose a valid recipient destination.");
   }
-
   if (typeof recipientReference !== "string" ||
       recipientReference.trim().length < 3 ||
       recipientReference.trim().length > 160) {
-    throw new Error("Enter a valid recipient wallet address or payout reference.");
+    throw new Error("Enter the recipient wallet address or beneficiary/payout ID.");
   }
 
   const draft = {
@@ -93,10 +85,9 @@ export function createSendDraft({ from, to, amount, recipientType, recipientRefe
     status: "DRAFT_NOT_EXECUTED",
     executionEnabled: false,
     createdAt: new Date().toISOString(),
-    nextAction: "Connect and verify the required KYC/KYB, liquidity and settlement providers before execution.",
+    nextAction: "Connect the required verification, liquidity and payout services before any real transfer can be processed.",
     route,
   };
-
   drafts.set(draft.draftId, draft);
   return draft;
 }
