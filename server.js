@@ -6,15 +6,21 @@ import {
   getStoredNumber,
   updateStoredNumber,
 } from "./baseVault.js";
+
 import { randomUUID } from "node:crypto";
 import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
+import {
+  getAsset,
+  getAllAssets,
+  getAssetPairs,
+} from "./config/assets.js";
 import { checkBaseConnection, getBaseWalletBalance, } from "./baseConnection.js";
 import { Connection } from "@solana/web3.js";
-import { getQuotes } from "./providers/demoProviders.js";
+import { getQuotes, 
+  getDemoSupportedPairs, } from "./providers/demoProviders.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -33,6 +39,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const supportedCurrencies = new Set(["USDT", "USDC", "NGN"]);
 const selections = new Map();
+// Quotes issued by this server, keyed by their unique quote ID.
+const issuedQuotes = new Map();
 
 // Health endpoint
 app.get("/api/health", (req, res) => {
@@ -40,6 +48,53 @@ app.get("/api/health", (req, res) => {
     status: "ok",
     application: "StableX",
     mode: "DEMO"
+  });
+});
+
+// List all registered currencies and tokens
+app.get("/api/assets", (req, res) => {
+  res.json({
+    count: getAllAssets().length,
+    assets: getAllAssets(),
+  });
+});
+
+// Retrieve a specific currency or token
+app.get("/api/assets/:code", (req, res) => {
+  const asset = getAsset(req.params.code);
+
+  if (!asset) {
+    return res.status(404).json({
+      error: "Asset not found.",
+    });
+  }
+
+  res.json({ asset });
+});
+
+// List configured exchange pairs
+app.get("/api/pairs", (req, res) => {
+  const demoPairs = new Set(
+    getDemoSupportedPairs().map(
+      (pair) => `${pair.from}-${pair.to}`
+    )
+  );
+
+  const pairs = getAssetPairs().map((pair) => {
+    const pairKey = `${pair.from}-${pair.to}`;
+    const demoSupported = demoPairs.has(pairKey);
+
+    return {
+      ...pair,
+      quoteMode: demoSupported ? "DEMO" : "NOT_CONFIGURED",
+      quoteAvailable: demoSupported,
+      executionEnabled: false,
+    };
+  });
+
+  res.json({
+    count: pairs.length,
+    pairs,
   });
 });
 
@@ -57,6 +112,7 @@ app.get("/api/currencies", (req, res) => {
     ]
   });
 });
+
 
 // Compare provider quotes
 app.get("/api/quotes", async (req, res) => {
@@ -83,6 +139,23 @@ app.get("/api/quotes", async (req, res) => {
   try {
     const quotes = await getQuotes({ amount, from, to });
 
+    // Remove expired quotes from the registry.
+    for (const [id, quote] of issuedQuotes) {
+      if (Date.parse(quote.expiresAt) <= Date.now()) {
+        issuedQuotes.delete(id);
+      }
+    }
+
+    // Store every quote issued by the server.
+    for (const quote of quotes) {
+      issuedQuotes.set(quote.id, {
+        ...quote,
+        amount,
+        from,
+        to
+      });
+    }
+
     res.json({
       amount,
       from,
@@ -97,18 +170,17 @@ app.get("/api/quotes", async (req, res) => {
   }
 });
 
-// Record the user's provider selection.
-app.post("/api/selections", (req, res) => {
-  const { quoteId, from, to, amount } = req.body ?? {};
 
-  const validCurrencies =
-    supportedCurrencies.has(from) &&
-    supportedCurrencies.has(to) &&
-    from !== to;
+// Record a provider selection after validating its original quote.
+app.post("/api/selections", (req, res) => {
+  const { quoteId } = req.body ?? {};
+
+  const from = String(req.body?.from || "").toUpperCase();
+  const to = String(req.body?.to || "").toUpperCase();
+  const amount = req.body?.amount;
 
   if (
     typeof quoteId !== "string" ||
-    !validCurrencies ||
     !Number.isFinite(amount) ||
     amount <= 0 ||
     amount > 1000000
@@ -118,17 +190,66 @@ app.post("/api/selections", (req, res) => {
     });
   }
 
-  
+  // Retrieve the actual quote issued by this server.
+  const quote = issuedQuotes.get(quoteId);
+
+  if (!quote) {
+    return res.status(404).json({
+      error: "Quote not found or no longer available. Compare offers again."
+    });
+  }
+
+  // Check the quote's expiry.
+  if (Date.parse(quote.expiresAt) <= Date.now()) {
+    issuedQuotes.delete(quoteId);
+
+    return res.status(410).json({
+      error: "This quote has expired. Please request a new quote."
+    });
+  }
+
+  // Verify that the submitted details match the original quote.
+  if (
+    quote.from !== from ||
+    quote.to !== to ||
+    quote.amount !== amount
+  ) {
+    return res.status(400).json({
+      error: "Selection details do not match the issued quote."
+    });
+  }
+
+  if (quote.status !== "AVAILABLE" || quote.quoteType !== "DEMO") {
+    return res.status(400).json({
+      error: "This quote is not available for demo selection."
+    });
+  }
+
   const selectionId = randomUUID();
+
   const selection = {
     selectionId,
-    quoteId,
-    from,
-    to,
-    amount,
+    quoteId: quote.id,
+    provider: quote.provider,
+
+    from: quote.from,
+    to: quote.to,
+    amount: quote.amount,
+
+    rate: quote.rate,
+    grossAmount: quote.grossAmount,
+    fee: quote.fee,
+    feeCurrency: quote.feeCurrency,
+    netAmount: quote.netAmount,
+
+    quoteType: "DEMO",
     status: "SELECTED_DEMO",
+
     createdAt: new Date().toISOString(),
-    transactionSubmitted: false
+    quoteExpiresAt: quote.expiresAt,
+
+    transactionSubmitted: false,
+    transactionHash: null
   };
 
   selections.set(selectionId, selection);
@@ -137,6 +258,34 @@ app.post("/api/selections", (req, res) => {
     message: "Provider selection recorded for demonstration.",
     selection
   });
+});
+
+
+// Retrieve all recorded demo selections.
+app.get("/api/selections", (req, res) => {
+  const history = Array.from(selections.values())
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+  res.json({
+    count: history.length,
+    records: history
+  });
+});
+
+// Retrieve one selection by its ID.
+app.get("/api/selections/:selectionId", (req, res) => {
+  const selection = selections.get(req.params.selectionId);
+
+  if (!selection) {
+    return res.status(404).json({
+      error: "Selection record not found."
+    });
+  }
+
+  res.json({ selection });
 });
 
 // Check Solana Devnet connectivity

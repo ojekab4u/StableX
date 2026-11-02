@@ -224,6 +224,9 @@ async function chooseProvider(quoteId) {
 
     message.textContent =
       `${quote.provider} selected successfully. Demo only; no transaction occurred.`;
+
+    await loadSelectionHistory();
+
   } catch (error) {
     message.textContent =
       `Provider selected locally, but saving failed: ${error.message}`;
@@ -256,6 +259,58 @@ function renderSelection() {
     "Status: SELECTED DEMO. No trade or blockchain transaction was submitted.";
 
   selectionContainer.append(heading, amount, status);
+}
+
+async function loadSelectionHistory() {
+  const historyBody = document.getElementById("history-body");
+
+  try {
+    const response = await fetch("/api/selections");
+
+    if (!response.ok) {
+      throw new Error("Unable to load transaction history.");
+    }
+
+    const selections = await response.json();
+
+    historyBody.replaceChildren();
+
+    if (!selections.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+
+      cell.colSpan = 6;
+      cell.textContent = "No transactions recorded yet.";
+      cell.className = "muted";
+
+      row.appendChild(cell);
+      historyBody.appendChild(row);
+      return;
+    }
+
+    selections.forEach((item) => {
+      const row = document.createElement("tr");
+
+      const values = [
+        item.selectionId,
+        `${item.from} → ${item.to}`,
+        `${item.amount} ${item.from}`,
+        item.provider || "Demo provider",
+        `${item.netAmount} ${item.to}`,
+        item.status
+      ];
+
+      values.forEach((value) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+
+      historyBody.appendChild(row);
+    });
+  } catch (error) {
+    historyBody.textContent = error.message;
+  }
 }
 
 async function checkSolana() {
@@ -296,6 +351,10 @@ form.addEventListener("submit", event => {
   loadQuotes();
 });
 
+document
+  .getElementById("refresh-history")
+  .addEventListener("click", loadSelectionHistory);
+
 reverseButton.addEventListener("click", () => {
   const previousFrom = fromSelect.value;
   fromSelect.value = toSelect.value;
@@ -306,4 +365,6 @@ reverseButton.addEventListener("click", () => {
 refreshSolanaButton.addEventListener("click", checkSolana);
 
 loadQuotes();
+loadSelectionHistory();
 checkSolana();
+

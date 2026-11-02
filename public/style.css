@@ -452,3 +452,47 @@ footer {
 .base-wallet-details .detail-row strong {
   overflow-wrap: anywhere;
 }
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 650px;
+}
+
+.history-table th,
+.history-table td {
+  padding: 14px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  font-size: 13px;
+}
+
+.history-table th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.history-table td {
+  overflow-wrap: anywhere;
+}
+
+.secondary-button {
+  padding: 9px 15px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}

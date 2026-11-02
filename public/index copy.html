@@ -1,0 +1,240 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX — Exchange Comparator</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+  <script type="module" src="/base-wallet.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <div class="network-label">
+      <span class="dot"></span> Solana Devnet
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">STABLECOIN EXCHANGE COMPARATOR</p>
+      <h1>Compare rates.<br>Choose with confidence.</h1>
+      <p>
+        Compare estimated exchange offers for USDT, USDC and NGN.
+      </p>
+      <div class="demo-warning">
+        DEMO MODE — Rates are simulated, not live market quotes.
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">01 / CALCULATOR</p>
+          <h2>What would you like to exchange?</h2>
+        </div>
+      </div>
+
+      <form id="quote-form">
+        <div class="form-grid">
+          <div class="field">
+            <label for="amount">Amount</label>
+            <input
+              id="amount"
+              type="number"
+              value="100"
+              min="0.000001"
+              max="1000000"
+              step="any"
+              required
+            >
+          </div>
+
+          <div class="field">
+            <label for="from">From</label>
+            <select id="from">
+              <option value="USDT">USDT — Tether</option>
+              <option value="USDC">USDC — USD Coin</option>
+              <option value="NGN">NGN — Nigerian Naira</option>
+            </select>
+          </div>
+
+          <button type="button" id="reverse" class="reverse-btn"
+            aria-label="Reverse currencies" title="Reverse currencies">
+            ⇄
+          </button>
+
+          <div class="field">
+            <label for="to">To</label>
+            <select id="to">
+              <option value="NGN">NGN — Nigerian Naira</option>
+              <option value="USDT">USDT — Tether</option>
+              <option value="USDC">USDC — USD Coin</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="compare" type="submit" class="primary-btn">
+          Compare 3 providers
+        </button>
+      </form>
+
+      <p id="message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="offers-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">02 / PROVIDER MARKETPLACE</p>
+          <h2>Compare offers</h2>
+          <p class="muted">Best estimated net output appears first.</p>
+        </div>
+        <span class="demo-tag">SIMULATED QUOTES</span>
+      </div>
+
+      <div id="offers" class="offers-grid">
+        <p class="muted">Loading demo offers...</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">03 / YOUR DECISION</p>
+      <h2>Selected provider</h2>
+      <div id="selection" class="selection-content">
+        <p class="muted">Choose a provider to see your selection.</p>
+      </div>
+      <p class="notice">
+        Selecting a provider records a demo choice only.
+      </p>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">04 / BLOCKCHAIN CONNECTION</p>
+      <h2>Solana network status</h2>
+      <div id="solana-status" aria-live="polite">
+        Checking network...
+      </div>
+      <button id="refresh-solana" class="secondary-btn" type="button">
+        Refresh connection
+      </button>
+    </section>
+
+<section class="panel" id="base-wallet-panel">
+  <p class="eyebrow">05 / BASE SEPOLIA SMART CONTRACT</p>
+  <h2>Connect your wallet</h2>
+
+  <p class="muted">
+    Connect MetaMask to interact with the StableX learning contract
+    on Base Sepolia.
+  </p>
+
+    <div class="wallet-picker">
+  <label for="base-wallet-select">Choose your wallet</label>
+
+  <div class="wallet-picker-row">
+    <select id="base-wallet-select">
+      <option value="">Detecting available wallets...</option>
+    </select>
+
+    <button
+      id="refresh-base-wallets"
+      type="button"
+      class="secondary-btn"
+    >
+      Refresh
+    </button>
+  </div>
+</div>
+
+<button
+  id="connect-base-wallet"
+  class="primary-btn"
+  type="button"
+  disabled
+>
+  Connect Wallet
+</button>
+  <!-- <button
+    id="connect-base-wallet"
+    class="primary-btn"
+    type="button"
+  >
+    Connect MetaMask
+  </button> -->
+
+  <p id="base-wallet-status" class="message" aria-live="polite">
+    Wallet not connected.
+  </p>
+
+  <div id="base-wallet-details" class="base-wallet-details" hidden>
+    <div class="detail-row">
+      <span>Connected wallet</span>
+      <strong id="base-wallet-address">—</strong>
+    </div>
+
+    <div class="detail-row">
+      <span>Contract owner</span>
+      <strong id="base-contract-owner">—</strong>
+    </div>
+
+    <div class="detail-row">
+    <span>Wallet provider</span>
+    <strong id="base-wallet-provider">—</strong>
+  </div>
+
+    <div class="detail-row">
+      <span>Wallet ETH balance</span>
+      <strong id="base-wallet-balance">—</strong>
+    </div>
+
+    <div class="detail-row">
+      <span>Current stored number</span>
+      <strong id="base-stored-number">—</strong>
+    </div>
+
+    <div class="field wallet-field">
+      <label for="base-new-number">New stored number</label>
+      <input
+        id="base-new-number"
+        type="number"
+        min="0"
+        step="1"
+        value="200"
+      >
+    </div>
+
+    <button
+      id="base-update-number"
+      class="primary-btn"
+      type="button"
+      disabled
+    >
+      Update contract
+    </button>
+
+    <p id="base-wallet-message" class="message" aria-live="polite">
+      Only the contract owner can update this value.
+    </p>
+  </div>
+
+  <p class="muted">
+    Contract:
+    <a
+      href="https://sepolia.basescan.org/address/0x8d81e0d3e58af36404a9f1223f9858430f4f8073"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      View on BaseScan
+    </a>
+  </p>
+</section>
+
+    <footer>
+      <p>StableX · Educational prototype · No real transactions</p>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StableX | Base Sepolia Demo</title>
+  <link rel="stylesheet" href="/base-demo.css">
+  <script type="module" src="/base-demo.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="brand-mark">S</span>
+        <span>StableX</span>
+      </a>
+      <div class="topbar-right">
+        <span class="network-pill"><span class="pulse"></span> BASE SEPOLIA</span>
+        <span class="test-label">TESTNET DEMO ONLY</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">FINTECH PAYMENT INFRASTRUCTURE</p>
+          <h1>Multi-asset transfer demo</h1>
+          <p class="hero-copy">Compare simulated conversion offers, inspect token balances and demonstrate an ERC-20 transfer on Base Sepolia.</p>
+        </div>
+        <div class="hero-status">
+          <span class="status-dot"></span>
+          <div><strong id="rpc-status">Checking network…</strong><small id="rpc-detail">Base Sepolia · Chain ID 84532</small></div>
+        </div>
+      </section>
+
+      <div class="notice"><strong>Demonstration environment.</strong> Exchange quotes below are simulated. Wallet transfers are real Base Sepolia transactions using test tokens with no monetary value.</div>
+
+      <section class="section-heading">
+        <div><p class="eyebrow">01 / CONVERSION</p><h2>Provider quote comparison</h2></div>
+        <span class="tag tag-demo">SIMULATED LIQUIDITY</span>
+      </section>
+      <section class="panel quote-panel">
+        <form id="quote-form" class="quote-controls">
+          <label>Amount<input id="quote-amount" type="number" min="0.000001" step="any" value="100" required></label>
+          <label>From<select id="quote-from"><option>USDT</option><option>USDC</option><option>NGN</option></select></label>
+          <label>To<select id="quote-to"><option>NGN</option><option>USDC</option><option>USDT</option></select></label>
+          <button class="button button-primary" type="submit">Compare providers</button>
+        </form>
+        <div class="quote-meta"><span id="quote-message">Choose a pair and compare simulated provider offers.</span><span class="muted">Rates are not live or executable.</span></div>
+        <div id="quote-results" class="quote-results empty-state">Run a quote comparison to see provider offers.</div>
+      </section>
+
+      <section class="section-heading section-spaced">
+        <div><p class="eyebrow">02 / WALLET</p><h2>Connect a Base wallet</h2></div>
+        <span class="tag tag-chain">CHAIN ID 84532</span>
+      </section>
+      <section class="panel wallet-panel">
+        <div class="wallet-connect-row">
+          <label class="wallet-select-label">Detected wallet<select id="wallet-select"><option value="">Searching for wallets…</option></select></label>
+          <button id="refresh-wallets" class="button button-secondary" type="button">Refresh wallets</button>
+          <button id="connect-wallet" class="button button-primary" type="button">Connect wallet</button>
+        </div>
+        <div class="wallet-summary">
+          <div><span class="field-label">CONNECTED ACCOUNT</span><strong id="account-value">Not connected</strong></div>
+          <div><span class="field-label">NETWORK</span><strong id="chain-value">Not connected</strong></div>
+          <div><span class="field-label">BASE ETH FOR GAS</span><strong id="eth-value">—</strong></div>
+        </div>
+        <div class="balances-header"><div><h3>Token balances</h3><p class="muted">Read directly from the registered Base Sepolia token contracts.</p></div><button id="refresh-balances" class="text-button" type="button" disabled>Refresh balances ↻</button></div>
+        <div id="token-balances" class="balance-grid">
+          <div class="balance-card"><span class="token-symbol">USDC</span><strong>—</strong><small>Connect a wallet to read balance</small></div>
+          <div class="balance-card"><span class="token-symbol">EURC</span><strong>—</strong><small>Connect a wallet to read balance</small></div>
+        </div>
+        <p id="wallet-message" class="inline-message" role="status">Select a detected wallet and connect it. Your wallet will ask you to approve access.</p>
+      </section>
+
+      <section class="section-heading section-spaced">
+        <div><p class="eyebrow">03 / ON-CHAIN EXECUTION</p><h2>Send test USDC</h2></div>
+        <span class="tag tag-test">TEST USDC · BASE SEPOLIA</span>
+      </section>
+      <section class="panel transfer-panel">
+        <div class="transfer-intro">
+          <div><h3>ERC-20 wallet transfer</h3><p class="muted">The connected wallet signs the transaction. No backend private key is used by this page.</p></div>
+          <div class="token-chip"><span class="coin-icon">$</span><span><strong>USDC</strong><small>6 decimals</small></span></div>
+        </div>
+        <form id="transfer-form" class="transfer-form">
+          <label>Recipient wallet address<input id="recipient-address" type="text" spellcheck="false" autocomplete="off" placeholder="0x…" value="0x6F85200fEDc6fd97dDD3406ec1E76B4E007A2bee" required></label>
+          <div class="transfer-input-row">
+            <label>Amount (USDC)<input id="transfer-amount" type="number" min="0.000001" step="any" value="1" required></label>
+            <div class="available-box"><span class="field-label">AVAILABLE BALANCE</span><strong id="available-usdc">— USDC</strong></div>
+          </div>
+          <button id="send-transfer" class="button button-primary button-wide" type="submit" disabled>Connect wallet to continue</button>
+        </form>
+        <div id="transfer-message" class="inline-message" role="status">Review the recipient and amount before authorising a transaction in your wallet.</div>
+        <div id="live-transaction" class="transaction-result hidden" aria-live="polite"></div>
+      </section>
+
+      <section class="section-heading section-spaced">
+        <div><p class="eyebrow">04 / TRANSACTION EVIDENCE</p><h2>Confirmed transfer</h2></div>
+        <span class="tag tag-success">CONFIRMED ON-CHAIN</span>
+      </section>
+      <section class="panel proof-panel">
+        <div class="proof-top"><div><span class="field-label">PREVIOUS CLI DEMONSTRATION</span><h3>1 USDC successfully transferred</h3></div><span class="success-check">✓</span></div>
+        <div class="proof-grid">
+          <div><span class="field-label">SENDER</span><strong>0x99DeA1c2…556b618</strong><small>Balance after: 19 USDC</small></div>
+          <div><span class="field-label">RECIPIENT</span><strong>0x6F85200f…007A2bee</strong><small>Balance after: 1 USDC</small></div>
+          <div><span class="field-label">BLOCK</span><strong>53225237</strong><small>Gas used: 62,147</small></div>
+          <div><span class="field-label">RECEIPT STATUS</span><strong class="success-text">Success</strong><small>Base Sepolia</small></div>
+        </div>
+        <div class="hash-row"><span id="previous-hash">0x53e55dc2f22582c37f449d50fe38aac62be5a9c865055b2d1f78928a104dadc1</span><button id="copy-hash" class="text-button" type="button">Copy hash</button></div>
+        <a class="explorer-link" href="https://sepolia.basescan.org/tx/0x53e55dc2f22582c37f449d50fe38aac62be5a9c865055b2d1f78928a104dadc1" target="_blank" rel="noopener noreferrer">View confirmed transaction on BaseScan ↗</a>
+      </section>
+
+      <footer><span>StableX learning prototype</span><span>Base Sepolia · Chain ID 84532</span></footer>
+    </main>
+  </div>
+</body>
+</html>

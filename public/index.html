@@ -112,6 +112,38 @@
     </section>
 
     <section class="panel">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">04 / ACTIVITY</p>
+      <h2>Transaction history</h2>
+    </div>
+    <button type="button" id="refresh-history" class="secondary-button">
+      Refresh
+    </button>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Reference</th>
+          <th>Exchange</th>
+          <th>Amount</th>
+          <th>Provider</th>
+          <th>Estimated output</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="history-body">
+        <tr>
+          <td colspan="6" class="muted">Loading history...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+    <section class="panel">
       <p class="eyebrow">04 / BLOCKCHAIN CONNECTION</p>
       <h2>Solana network status</h2>
       <div id="solana-status" aria-live="polite">
