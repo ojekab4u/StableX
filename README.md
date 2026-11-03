@@ -296,3 +296,28 @@ Configure the webhook URL in the VOVE dashboard as `https://YOUR_PUBLIC_HOST/api
 - Use synthetic test business information and VOVE-approved sandbox test data only. Do not upload real people's identity documents for this learning demo.
 - The webhook handler follows the signature format shown in VOVE's KYB integration guide. Confirm the exact header/signature format with the VOVE dashboard or support before relying on it outside sandbox testing.
 - No money movement or transfer execution is enabled by this integration.
+
+
+## Transaction orchestration prototype
+
+Open `/orchestration.html` for the orchestration console.
+
+StableX now has a provider-orchestration overview and a Paytrie API v2 quote adapter for CAD to/from USDC-BASE and CADC-BASE. Configure `PAYTRIE_API_KEY` in the server-side `.env` file to request provider quotes.
+
+API endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/orchestration/overview` | Displays the workflow stages and provider readiness |
+| POST | `/api/orchestration/quote` | Requests a live Paytrie v2 quote and records a local orchestration intent |
+| GET | `/api/orchestration/intents/:intentId` | Retrieves the in-memory intent |
+
+Example quote request:
+
+```json
+{ "from": "CAD", "to": "USDC", "amount": 100 }
+```
+
+The adapter uses Paytrie's documented v2 `GET /quotes` endpoint and the `x-api-key` header. Paytrie transaction creation is deliberately not enabled: its documented transaction flow also requires an authenticated user JWT and customer payment. The quote is not a reservation of liquidity and is not a completed transfer.
+
+The orchestration overview is an integration map, not proof that every provider is connected. KYC/KYB, corridor checks, customer funding, blockchain settlement, payout, webhook reconciliation and persistent audit records must be completed before any end-to-end transfer can be enabled.

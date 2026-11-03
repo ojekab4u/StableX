@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>StableX — Orchestration Console</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .orch{max-width:980px;margin:42px auto;padding:0 20px}.orch-panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:22px;margin:18px 0}.orch-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.orch-stage{padding:14px;border:1px solid #e2e8f0;border-radius:10px}.orch-stage small{display:block;color:#64748b;margin-top:8px}.orch-form{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.orch-form label{display:grid;gap:6px}.orch-form input,.orch-form select{padding:10px;border:1px solid #cbd5e1;border-radius:8px}.orch-result{white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;padding:14px;border-radius:10px;margin-top:14px}.orch-warning{background:#fffbeb;border-left:4px solid #d97706;padding:12px;margin:14px 0}@media(max-width:680px){.orch-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/">Stable<span>X</span></a><nav><a href="/send.html">Send & Settle</a><a href="/kyb.html">KYC / KYB</a></nav><div class="network-label">Orchestration prototype</div></header>
+  <main class="orch">
+    <p class="eyebrow">STABLEX / TRANSACTION ORCHESTRATION</p>
+    <h1>Orchestration console</h1>
+    <p>One workflow coordinates identity, corridor eligibility, provider quotes, funding, blockchain settlement, payout and reconciliation.</p>
+    <div class="orch-warning"><strong>Prototype boundary:</strong> Paytrie quote requests can be live when credentials are configured. No customer payment, stablecoin purchase, blockchain transfer or fiat payout is initiated here.</div>
+    <section class="orch-panel"><h2>Workflow stages</h2><div id="stages" class="orch-grid">Loading orchestration status…</div></section>
+    <section class="orch-panel">
+      <h2>Request a live Paytrie quote</h2>
+      <form id="quote-form" class="orch-form">
+        <label>From<select name="from"><option>CAD</option><option>USDC</option><option>CADC</option></select></label>
+        <label>To<select name="to"><option>USDC</option><option>CADC</option><option>CAD</option></select></label>
+        <label>Amount<input name="amount" type="number" min="0.01" step="0.01" value="100" required></label>
+        <button type="submit" class="kyb-btn">Get provider quote</button>
+      </form>
+      <div id="quote-result" class="orch-result">A quote request will call Paytrie v2 from the StableX backend. Configure PAYTRIE_API_KEY in .env first.</div>
+    </section>
+  </main>
+  <script>
+    const stagesEl=document.querySelector("#stages");
+    fetch("/api/orchestration/overview").then(r=>r.json()).then(data=>{
+      stagesEl.replaceChildren();
+      for(const stage of data.stages){
+        const card=document.createElement("div");card.className="orch-stage";
+        const title=document.createElement("strong");title.textContent=stage.name;
+        const state=document.createElement("small");state.textContent=stage.state;
+        card.append(title,state);stagesEl.append(card);
+      }
+    }).catch(()=>stagesEl.textContent="Unable to load orchestration overview.");
+    document.querySelector("#quote-form").addEventListener("submit",async e=>{
+      e.preventDefault();const out=document.querySelector("#quote-result");out.textContent="Requesting live quote from Paytrie…";
+      const body=Object.fromEntries(new FormData(e.currentTarget).entries());body.amount=Number(body.amount);
+      try{
+        const response=await fetch("/api/orchestration/quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const data=await response.json();if(!response.ok)throw new Error(data.error||"Quote request failed.");
+        out.textContent=JSON.stringify(data,null,2);
+      }catch(error){out.textContent=error.message;}
+    });
+  </script>
+</body>
+</html>
