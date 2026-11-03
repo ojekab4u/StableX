@@ -31,8 +31,13 @@ orchestrationRouter.post("/quote", async (req, res) => {
   }
 });
 
-orchestrationRouter.get("/intents/:intentId", (req, res) => {
-  const intent = getOrchestrationIntent(req.params.intentId);
-  if (!intent) return res.status(404).json({ error: "Orchestration intent not found in this running process." });
-  return res.json({ intent });
+orchestrationRouter.get("/intents/:intentId", async (req, res) => {
+  try {
+    const intent = await getOrchestrationIntent(req.params.intentId);
+    if (!intent) return res.status(404).json({ error: "Orchestration intent not found." });
+    return res.json({ intent });
+  } catch (error) {
+    console.error("StableX orchestration intent lookup failed:", error.message);
+    return res.status(503).json({ error: "Unable to retrieve orchestration intent." });
+  }
 });
