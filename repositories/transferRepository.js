@@ -17,6 +17,7 @@ export async function saveTransfer({id,customerId,beneficiaryId,from,to,amount,k
  const c=await getPool().connect();
  try {
   await c.query("BEGIN");
+  await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [customerId + ":" + key]);
   const old=await c.query("SELECT transfer_id,request_fingerprint FROM transfers WHERE customer_id=$1 AND idempotency_key=$2 FOR UPDATE",[customerId,key]);
   if(old.rowCount) {
    if(old.rows[0].request_fingerprint!==fingerprint){const e=new Error("Idempotency-Key already used with a different request.");e.statusCode=409;throw e;}
