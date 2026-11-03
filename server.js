@@ -19,10 +19,10 @@ import {
 } from "./config/assets.js";
 import { checkBaseConnection, getBaseWalletBalance, } from "./baseConnection.js";
 import { Connection } from "@solana/web3.js";
-import { sendRouter } from "./routes/sendRoutes.js";
 import { getQuotes, 
   getDemoSupportedPairs, } from "./providers/demoProviders.js";
 import { sendRouter } from "./routes/sendRoutes.js";
+import {kybRouter} from "./routes/kybRoutes.js"
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
