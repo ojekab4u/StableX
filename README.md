@@ -357,6 +357,6 @@ Allowed transitions: `DRAFT → QUOTED → AWAITING_FUNDING → FUNDED → SETTL
 
 This is a local integration prototype, not a production customer API. The `customerId` field is currently a caller-supplied identifier, not an authenticated identity; do not expose these routes publicly until real authentication, authorization and tenant isolation are implemented. The operator and event-ingestion bearer tokens are prototype controls, not replacements for an identity provider or provider-specific webhook signature verification.
 
-Beneficiary details are encrypted at rest, but are decrypted for the authenticated customer-facing response path in this prototype. Provider events are stored idempotently but do not automatically advance transfer state. Provider-specific signature verification, event-to-transfer correlation, reconciliation and automated state transitions remain follow-up work.
+Beneficiary details are encrypted at rest and decrypted by these prototype read endpoints. The caller-supplied customerId is not authentication; do not expose these endpoints publicly. Provider events are stored idempotently but do not automatically advance transfer state. Provider-specific signature verification, event-to-transfer correlation, reconciliation and automated state transitions remain follow-up work.
 
 No endpoint in this milestone collects funds, creates a Paytrie transaction, signs a blockchain transaction, sends a payout, or moves money. Manual lifecycle changes are records only.
