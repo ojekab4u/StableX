@@ -259,3 +259,40 @@ The endpoint reports whether the following StableX configuration placeholders ar
 These are **StableX placeholder variable names**, not confirmed provider-specific requirements. Replace or extend them after receiving the actual provider documentation. The endpoint checks configuration presence only; it does not authenticate or call external services. Never commit real credentials to source control.
 
 A route being registered does not mean it has live liquidity or is executable. Verify each asset's issuer, network, chain ID, contract address, decimals, liquidity and redemption path before enabling a production route.
+
+
+## VOVE ID sandbox KYB integration
+
+StableX includes a VOVE ID sandbox KYB flow at `/kyb.html`.
+
+### Configure the sandbox
+
+Copy `.env.example` to `.env` and obtain the following sandbox values from the VOVE dashboard/account owner:
+
+- `VOVE_ID_API_KEY` — server-side API key.
+- `VOVE_ID_PUBLIC_KEY` — public key used to construct the hosted KYB session URL.
+- `VOVE_ID_KYB_FLOW_ID` — optional flow ID selected for the test business jurisdiction.
+- `VOVE_ID_WEBHOOK_SECRET` — webhook signing secret, after configuring the webhook endpoint.
+- Keep `VOVE_ID_ENVIRONMENT=Sandbox` and `VOVE_ID_API_BASE_URL=https://api.voveid.net/v2` for testing.
+
+Never commit `.env`, expose API keys in browser code, or send credentials in chat. The KYB create-case call is made by the Express backend using `POST /kyb/case`. The hosted session is returned to the browser only as a time-limited verification URL.
+
+### Endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/kyb/readiness` | Reports whether sandbox configuration is present |
+| POST | `/api/kyb/cases` | Creates a KYB case with VOVE sandbox |
+| GET | `/api/kyb/cases/:refId` | Reads the local in-memory case record |
+| POST | `/api/kyb/webhook` | Receives signed VOVE KYB webhook events |
+
+Configure the webhook URL in the VOVE dashboard as `https://YOUR_PUBLIC_HOST/api/kyb/webhook`. For local development, use a secure tunnel URL. Do not expose this endpoint without configuring and verifying the webhook signing secret.
+
+### Important limitations
+
+- This first provider integration implements KYB case creation and local status tracking. It does not yet implement VOVE's separate individual KYC SDK flow.
+- Case records are held in memory and disappear when the server restarts.
+- A created KYB case is not an approval. The business must complete the hosted flow, VOVE must process it, and the result must be reviewed.
+- Use synthetic test business information and VOVE-approved sandbox test data only. Do not upload real people's identity documents for this learning demo.
+- The webhook handler follows the signature format shown in VOVE's KYB integration guide. Confirm the exact header/signature format with the VOVE dashboard or support before relying on it outside sandbox testing.
+- No money movement or transfer execution is enabled by this integration.
