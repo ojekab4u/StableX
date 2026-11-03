@@ -20,6 +20,7 @@ import {
 import { checkBaseConnection, getBaseWalletBalance, } from "./baseConnection.js";
 import { Connection } from "@solana/web3.js";
 import { sendRouter } from "./routes/sendRoutes.js";
+import { kybRouter } from "./routes/kybRoutes.js";
 import { getQuotes, 
   getDemoSupportedPairs, } from "./providers/demoProviders.js";
 
@@ -35,7 +36,10 @@ const rpcUrl =
 
 const connection = new Connection(rpcUrl, "confirmed");
 
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({
+  limit: "10kb",
+  verify: (req, _res, buffer) => { req.rawBody = buffer.toString("utf8"); },
+}));
 app.use(express.static(path.join(__dirname, "public")));
 
 const supportedCurrencies = new Set(["USDT", "USDC", "NGN"]);
@@ -446,6 +450,7 @@ app.post("/api/base/vault/update", async (req, res) => {
 });
 
 app.use("/api/send", sendRouter);
+app.use("/api/kyb", kybRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
