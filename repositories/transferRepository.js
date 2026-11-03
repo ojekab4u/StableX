@@ -53,3 +53,19 @@ export async function updateTransferStatus({id,customerId,status,actorId,reason}
   await c.query("COMMIT");return r.rows[0];
  }catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
 }
+
+
+export async function recordProviderEvent({provider,eventId,eventType,payload}) {
+ const result=await getPool().query(
+  `INSERT INTO provider_events(provider,provider_event_id,event_type,payload)
+   VALUES($1,$2,$3,$4::jsonb)
+   ON CONFLICT(provider,provider_event_id) DO NOTHING
+   RETURNING id,received_at AS "receivedAt",processing_status AS status`,
+  [provider,eventId,eventType,JSON.stringify(payload)]);
+ if(!result.rowCount) return {duplicate:true};
+ await getPool().query(
+  `INSERT INTO audit_logs(actor_type,actor_id,action,resource_type,resource_id,metadata)
+   VALUES('PROVIDER',$1,'PROVIDER_EVENT_RECEIVED','PROVIDER_EVENT',$2,$3::jsonb)`,
+  [provider,String(result.rows[0].id),JSON.stringify({eventType})]);
+ return {duplicate:false,event:result.rows[0]};
+}
