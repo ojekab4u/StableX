@@ -39,6 +39,33 @@ const schemaStatements = [
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS beneficiaries (
+    beneficiary_id UUID PRIMARY KEY, customer_id VARCHAR(128) NOT NULL,
+    encrypted_details JSONB NOT NULL, details_fingerprint CHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (customer_id, details_fingerprint)
+  )`,
+  `CREATE INDEX IF NOT EXISTS beneficiaries_customer_idx ON beneficiaries (customer_id)`,
+  `CREATE TABLE IF NOT EXISTS transfers (
+    transfer_id UUID PRIMARY KEY, customer_id VARCHAR(128) NOT NULL,
+    beneficiary_id UUID NOT NULL REFERENCES beneficiaries(beneficiary_id),
+    source_currency VARCHAR(12) NOT NULL, source_amount NUMERIC(24,8) NOT NULL CHECK (source_amount > 0),
+    destination_currency VARCHAR(12) NOT NULL, destination_amount NUMERIC(24,8),
+    status VARCHAR(40) NOT NULL, quote_data JSONB, failure_reason TEXT,
+    idempotency_key VARCHAR(128) NOT NULL, request_fingerprint CHAR(64) NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (customer_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS transfers_customer_created_idx ON transfers (customer_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS transfers_status_idx ON transfers (status)`,
+  `CREATE TABLE IF NOT EXISTS transfer_events (
+    event_id BIGSERIAL PRIMARY KEY, transfer_id UUID NOT NULL REFERENCES transfers(transfer_id),
+    from_status VARCHAR(40), to_status VARCHAR(40) NOT NULL, actor_type VARCHAR(32) NOT NULL,
+    actor_id VARCHAR(128), reason TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS transfer_events_transfer_idx ON transfer_events (transfer_id, created_at)`
+
 ];
 
 export async function initializeDatabase() {
@@ -50,7 +77,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
