@@ -24,6 +24,8 @@ import { getQuotes,
 import { sendRouter } from "./routes/sendRoutes.js";
 import { kybRouter } from "./routes/kybRoutes.js";
 import { orchestrationRouter } from "./routes/orchestrationRoutes.js";
+import { checkDatabaseConnection } from "./db/pool.js";
+import { initializeDatabase } from "./db/initialize.js";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -46,6 +48,23 @@ const supportedCurrencies = new Set(["USDT", "USDC", "NGN"]);
 const selections = new Map();
 // Quotes issued by this server, keyed by their unique quote ID.
 const issuedQuotes = new Map();
+
+// PostgreSQL connectivity (does not expose connection details).
+app.get("/api/database/status", async (_req, res) => {
+  try {
+    const status = await checkDatabaseConnection();
+    return res.json({ application: "StableX", database: "PostgreSQL", ...status });
+  } catch (error) {
+    return res.status(503).json({
+      application: "StableX",
+      database: "PostgreSQL",
+      connected: false,
+      error: error.message.includes("DATABASE_URL")
+        ? error.message
+        : "Unable to connect to PostgreSQL. Check the server configuration.",
+    });
+  }
+});
 
 // Health endpoint
 app.get("/api/health", (req, res) => {
@@ -459,9 +478,25 @@ app.use("/api", (req, res) => {
 });
 
 
-app.listen(PORT, () => {
-  console.log(`StableX running at http://localhost:${PORT}`);
-  console.log(`Base RPC: ${process.env.BASE_RPC_URL || "https://mainnet.base.org"}`);
-  console.log("Quote mode: DEMO (no live prices or transactions)");
-  console.log(`Solana RPC: ${rpcUrl}`);
-});
+async function startServer() {
+  if (process.env.DATABASE_URL) {
+    try {
+      const result = await initializeDatabase();
+      console.log("PostgreSQL schema ready:", result.tables.join(", "));
+    } catch (error) {
+      console.error("PostgreSQL initialization failed:", error.message);
+      console.error("Database-backed orchestration requests will be unavailable until the connection is fixed.");
+    }
+  } else {
+    console.warn("DATABASE_URL is not configured. PostgreSQL persistence is unavailable.");
+  }
+
+  app.listen(PORT, () => {
+    console.log(`StableX running at http://localhost:${PORT}`);
+    console.log(`Base RPC: ${process.env.BASE_RPC_URL || "https://mainnet.base.org"}`);
+    console.log("Quote mode: DEMO (no live prices or transactions)");
+    console.log(`Solana RPC: ${rpcUrl}`);
+  });
+}
+
+startServer();

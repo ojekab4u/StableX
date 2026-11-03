@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { getPaytrieQuote, getPaytrieReadiness } from "./paytrieService.js";
-
-const intents = new Map();
+import { saveOrchestrationIntent, findOrchestrationIntent } from "../repositories/orchestrationRepository.js";
 
 export function getOrchestrationOverview() {
   return {
     application: "StableX",
     architecture: "PROVIDER_ORCHESTRATION",
     executionEnabled: false,
+    persistence: "POSTGRESQL_FOR_ORCHESTRATION_INTENTS",
     stages: [
       { id: "customer", name: "Customer and beneficiary profile", state: "LOCAL_PROTOTYPE" },
       { id: "identity", name: "KYC / KYB verification", state: "VOVE_KYB_ADAPTER_PRESENT_KYC_PENDING" },
@@ -29,14 +29,29 @@ export function getOrchestrationOverview() {
 }
 
 export async function quoteThroughOrchestrator(input) {
-  const quote = await getPaytrieQuote(input);
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
+    const error = new Error("Amount must be greater than 0 and at most 1,000,000.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const from = input.from.trim().toUpperCase();
+  const to = input.to.trim().toUpperCase();
+  if (from === to) {
+    const error = new Error("Source and destination currencies must be different.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const quote = await getPaytrieQuote({ ...input, from, to, amount });
   const intentId = randomUUID();
   const intent = {
     intentId,
     createdAt: new Date().toISOString(),
     status: "QUOTE_RECEIVED_NOT_EXECUTED",
-    source: { currency: input.from, amount: Number(input.amount) },
-    destination: { currency: input.to, amount: quote.toAmount },
+    source: { currency: from, amount },
+    destination: { currency: to, amount: quote.toAmount },
     provider: "Paytrie",
     quote,
     nextRequiredActions: [
@@ -48,10 +63,11 @@ export async function quoteThroughOrchestrator(input) {
     ],
     executionEnabled: false,
   };
-  intents.set(intentId, intent);
+
+  await saveOrchestrationIntent(intent);
   return intent;
 }
 
-export function getOrchestrationIntent(intentId) {
-  return intents.get(intentId) || null;
+export async function getOrchestrationIntent(intentId) {
+  return findOrchestrationIntent(intentId);
 }
