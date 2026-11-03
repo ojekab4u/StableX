@@ -321,3 +321,42 @@ Example quote request:
 The adapter uses Paytrie's documented v2 `GET /quotes` endpoint and the `x-api-key` header. Paytrie transaction creation is deliberately not enabled: its documented transaction flow also requires an authenticated user JWT and customer payment. The quote is not a reservation of liquidity and is not a completed transfer.
 
 The orchestration overview is an integration map, not proof that every provider is connected. KYC/KYB, corridor checks, customer funding, blockchain settlement, payout, webhook reconciliation and persistent audit records must be completed before any end-to-end transfer can be enabled.
+
+
+## Durable transfer management (prototype)
+
+The PostgreSQL foundation now includes customer-scoped beneficiaries, transfer drafts, lifecycle events, provider event records and audit entries.
+
+### Required server configuration
+
+- `DATABASE_URL` — PostgreSQL/Neon connection string.
+- `BENEFICIARY_ENCRYPTION_KEY` — base64-encoded 32-byte key used for AES-256-GCM encryption of beneficiary details. Generate locally with:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
+- `STABLEX_OPERATOR_TOKEN` — bearer token required for manual lifecycle transitions.
+- `STABLEX_EVENT_INGESTION_TOKEN` — bearer token required for internal provider-event ingestion.
+
+Keep all values in the local server environment. Back up the encryption key securely: beneficiary records cannot be decrypted if it is lost.
+
+### API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/transfers/beneficiaries` | Save encrypted beneficiary details |
+| GET | `/api/transfers/beneficiaries?customerId=...` | Retrieve a customer's beneficiary records |
+| POST | `/api/transfers` | Create a durable DRAFT (requires `Idempotency-Key` header) |
+| GET | `/api/transfers?customerId=...` | List up to 100 customer transfers |
+| GET | `/api/transfers/:id?customerId=...` | Retrieve one customer transfer |
+| PATCH | `/api/transfers/:id/status` | Operator-authorized lifecycle transition |
+| POST | `/api/transfers/provider-events` | Idempotently record an internally forwarded provider event |
+
+Allowed transitions: `DRAFT → QUOTED → AWAITING_FUNDING → FUNDED → SETTLEMENT_PENDING → COMPLETED`, with permitted `FAILED` and `CANCELLED` paths. Every transfer creation and status change writes a transfer event and audit record in the same database transaction. Duplicate idempotency keys return the original transfer; reusing a key with a different request returns HTTP 409.
+
+### Important security and integration boundaries
+
+This is a local integration prototype, not a production customer API. The `customerId` field is currently a caller-supplied identifier, not an authenticated identity; do not expose these routes publicly until real authentication, authorization and tenant isolation are implemented. The operator and event-ingestion bearer tokens are prototype controls, not replacements for an identity provider or provider-specific webhook signature verification.
+
+Beneficiary details are encrypted at rest, but are decrypted for the authenticated customer-facing response path in this prototype. Provider events are stored idempotently but do not automatically advance transfer state. Provider-specific signature verification, event-to-transfer correlation, reconciliation and automated state transitions remain follow-up work.
+
+No endpoint in this milestone collects funds, creates a Paytrie transaction, signs a blockchain transaction, sends a payout, or moves money. Manual lifecycle changes are records only.
