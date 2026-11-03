@@ -22,7 +22,8 @@ import { Connection } from "@solana/web3.js";
 import { getQuotes, 
   getDemoSupportedPairs, } from "./providers/demoProviders.js";
 import { sendRouter } from "./routes/sendRoutes.js";
-import {kybRouter} from "./routes/kybRoutes.js"
+import { kybRouter } from "./routes/kybRoutes.js";
+import { orchestrationRouter } from "./routes/orchestrationRoutes.js";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -450,6 +451,7 @@ app.post("/api/base/vault/update", async (req, res) => {
 
 app.use("/api/send", sendRouter);
 app.use("/api/kyb", kybRouter);
+app.use("/api/orchestration", orchestrationRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
