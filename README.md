@@ -388,3 +388,12 @@ Use `provider` as `honeycoin`, `paycrest`, or `all`. Honeycoin's adapter obtains
 Both adapters return indicative provider data only. They do not create orders, reserve liquidity, collect fiat, transfer tokens, or initiate payouts. Paycrest order access requires sender KYB approval and dashboard configuration of each token/network's sender fee, fee address and refund address. Honeycoin credentials must be enabled for the relevant products and corridors. Configuration presence is not a successful connection test or provider approval.
 
 Never expose credentials in browser code or commit `.env`. Provider order creation is intentionally not part of this milestone; it requires a separately reviewed execution workflow with provider idempotency, beneficiary mapping, webhook signature verification, transaction reconciliation and explicit customer confirmation.
+
+
+### Provider integration console
+
+Open `/providers.html` to inspect Honeycoin and Paycrest configuration readiness and request indicative rate previews. The console reads readiness from the StableX backend and never requests or displays provider secrets in the browser.
+
+Configure credentials only in the server-side `.env` file. Keep each variable on its own line. Use actual provider-issued sandbox credentials; do not use sample values such as `key`, `your_api_key`, or `your_sandbox_api_key`. The readiness endpoint treats common placeholder values as missing. A credentials-present status is not proof of provider approval or successful API access.
+
+The provider console remains read-only. It does not create provider orders, reserve liquidity, accept customer funds, transfer tokens or initiate payouts.
