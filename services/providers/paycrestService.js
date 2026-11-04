@@ -48,7 +48,8 @@ export async function getPaycrestRate({ from, to, amount, network = "base" }) {
     throw error;
   }
 
-  const url = `${API_BASE_URL()}/v2/rates/${encodeURIComponent(safeNetwork)}/${encodeURIComponent(token)}/${encodeURIComponent(String(amount))}/${encodeURIComponent(fiat)}`;
+  const rateRequestTokenAmount = fromIsToken ? amount : 1;
+  const url = `${API_BASE_URL()}/v2/rates/${encodeURIComponent(safeNetwork)}/${encodeURIComponent(token)}/${encodeURIComponent(String(rateRequestTokenAmount))}/${encodeURIComponent(fiat)}`;
   const response = await fetch(url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(12_000),
@@ -68,6 +69,7 @@ export async function getPaycrestRate({ from, to, amount, network = "base" }) {
     amount,
     direction: fromIsToken ? "OFFRAMP" : "ONRAMP",
     network: safeNetwork,
+    rateRequestTokenAmount,
     providerData: payload.data ?? payload,
     executionEnabled: false,
     note: "Public indicative rate preview only. Order creation, liquidity reservation and settlement are not performed.",
