@@ -309,8 +309,8 @@ API endpoints:
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/orchestration/overview` | Displays the workflow stages and provider readiness |
-| POST | `/api/orchestration/quote` | Requests a live Paytrie v2 quote and records a local orchestration intent |
-| GET | `/api/orchestration/intents/:intentId` | Retrieves the in-memory intent |
+| POST | `/api/orchestration/quote` | Requests a live Paytrie v2 quote and records a PostgreSQL-persisted orchestration intent |
+| GET | `/api/orchestration/intents/:intentId` | Retrieves the PostgreSQL-persisted orchestration intent |
 
 Example quote request:
 
