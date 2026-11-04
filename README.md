@@ -309,8 +309,8 @@ API endpoints:
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/orchestration/overview` | Displays the workflow stages and provider readiness |
-| POST | `/api/orchestration/quote` | Requests a live Paytrie v2 quote and records a local orchestration intent |
-| GET | `/api/orchestration/intents/:intentId` | Retrieves the in-memory intent |
+| POST | `/api/orchestration/quote` | Requests a live Paytrie v2 quote and records a PostgreSQL-persisted orchestration intent |
+| GET | `/api/orchestration/intents/:intentId` | Retrieves the PostgreSQL-persisted orchestration intent |
 
 Example quote request:
 
@@ -360,3 +360,31 @@ This is a local integration prototype, not a production customer API. The `custo
 Beneficiary details are encrypted at rest and decrypted by these prototype read endpoints. The caller-supplied customerId is not authentication; do not expose these endpoints publicly. Provider events are stored idempotently but do not automatically advance transfer state. Provider-specific signature verification, event-to-transfer correlation, reconciliation and automated state transitions remain follow-up work.
 
 No endpoint in this milestone collects funds, creates a Paytrie transaction, signs a blockchain transaction, sends a payout, or moves money. Manual lifecycle changes are records only.
+
+
+## Honeycoin and Paycrest provider adapters
+
+The provider adapter layer is available at:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/providers/readiness` | Reports Honeycoin and Paycrest credential/configuration readiness |
+| POST | `/api/providers/quotes` | Requests read-only indicative FX/rate previews |
+
+Example:
+
+```json
+{
+  "provider": "all",
+  "from": "NGN",
+  "to": "USDC",
+  "amount": 10000,
+  "network": "base"
+}
+```
+
+Use `provider` as `honeycoin`, `paycrest`, or `all`. Honeycoin's adapter obtains a server-side bearer token using its API key and public key, then calls the documented B2B FX-rate endpoint. Set `HONEYCOIN_ENVIRONMENT=Sandbox` for sandbox credentials. Paycrest's adapter calls its public v2 rate-preview endpoint; the documented preview currently supports USDC/USDT against NGN, KES, UGX, TZS, MWK and BRL.
+
+Both adapters return indicative provider data only. They do not create orders, reserve liquidity, collect fiat, transfer tokens, or initiate payouts. Paycrest order access requires sender KYB approval and dashboard configuration of each token/network's sender fee, fee address and refund address. Honeycoin credentials must be enabled for the relevant products and corridors. Configuration presence is not a successful connection test or provider approval.
+
+Never expose credentials in browser code or commit `.env`. Provider order creation is intentionally not part of this milestone; it requires a separately reviewed execution workflow with provider idempotency, beneficiary mapping, webhook signature verification, transaction reconciliation and explicit customer confirmation.
