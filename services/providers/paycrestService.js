@@ -3,10 +3,11 @@ const API_BASE_URL = () =>
 
 const SUPPORTED_FIAT_PREVIEW = new Set(["NGN", "KES", "UGX", "TZS", "MWK", "BRL"]);
 const SUPPORTED_TOKENS = new Set(["USDC", "USDT"]);
+const isUsableCredential = (value) => Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(value.trim());
 
 export function getPaycrestReadiness() {
-  const apiKeyPresent = Boolean(String(process.env.PAYCREST_API_KEY || "").trim());
-  const apiSecretPresent = Boolean(String(process.env.PAYCREST_API_SECRET || "").trim());
+  const apiKeyPresent = isUsableCredential(String(process.env.PAYCREST_API_KEY || "").trim());
+  const apiSecretPresent = isUsableCredential(String(process.env.PAYCREST_API_SECRET || "").trim());
   const missingVariables = [];
   if (!apiKeyPresent) missingVariables.push("PAYCREST_API_KEY");
   if (!apiSecretPresent) missingVariables.push("PAYCREST_API_SECRET");

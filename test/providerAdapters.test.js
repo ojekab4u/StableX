@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getPaycrestRate } from "../services/providers/paycrestService.js";
-import { getHoneycoinRate } from "../services/providers/honeycoinService.js";
+import { getPaycrestRate, getPaycrestReadiness } from "../services/providers/paycrestService.js";
+import { getHoneycoinRate, getHoneycoinReadiness } from "../services/providers/honeycoinService.js";
 
 test("Paycrest onramp preview requests a one-token indicative rate", async () => {
   const originalFetch = globalThis.fetch;
@@ -71,6 +71,35 @@ test("Honeycoin obtains a bearer token server-side before requesting FX rates", 
   } finally {
     globalThis.fetch = originalFetch;
     for (const [key, value] of [["HONEYCOIN_API_KEY", originalKey], ["HONEYCOIN_PUBLIC_KEY", originalPublic], ["HONEYCOIN_API_BASE_URL", originalBase]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+
+test("placeholder credentials are reported as missing", () => {
+  const original = {
+    honeyKey: process.env.HONEYCOIN_API_KEY,
+    honeyPublic: process.env.HONEYCOIN_PUBLIC_KEY,
+    paycrestKey: process.env.PAYCREST_API_KEY,
+    paycrestSecret: process.env.PAYCREST_API_SECRET,
+  };
+  process.env.HONEYCOIN_API_KEY = "key";
+  process.env.HONEYCOIN_PUBLIC_KEY = "";
+  process.env.PAYCREST_API_KEY = "your_api_key";
+  process.env.PAYCREST_API_SECRET = "your_api_secret";
+
+  try {
+    assert.equal(getHoneycoinReadiness().configured, false);
+    assert.equal(getPaycrestReadiness().configured, false);
+  } finally {
+    for (const [key, value] of [
+      ["HONEYCOIN_API_KEY", original.honeyKey],
+      ["HONEYCOIN_PUBLIC_KEY", original.honeyPublic],
+      ["PAYCREST_API_KEY", original.paycrestKey],
+      ["PAYCREST_API_SECRET", original.paycrestSecret],
+    ]) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }

@@ -1,5 +1,6 @@
 const API_KEY = () => String(process.env.HONEYCOIN_API_KEY || "").trim();
 const PUBLIC_KEY = () => String(process.env.HONEYCOIN_PUBLIC_KEY || "").trim();
+const isUsableCredential = (value) => Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(value.trim());
 
 function getBaseUrl() {
   const configured = String(process.env.HONEYCOIN_API_BASE_URL || "").trim();
@@ -15,8 +16,8 @@ let tokenExpiresAt = 0;
 
 export function getHoneycoinReadiness() {
   const missingVariables = [];
-  if (!API_KEY()) missingVariables.push("HONEYCOIN_API_KEY");
-  if (!PUBLIC_KEY()) missingVariables.push("HONEYCOIN_PUBLIC_KEY");
+  if (!isUsableCredential(API_KEY())) missingVariables.push("HONEYCOIN_API_KEY");
+  if (!isUsableCredential(PUBLIC_KEY())) missingVariables.push("HONEYCOIN_PUBLIC_KEY");
   return {
     name: "Honeycoin",
     configured: missingVariables.length === 0,
@@ -31,7 +32,7 @@ export function getHoneycoinReadiness() {
 }
 
 async function getBearerToken() {
-  if (!API_KEY() || !PUBLIC_KEY()) {
+  if (!isUsableCredential(API_KEY()) || !isUsableCredential(PUBLIC_KEY())) {
     const error = new Error("Honeycoin credentials are not configured. Set HONEYCOIN_API_KEY and HONEYCOIN_PUBLIC_KEY.");
     error.statusCode = 503;
     throw error;
@@ -51,8 +52,8 @@ async function getBearerToken() {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.token) {
-    const error = new Error(payload.message || "Honeycoin authentication failed.");
-    error.statusCode = response.status === 401 || response.status === 403 ? 502 : 503;
+    const error = new Error(payload.message || "Honeycoin authentication failed. Check the sandbox API key and public key configured on the server.");
+    error.statusCode = response.status === 400 || response.status === 401 || response.status === 403 ? 502 : 503;
     throw error;
   }
 
