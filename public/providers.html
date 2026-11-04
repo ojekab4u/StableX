@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX — Provider Integrations</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/providers.css">
+  <script src="/providers.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav>
+      <a href="/send.html">Send &amp; settle</a>
+      <a href="/kyb.html">KYC / KYB</a>
+      <a href="/orchestration.html">Orchestration</a>
+      <a href="/providers.html" aria-current="page">Providers</a>
+    </nav>
+    <div class="network-label">Integration console</div>
+  </header>
+
+  <main class="providers-page">
+    <section class="providers-hero">
+      <p class="eyebrow">STABLEX / PROVIDER CONNECTIONS</p>
+      <h1>Provider integration console</h1>
+      <p>Inspect server-side configuration and request provider rate previews from one place.</p>
+      <div class="provider-safety">
+        <strong>Read-only mode.</strong> This console does not create orders, collect funds, reserve liquidity, transfer tokens or initiate payouts. Credentials are configured only on the StableX server.
+      </div>
+    </section>
+
+    <section class="provider-section">
+      <div class="provider-section-heading">
+        <div><p class="eyebrow">01 / CONNECTIONS</p><h2>Provider readiness</h2></div>
+        <button id="refresh-readiness" class="secondary-btn" type="button">Refresh status</button>
+      </div>
+      <div id="provider-cards" class="provider-cards" aria-live="polite">
+        <p class="muted">Loading provider configuration…</p>
+      </div>
+      <p id="readiness-updated" class="provider-muted"></p>
+    </section>
+
+    <section class="provider-section">
+      <p class="eyebrow">02 / RATE DISCOVERY</p>
+      <h2>Request indicative rates</h2>
+      <p class="provider-muted">Choose a provider and enter the corridor you want to inspect. Provider availability depends on your account permissions and supported currencies.</p>
+      <form id="provider-quote-form" class="provider-form">
+        <label class="provider-field">
+          <span>Provider</span>
+          <select name="provider">
+            <option value="all">All providers</option>
+            <option value="honeycoin">Honeycoin</option>
+            <option value="paycrest">Paycrest</option>
+          </select>
+        </label>
+        <label class="provider-field">
+          <span>Source currency / token</span>
+          <input name="from" value="NGN" maxlength="12" pattern="[A-Za-z0-9]{3,12}" required>
+        </label>
+        <label class="provider-field">
+          <span>Destination currency / token</span>
+          <input name="to" value="USDC" maxlength="12" pattern="[A-Za-z0-9]{3,12}" required>
+        </label>
+        <label class="provider-field">
+          <span>Amount</span>
+          <input name="amount" type="number" min="0.000001" max="1000000" step="any" value="10000" required>
+        </label>
+        <label class="provider-field">
+          <span>Network</span>
+          <input name="network" value="base" maxlength="24" pattern="[A-Za-z0-9-]{2,24}" required>
+        </label>
+        <div class="provider-form-actions">
+          <button id="request-provider-quotes" class="primary-btn" type="submit">Request rate preview</button>
+          <span id="quote-progress" class="provider-muted" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+      <div id="provider-quote-results" class="provider-results" aria-live="polite">
+        <p class="muted">Your provider results will appear here.</p>
+      </div>
+    </section>
+
+    <section class="provider-section provider-config-note">
+      <p class="eyebrow">03 / SERVER CONFIGURATION</p>
+      <h2>Where credentials belong</h2>
+      <p>Keep provider secrets in the local server-side <code>.env</code> file. Do not paste API keys into this page, commit them to Git, or expose them in frontend code.</p>
+      <pre><code>HONEYCOIN_ENVIRONMENT=Sandbox
+HONEYCOIN_API_BASE_URL=
+HONEYCOIN_API_KEY=
+HONEYCOIN_PUBLIC_KEY=
+
+PAYCREST_API_BASE_URL=https://api.paycrest.io
+PAYCREST_API_KEY=
+PAYCREST_API_SECRET=</code></pre>
+      <p class="provider-muted">A configured status means required values are present; it does not prove that the provider has approved your account or enabled a corridor. Use the readiness refresh and rate preview to test the available read-only access.</p>
+    </section>
+
+    <footer><p>StableX · Provider adapter preparation · Execution disabled</p></footer>
+  </main>
+</body>
+</html>
