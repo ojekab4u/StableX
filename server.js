@@ -25,6 +25,7 @@ import { sendRouter } from "./routes/sendRoutes.js";
 import { kybRouter } from "./routes/kybRoutes.js";
 import { orchestrationRouter } from "./routes/orchestrationRoutes.js";
 import { transferRouter } from "./routes/transferRoutes.js";
+import { providerRouter } from "./routes/providerRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
 const app = express();
@@ -473,6 +474,7 @@ app.use("/api/send", sendRouter);
 app.use("/api/kyb", kybRouter);
 app.use("/api/orchestration", orchestrationRouter);
 app.use("/api/transfers", transferRouter);
+app.use("/api/providers", providerRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
