@@ -15,17 +15,19 @@
     <p class="eyebrow">STABLEX / TRANSACTION ORCHESTRATION</p>
     <h1>Orchestration console</h1>
     <p>One workflow coordinates identity, corridor eligibility, provider quotes, funding, blockchain settlement, payout and reconciliation.</p>
-    <div class="orch-warning"><strong>Prototype boundary:</strong> Paytrie quote requests can be live when credentials are configured. No customer payment, stablecoin purchase, blockchain transfer or fiat payout is initiated here.</div>
+    <div class="orch-warning"><strong>Prototype boundary:</strong> Honeycoin and Paycrest rate previews are available where supported. No customer payment, provider order, stablecoin purchase, blockchain transfer or fiat payout is initiated here.</div>
     <section class="orch-panel"><h2>Workflow stages</h2><div id="stages" class="orch-grid">Loading orchestration status…</div></section>
     <section class="orch-panel">
-      <h2>Request a live Paytrie quote</h2>
+      <h2>Request provider rate previews</h2>
       <form id="quote-form" class="orch-form">
-        <label>From<select name="from"><option>CAD</option><option>USDC</option><option>CADC</option></select></label>
-        <label>To<select name="to"><option>USDC</option><option>CADC</option><option>CAD</option></select></label>
-        <label>Amount<input name="amount" type="number" min="0.01" step="0.01" value="100" required></label>
-        <button type="submit" class="kyb-btn">Get provider quote</button>
+        <label>Provider<select name="provider"><option value="all">All providers</option><option value="honeycoin">Honeycoin</option><option value="paycrest">Paycrest</option></select></label>
+        <label>From<input name="from" value="NGN" maxlength="12" required></label>
+        <label>To<input name="to" value="USDC" maxlength="12" required></label>
+        <label>Amount<input name="amount" type="number" min="0.000001" max="1000000" step="any" value="10000" required></label>
+        <label>Network<input name="network" value="base" maxlength="24" required></label>
+        <button type="submit" class="kyb-btn">Request rate preview</button>
       </form>
-      <div id="quote-result" class="orch-result">A quote request will call Paytrie v2 from the StableX backend. Configure PAYTRIE_API_KEY in .env first.</div>
+      <div id="quote-result" class="orch-result">Provider credentials stay in the server-side .env file. Open Provider Integrations to inspect readiness. This request is read-only and does not create an order.</div>
     </section>
   </main>
   <script>
@@ -40,11 +42,12 @@
       }
     }).catch(()=>stagesEl.textContent="Unable to load orchestration overview.");
     document.querySelector("#quote-form").addEventListener("submit",async e=>{
-      e.preventDefault();const out=document.querySelector("#quote-result");out.textContent="Requesting live quote from Paytrie…";
+      e.preventDefault();const out=document.querySelector("#quote-result");out.textContent="Requesting provider rate previews…";
       const body=Object.fromEntries(new FormData(e.currentTarget).entries());body.amount=Number(body.amount);
+      body.from=body.from.trim().toUpperCase();body.to=body.to.trim().toUpperCase();body.network=body.network.trim().toLowerCase();
       try{
-        const response=await fetch("/api/orchestration/quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-        const data=await response.json();if(!response.ok)throw new Error(data.error||"Quote request failed.");
+        const response=await fetch("/api/providers/quotes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const data=await response.json();if(!response.ok)throw new Error(data.error||"Provider rate request failed.");
         out.textContent=JSON.stringify(data,null,2);
       }catch(error){out.textContent=error.message;}
     });
