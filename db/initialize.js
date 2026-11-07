@@ -160,7 +160,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_order_attempts"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
