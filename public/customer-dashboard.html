@@ -595,6 +595,31 @@
       connectWalletBtn.textContent = "Connected";
       connectWalletBtn.className = "wallet-connected";
       connectWalletBtn.disabled = true;
+      // Link the external wallet to this StableX customer only after the wallet
+      // signs a one-time ownership statement. This does not grant StableX custody.
+      try {
+        const message = `StableX wallet connection\nCustomer: ${customerId}\nAddress: ${walletAddress.toLowerCase()}\nChain ID: ${chainId}`;
+        const signature = await window.ethereum.request({
+          method: "personal_sign",
+          params: [message, walletAddress],
+        });
+        await api("/api/customer/external-wallets", {
+          method: "POST",
+          body: {
+            customerId,
+            address: walletAddress,
+            chainId,
+            walletProvider: window.ethereum.isMetaMask ? "MetaMask" : "EVM Wallet",
+            message,
+            signature,
+          },
+        });
+        connStatus.textContent = `Linked: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+      } catch (linkError) {
+        // Connection remains available for read-only on-chain balance display
+        // if the customer declines the optional ownership signature.
+        console.info("External wallet not linked to StableX:", linkError.message);
+      }
       await loadTokenBalances();
     } catch (e) {
       alert("Failed to connect wallet: " + e.message);
