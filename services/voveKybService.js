@@ -39,7 +39,7 @@ export function getVoveKybReadiness() {
   };
 }
 
-export async function createVoveKycCase({ fullName, country, dateOfBirth, email, phone, type = "INDIVIDUAL" }) {
+export async function createVoveKycCase({ fullName, country, dateOfBirth, email, phone, type = "INDIVIDUAL", registrationNumber, city, address }) {
   const settings = config();
   const refId = `stablex_${type === "BUSINESS" ? "kyb" : "kyc"}_${randomUUID()}`;
   const payload = {
@@ -50,6 +50,10 @@ export async function createVoveKycCase({ fullName, country, dateOfBirth, email,
     ...(dateOfBirth ? { dateOfBirth } : {}),
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
+    ...(type === "BUSINESS" ? { type: "BUSINESS" } : {}),
+    ...(registrationNumber ? { registrationNumber } : {}),
+    ...(city ? { city } : {}),
+    ...(address ? { address } : {}),
   };
 
   const response = await fetch(`${settings.baseUrl}/sessions`, {
