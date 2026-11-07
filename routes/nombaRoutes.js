@@ -8,7 +8,7 @@ import {
   applyNombaWebhook,
   verifyNombaWebhookSignature,
 } from "../services/nombaService.js";
-import { creditBalance } from "../services/customerBalanceService.js";
+import { getCustomerGateStatus } from "../services/complianceService.js";
 
 export const nombaRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
@@ -25,6 +25,8 @@ nombaRouter.post("/virtual-accounts", async (req, res) => {
     if (!customerId || !customerName) {
       return res.status(400).json({ error: "customerId and customerName are required." });
     }
+    const gate = await getCustomerGateStatus(customerId);
+    if (!gate.gate.approved) return res.status(403).json({ error: "Complete identity verification before requesting payment details.", verification: gate.gate });
     const account = await createNombaVirtualAccount({ customerId, customerName, email, phone, bvn });
     return res.status(201).json({ account });
   } catch (e) {
@@ -33,10 +35,10 @@ nombaRouter.post("/virtual-accounts", async (req, res) => {
 });
 
 // List all virtual accounts for a customer
-nombaRouter.get("/virtual-accounts/:customerId", (_req, res) => {
+nombaRouter.get("/virtual-accounts/:customerId", async (_req, res) => {
   try {
     const customerId = _req.params.customerId;
-    const accounts = getNombaAccountsByCustomer(customerId);
+    const accounts = await getNombaAccountsByCustomer(customerId);
     return res.json({ customerId, accounts });
   } catch (e) {
     return fail(res, e);
@@ -44,10 +46,10 @@ nombaRouter.get("/virtual-accounts/:customerId", (_req, res) => {
 });
 
 // Get a single virtual account
-nombaRouter.get("/virtual-accounts/:refId/details", (_req, res) => {
+nombaRouter.get("/virtual-accounts/:refId/details", async (_req, res) => {
   try {
     const refId = _req.params.refId;
-    const account = getNombaAccount(refId);
+    const account = await getNombaAccount(refId);
     if (!account) {
       return res.status(404).json({ error: "Virtual account not found." });
     }
@@ -74,24 +76,16 @@ nombaRouter.post("/webhook", async (req, res) => {
     }
 
     const event = req.body || {};
-    const result = applyNombaWebhook(event);
+    const result = await applyNombaWebhook(event);
 
     if (!result.updated) {
-      return res.status(200).json({ received: true, updated: false, reason: result.reason });
+      return res.status(200).json({ received: true, ...result });
     }
-
-    // Credit the customer's NGN wallet
-    await creditBalance(
-      result.customerId,
-      "NGN",
-      result.amount,
-      `nomba_webhook_${result.refId}`,
-      { accountNumber: result.accountNumber, provider: "Nomba", eventType: event.type }
-    );
 
     return res.status(200).json({
       received: true,
       updated: true,
+      duplicate: false,
       refId: result.refId,
       customerId: result.customerId,
       amount: result.amount,

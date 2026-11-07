@@ -276,7 +276,7 @@
 
   <!-- Wallet Creation -->
   <div class="card">
-    <h2>Create Wallet</h2>
+    <h2>Create Internal Wallet</h2>
     <div class="wallet-section">
       <div class="wallet-title">Choose your wallet currency</div>
       <div class="wallet-grid" id="walletGrid"></div>
@@ -294,8 +294,8 @@
 
   <!-- NGN Virtual Account (Nomba) -->
   <div class="card">
-    <h2>NGN Virtual Account (Nomba)</h2>
-    <p class="hint">Generate a dedicated NGN bank account number. Fund it via bank transfer from any Nigerian bank. Nomba webhook will credit your wallet automatically.</p>
+    <h2>NGN Payment Details (Nomba)</h2>
+    <p class="hint">For approved customers with an NGN wallet, request provider-issued bank payment details. Only verified Nomba payment webhooks credit your wallet ledger.</p>
     <div class="form-row">
       <div class="single">
         <label>Account Name</label>
@@ -376,7 +376,7 @@
       <input type="number" id="addAmount" placeholder="0.00" min="0" step="0.01" />
     </div>
     <div class="error" id="addError"></div>
-    <button class="btn-submit" id="addBtn">Credit Wallet</button>
+    <button class="btn-submit" id="addBtn">Manual credit disabled</button>
     <div class="success" id="addSuccess"></div>
   </div>
 
@@ -595,6 +595,34 @@
       connectWalletBtn.textContent = "Connected";
       connectWalletBtn.className = "wallet-connected";
       connectWalletBtn.disabled = true;
+      // Link the external wallet to this StableX customer only after the wallet
+      // signs a one-time ownership statement. This does not grant StableX custody.
+      try {
+        const activeChainId = Number(await window.ethereum.request({ method: "eth_chainId" }));
+        if (activeChainId !== 84532) throw new Error("Switch to Base Sepolia before linking this wallet.");
+        chainId = activeChainId;
+        const message = `StableX wallet connection\nCustomer: ${customerId}\nAddress: ${walletAddress.toLowerCase()}\nChain ID: ${chainId}`;
+        const signature = await window.ethereum.request({
+          method: "personal_sign",
+          params: [message, walletAddress],
+        });
+        await api("/api/customer/external-wallets", {
+          method: "POST",
+          body: {
+            customerId,
+            address: walletAddress,
+            chainId,
+            walletProvider: window.ethereum.isMetaMask ? "MetaMask" : "EVM Wallet",
+            message,
+            signature,
+          },
+        });
+        connStatus.textContent = `Linked: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+      } catch (linkError) {
+        // Connection remains available for read-only on-chain balance display
+        // if the customer declines the optional ownership signature.
+        console.info("External wallet not linked to StableX:", linkError.message);
+      }
       await loadTokenBalances();
     } catch (e) {
       alert("Failed to connect wallet: " + e.message);
@@ -841,7 +869,7 @@
 
   createWalletBtn.addEventListener("click", async () => {
     try {
-      await api("/api/customer/wallets", { method: "POST", body: { customerId, currency: selectedWallet } });
+      await api("/api/customer/wallets", { method: "POST", body: { customerId, currency: selectedWallet, country: customerCountry } });
       selectedWallet = null;
       createWalletBtn.disabled = true;
       document.querySelectorAll(".wallet-option").forEach(el => el.classList.remove("selected"));
@@ -892,7 +920,7 @@
       exTo.appendChild(o);
     }
     // sendToken: show ALL on-chain tokens (even with 0 balance) so user can select
-    const onchain = ["USDC", "EURC", "CADD", "CADC"];
+    const onchain = ["USDC", "EURC"];
     for (const code of onchain) {
       const bal = balances[code] || 0;
       const o = document.createElement("option");
@@ -965,112 +993,88 @@
     sendBtn.disabled = !token || !to || !amt || amt <= 0;
   }
 
-  addBtn.addEventListener("click", async () => {
-    const cur = addCurrency.value;
-    const amt = parseFloat(addAmount.value);
-    if (!amt || amt <= 0) {
-      addError.textContent = "Enter a valid amount.";
-      addError.style.display = "block";
-      return;
-    }
-    try {
-      await api("/api/customer/credit", { method: "POST", body: { customerId, currency: cur, amount: amt, reference: "demo_fund" } });
-      addSuccess.textContent = `Credited ${amt} ${cur}.`;
-      addSuccess.style.display = "block";
-      addAmount.value = "";
-      await loadWallets();
-      await loadSummary();
-    } catch (e) {
-      addError.textContent = e.message;
-      addError.style.display = "block";
-    }
+  addBtn.addEventListener("click", () => {
+    addError.textContent = "Manual balance credits are disabled. Fund your wallet using verified provider payment details (for NGN, request a Nomba virtual account below).";
+    addError.style.display = "block";
   });
 
   exBtn.addEventListener("click", async () => {
     const from = exFrom.value;
     const to = exTo.value;
     const amt = parseFloat(exAmount.value);
-    if (!amt || amt <= 0) return;
-
+    if (!from || !to || from === to || !amt || amt <= 0) {
+      exError.textContent = "Choose two different wallet assets and enter a valid amount.";
+      exError.style.display = "block";
+      return;
+    }
     try {
-      // Pre-check balance before attempting debit
-      const wallets = await api(`/api/customer/wallets/${customerId}`);
-      const wallet = wallets.wallets.find(w => w.currency === from);
-      const currentBal = wallet ? wallet.balance : 0;
-      if (currentBal < amt) {
-        exError.textContent = `Insufficient ${from} balance. Available: ${currentBal}, requested: ${amt}. Please select a wallet with sufficient balance.`;
-        exError.style.display = "block";
-        return;
-      }
-
-      await api("/api/customer/debit", { method: "POST", body: { customerId, currency: from, amount: amt, reference: "exchange", meta: { to } } });
       const d = await api("/api/routing/quotes", { method: "POST", body: { from, to, amount: amt } });
-      const best = d.candidates[0];
-      const receive = best.destinationAmount;
-      await api("/api/customer/credit", { method: "POST", body: { customerId, currency: to, amount: receive, reference: "exchange", meta: { from } } });
-      exSuccess.textContent = `Exchanged ${amt} ${from} → ${receive.toFixed(4)} ${to}.`;
+      const best = (d.candidates || []).slice().sort((a,b) => Number(b.destinationAmount || 0) - Number(a.destinationAmount || 0))[0];
+      if (!best) throw new Error("No provider quote is available for this pair.");
+      exSuccess.textContent = `Quote preview only: ${amt} ${from} → ${best.destinationAmount} ${to} via ${best.provider}. This has not debited or credited either wallet. A provider order and funding confirmation are required before balances change.`;
       exSuccess.style.display = "block";
-      exAmount.value = "";
-      updateExchangeQuote();
-      await loadWallets();
-      await loadSummary();
+      exError.style.display = "none";
     } catch (e) {
       exError.textContent = e.message;
       exError.style.display = "block";
     }
   });
 
-  // --- Send (proper transfer lifecycle with wallet signing) ---
-
   sendBtn.addEventListener("click", async () => {
     const token = sendToken.value;
     const to = sendToAddress.value.trim();
-    const amt = parseFloat(sendAmount.value);
-    if (!token || !to || !amt || amt <= 0) return;
-    if (!walletAddress) {
-      sendError.textContent = "Please connect your wallet first.";
+    const amount = Number(sendAmount.value);
+    if (!token || !to || !Number.isFinite(amount) || amount <= 0) return;
+    if (!walletAddress || !window.ethereum) {
+      sendError.textContent = "Connect your external wallet first.";
       sendError.style.display = "block";
       return;
     }
-
+    const tokenContracts = {
+      USDC: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      EURC: "0x808456652fdb597867f38412077A9182bf77359F",
+    };
+    const tokenAddress = tokenContracts[token];
+    if (!tokenAddress) {
+      sendError.textContent = `${token} is not enabled for this Base Sepolia wallet transfer yet.`;
+      sendError.style.display = "block";
+      return;
+    }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(to)) {
+      sendError.textContent = "Enter a valid EVM recipient address.";
+      sendError.style.display = "block";
+      return;
+    }
     try {
-      // Step 1: Create beneficiary
-      const beneficiary = await api("/api/transfers/beneficiaries", {
-        method: "POST",
-        body: {
-          customerId,
-          details: {
-            name: "Recipient",
-            country: customerCountry || "GLOBAL",
-            currency: token,
-            walletAddress: to,
-          },
-        },
-      });
-
-      // Step 2: Prepare transfer (creates DRAFT + advances to QUOTED)
-      const prepared = await api("/api/transfers/prepare", {
-        method: "POST",
-        body: { customerId, beneficiaryId: beneficiary.beneficiaryId, from: token, to: token, amount: amt },
-      });
-
-      // Step 3: Execute settlement via server (operator signs with BASE_SEPOLIA_PRIVATE_KEY)
-      // TODO: For true customer-signed transactions, use wallet.writeContract directly
-      const result = await api("/api/base/settlement/settle", {
-        method: "POST",
-        body: { transferId: prepared.transferId, customerId, recipientAddress: to, amount: amt, tokenSymbol: token },
-      });
-
-      sendSuccess.textContent = `Sent ${amt} ${token} to ${to} on Base Sepolia. Tx: ${result.txHash}`;
+      const activeChain = await window.ethereum.request({ method: "eth_chainId" });
+      if (Number(activeChain) !== 84532) {
+        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x14A34" }] });
+      }
+      const [whole, fraction = ""] = String(sendAmount.value).split(".");
+      if (fraction.length > 6) throw new Error("Maximum precision for USDC/EURC is 6 decimal places.");
+      const units = BigInt(whole) * 1000000n + BigInt((fraction + "000000").slice(0, 6));
+      if (units <= 0n) throw new Error("Amount must be greater than zero.");
+      const addressWord = to.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+      const amountWord = units.toString(16).padStart(64, "0");
+      const data = `0xa9059cbb${addressWord}${amountWord}`;
+      sendBtn.disabled = true;
+      sendSuccess.textContent = "Confirm the token transfer in your connected wallet…";
       sendSuccess.style.display = "block";
+      const txHash = await window.ethereum.request({
+        method: "eth_sendTransaction",
+        params: [{ from: walletAddress, to: tokenAddress, data }],
+      });
+      sendSuccess.textContent = `Transaction submitted from your external wallet: ${txHash}. Wait for Base Sepolia confirmation before treating it as settled.`;
+      sendError.style.display = "none";
       sendAmount.value = "";
       sendToAddress.value = "";
-      await loadWallets();
-      await loadSummary();
       await loadTokenBalances();
     } catch (e) {
-      sendError.textContent = e.message;
+      sendError.textContent = e.message || "Wallet transaction was not submitted.";
       sendError.style.display = "block";
+      sendSuccess.style.display = "none";
+    } finally {
+      sendBtn.disabled = false;
     }
   });
 
@@ -1141,10 +1145,10 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${new Date(tx.createdAt).toLocaleDateString()}</td>
-        <td>${tx.sourceCurrency ? "Debit" : "Credit"}</td>
-        <td>${tx.destinationCurrency || tx.sourceCurrency}</td>
-        <td>${(tx.destinationAmount !== null ? tx.destinationAmount : tx.sourceAmount).toFixed(2)}</td>
-        <td><span class="badge badge-approved">${tx.status}</span></td>
+        <td>${tx.type || (tx.sourceCurrency ? "TRANSFER" : "CREDIT")}</td>
+        <td>${tx.currency || tx.destinationCurrency || tx.sourceCurrency || "—"}</td>
+        <td>${Number(tx.amount ?? tx.destinationAmount ?? tx.sourceAmount ?? 0).toFixed(2)}</td>
+        <td><span class="badge badge-approved">${tx.status || "POSTED"}</span></td>
       `;
       historyBody.appendChild(tr);
     }

@@ -9,13 +9,14 @@
 //   NOMBA_API_KEY        — sandbox API key from Nomba dashboard
 //   NOMBA_WEBHOOK_SECRET — webhook signing secret from Nomba dashboard
 //
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
+import { getPool } from "../db/pool.js";
+import { postProviderCredit } from "./walletService.js";
 
 const apiKey = () => String(process.env.NOMBA_API_KEY || "").trim();
 const baseUrl = () => String(process.env.NOMBA_API_BASE_URL || "https://sandbox.nomba.com").replace(/\/+$/, "");
 const webhookSecret = () => String(process.env.NOMBA_WEBHOOK_SECRET || "").trim();
 
-const accounts = new Map(); // refId -> { accountNumber, customerId, currency, status, balance, createdAt }
 
 function isUsableCredential(value) {
   return Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder|test)$/i.test(value.trim());
@@ -52,6 +53,11 @@ export function verifyNombaWebhookSignature(rawBody, signature, secret) {
 }
 
 export async function createNombaVirtualAccount({ customerId, customerName, email, phone, bvn }) {
+  const existing = await getPool().query(
+    "SELECT details FROM payment_details WHERE provider='Nomba' AND customer_id=$1 AND status='ACTIVE' ORDER BY created_at DESC LIMIT 1",
+    [customerId]
+  );
+  if (existing.rowCount) return existing.rows[0].details;
   if (!isUsableCredential(apiKey())) {
     const error = new Error("Nomba API key not configured. Set NOMBA_API_KEY in .env.");
     error.statusCode = 503;
@@ -103,9 +109,6 @@ export async function createNombaVirtualAccount({ customerId, customerName, emai
     refId,
     customerId,
     customerName,
-    email,
-    phone,
-    bvn,
     accountNumber,
     bankName,
     bankCode,
@@ -114,46 +117,73 @@ export async function createNombaVirtualAccount({ customerId, customerName, emai
     balance: 0,
     createdAt: new Date().toISOString(),
     lastFundedAt: null,
-    providerResponse: result,
   };
-  accounts.set(refId, record);
-
+  const wallet = await getPool().query(
+    "SELECT wallet_id FROM wallet_accounts WHERE customer_id=$1 AND asset_code='NGN' AND status='ACTIVE'",
+    [customerId]
+  );
+  if (!wallet.rowCount) {
+    const error = new Error("Create an approved customer's NGN wallet before requesting NGN payment details.");
+    error.statusCode = 409;
+    throw error;
+  }
+  await getPool().query(
+    `INSERT INTO payment_details(payment_detail_id,customer_id,wallet_id,provider,provider_reference,currency,details)
+     VALUES($1,$2,$3,'Nomba',$4,'NGN',$5::jsonb)`,
+    [randomUUID(), customerId, wallet.rows[0].wallet_id, refId, JSON.stringify(record)]
+  );
   return record;
 }
 
-export function getNombaAccount(refId) {
-  return accounts.get(refId) || null;
+export async function getNombaAccount(refId) {
+  const result = await getPool().query(
+    "SELECT details FROM payment_details WHERE provider='Nomba' AND provider_reference=$1",
+    [refId]
+  );
+  return result.rows[0]?.details || null;
 }
 
-export function getNombaAccountsByCustomer(customerId) {
-  return Array.from(accounts.values()).filter((a) => a.customerId === customerId);
+export async function getNombaAccountsByCustomer(customerId) {
+  const result = await getPool().query(
+    `SELECT details FROM payment_details WHERE provider='Nomba' AND customer_id=$1 ORDER BY created_at DESC`,
+    [customerId]
+  );
+  return result.rows.map((row) => row.details);
 }
 
-export function applyNombaWebhook(event) {
+export async function applyNombaWebhook(event) {
   const data = event?.data || {};
   const refId = data.refId || data.accountReference || data.reference;
   const amount = Number(data.amount || data.creditAmount || data.amountCredited || 0);
   const currency = String(data.currency || "NGN").toUpperCase();
+  const providerEventId = String(event?.id || data.eventId || data.transactionId || data.paymentId || data.id || "");
 
   if (!refId) return { updated: false, reason: "Webhook did not include a reference/account reference." };
-
-  const record = accounts.get(refId);
-  if (!record) return { updated: false, reason: "Virtual account not found for this reference." };
   if (currency !== "NGN") return { updated: false, reason: `Currency ${currency} not supported for NGN accounts.` };
-  if (!amount || amount <= 0) return { updated: false, reason: "Invalid funding amount." };
+  if (!Number.isFinite(amount) || amount <= 0) return { updated: false, reason: "Invalid funding amount." };
+  if (!providerEventId) return { updated: false, reason: "Webhook did not include a stable provider event/payment ID; refusing a non-idempotent credit." };
 
-  record.balance = Number(record.balance) + amount;
-  record.lastFundedAt = new Date().toISOString();
-  record.lastWebhookEvent = event?.type || "payment.received";
+  const record = await getNombaAccount(String(refId));
+  if (!record) return { updated: false, reason: "Virtual account not found for this reference." };
 
+  const credit = await postProviderCredit({
+    customerId: record.customerId,
+    currency,
+    amount,
+    provider: "Nomba",
+    providerEventId,
+    reference: String(refId),
+    metadata: { accountNumber: record.accountNumber, eventType: event?.type || "payment.received" },
+  });
   return {
-    updated: true,
-    refId,
+    updated: credit.credited,
+    duplicate: credit.duplicate,
+    refId: String(refId),
     customerId: record.customerId,
     accountNumber: record.accountNumber,
     amount,
     currency,
-    newBalance: record.balance,
+    newBalance: credit.balance,
     status: record.status,
   };
 }
