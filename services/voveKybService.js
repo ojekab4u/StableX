@@ -107,8 +107,32 @@ export async function createVoveKycCase({ fullName, country, dateOfBirth, email,
   return record;
 }
 
-export async function getVoveKycResult(refId) {
+export async function getVoveKycResult(refId, { subjectType = "INDIVIDUAL" } = {}) {
   const settings = config();
+
+  if (subjectType === "BUSINESS") {
+    const url = new URL(`${settings.baseUrl}/kyb/case`);
+    url.searchParams.set("search", refId);
+    url.searchParams.set("limit", "1");
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "x-api-key": settings.apiKey },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      const records = Array.isArray(payload.data) ? payload.data : [];
+      const record = records.find((item) => item.refId === refId) ||
+        (payload.kybCase?.refId === refId ? payload.kybCase : null);
+      if (record) return record;
+    } else if (response.status >= 500) {
+      const error = new Error(`VOVE KYB result retrieval failed (${response.status})`);
+      error.statusCode = 502;
+      throw error;
+    }
+    // Older hosted-session configurations may expose the result through /users.
+  }
+
   const response = await fetch(`${settings.baseUrl}/users/${encodeURIComponent(refId)}`, {
     method: "GET",
     headers: {
@@ -120,10 +144,9 @@ export async function getVoveKycResult(refId) {
 
   if (!response.ok) {
     const error = new Error(`VOVE result retrieval failed (${response.status})`);
-    error.statusCode = response.status >= 500 ? 502 : 400;
+    error.statusCode = 502;
     throw error;
   }
-
   return await response.json();
 }
 
