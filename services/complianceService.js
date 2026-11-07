@@ -156,7 +156,7 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   });
 
   return {
-    case: { ...created, id: caseId },
+    case: { id: caseId, ...created },
     gateMessage: `Compliance case created via VOVE ID. Case ID: ${caseId}. Ref: ${voveResult.refId}. Customer must complete verification at: ${voveResult.verificationUrl}`,
     verificationUrl: voveResult.verificationUrl,
     isKybSimulation: voveResult.isKybSimulation,
