@@ -1145,10 +1145,10 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${new Date(tx.createdAt).toLocaleDateString()}</td>
-        <td>${tx.sourceCurrency ? "Debit" : "Credit"}</td>
-        <td>${tx.destinationCurrency || tx.sourceCurrency}</td>
-        <td>${(tx.destinationAmount !== null ? tx.destinationAmount : tx.sourceAmount).toFixed(2)}</td>
-        <td><span class="badge badge-approved">${tx.status}</span></td>
+        <td>${tx.type || (tx.sourceCurrency ? "TRANSFER" : "CREDIT")}</td>
+        <td>${tx.currency || tx.destinationCurrency || tx.sourceCurrency || "—"}</td>
+        <td>${Number(tx.amount ?? tx.destinationAmount ?? tx.sourceAmount ?? 0).toFixed(2)}</td>
+        <td><span class="badge badge-approved">${tx.status || "POSTED"}</span></td>
       `;
       historyBody.appendChild(tr);
     }
