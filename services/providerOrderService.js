@@ -91,39 +91,9 @@ export async function createPaytrieProviderOrder({ transferId, customerId, idemp
     return { replayed: true, attempt: created.attempt, message: "An attempt already exists for this transfer. StableX did not submit a second provider order." };
   }
 
+  let result;
   try {
-    const result = await createPaytrieTransaction({ userJwt, transaction });
-    const providerOrderId = result.id ? String(result.id) : null;
-    const providerStatus = result.status ? String(result.status) : "UNKNOWN";
-    if (!providerOrderId) {
-      const attempt = await updateProviderOrderAttempt({
-        attemptId, status: "UNKNOWN", providerStatus, response: result,
-        errorMessage: "Paytrie returned success without a transaction ID. Do not retry until reconciled.",
-      });
-      return { replayed: false, attempt, message: "Paytrie response did not include a transaction ID. The attempt is UNKNOWN and must be reconciled before any retry." };
-    }
-
-    const attempt = await updateProviderOrderAttempt({
-      attemptId, status: "ACCEPTED", providerOrderId, providerStatus, response: result,
-    });
-
-    if (providerStatus.toLowerCase() === "awaiting-fiat") {
-      await setTransferStatus({
-        id: transferId, customerId, status: "AWAITING_FUNDING",
-        actorId: "PAYTRIE", reason: "Paytrie transaction created; awaiting customer fiat payment.",
-      });
-    }
-
-    return {
-      replayed: false,
-      attempt,
-      funding: {
-        required: providerStatus.toLowerCase() === "awaiting-fiat",
-        method: result.paymentType || "PAYTRIE_PAYMENT_INSTRUCTIONS",
-        reference: result.rmtId || null,
-      },
-      message: "Paytrie accepted the transaction request. This is not proof of funding or settlement.",
-    };
+    result = await createPaytrieTransaction({ userJwt, transaction });
   } catch (error) {
     const status = error.statusCode && error.statusCode < 500 ? "REJECTED" : "UNKNOWN";
     const attempt = await updateProviderOrderAttempt({
@@ -137,6 +107,44 @@ export async function createPaytrieProviderOrder({ transferId, customerId, idemp
         : "Paytrie rejected the transaction request. Correct the reported issue before creating a new transfer.",
     };
   }
+
+  const providerOrderId = result.id ? String(result.id) : null;
+  const providerStatus = result.status ? String(result.status) : "UNKNOWN";
+  if (!providerOrderId) {
+    const attempt = await updateProviderOrderAttempt({
+      attemptId, status: "UNKNOWN", providerStatus, response: result,
+      errorMessage: "Paytrie returned success without a transaction ID. Do not retry until reconciled.",
+    });
+    return { replayed: false, attempt, message: "Paytrie response did not include a transaction ID. The attempt is UNKNOWN and must be reconciled before any retry." };
+  }
+
+  const attempt = await updateProviderOrderAttempt({
+    attemptId, status: "ACCEPTED", providerOrderId, providerStatus, response: result,
+  });
+
+  let transferStateWarning = null;
+  if (providerStatus.toLowerCase() === "awaiting-fiat") {
+    try {
+      await setTransferStatus({
+        id: transferId, customerId, status: "AWAITING_FUNDING",
+        actorId: "PAYTRIE", reason: "Paytrie transaction created; awaiting customer fiat payment.",
+      });
+    } catch (error) {
+      transferStateWarning = `Paytrie accepted the order, but StableX could not advance the transfer state: ${error.message}`;
+    }
+  }
+
+  return {
+    replayed: false,
+    attempt,
+    funding: {
+      required: providerStatus.toLowerCase() === "awaiting-fiat",
+      method: result.paymentType || "PAYTRIE_PAYMENT_INSTRUCTIONS",
+      reference: result.rmtId || null,
+    },
+    transferStateWarning,
+    message: "Paytrie accepted the transaction request. This is not proof of funding or settlement.",
+  };
 }
 
 export async function getPaytrieProviderOrder({ transferId, customerId }) {
