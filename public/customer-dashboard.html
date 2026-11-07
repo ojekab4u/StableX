@@ -869,7 +869,7 @@
 
   createWalletBtn.addEventListener("click", async () => {
     try {
-      await api("/api/customer/wallets", { method: "POST", body: { customerId, currency: selectedWallet } });
+      await api("/api/customer/wallets", { method: "POST", body: { customerId, currency: selectedWallet, country: customerCountry } });
       selectedWallet = null;
       createWalletBtn.disabled = true;
       document.querySelectorAll(".wallet-option").forEach(el => el.classList.remove("selected"));
