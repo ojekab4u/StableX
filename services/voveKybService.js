@@ -196,8 +196,8 @@ export async function getVoveKycResult(refId) {
   return await response.json();
 }
 
-export function verifyVoveWebhookSignature(rawBody, signature, secret, svixId, svixTimestamp) {
-  if (!rawBody || !signature || !secret || !svixId || !svixTimestamp) return false;
+export function verifyVoveWebhookSignature(rawBody, signature, secret) {
+  if (!rawBody || !signature || !secret) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
   const received = Buffer.from(signature);
   const calculated = Buffer.from(expected);
