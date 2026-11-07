@@ -131,7 +131,7 @@ async function paytrieRequest(path, { method = "GET", apiKey, userJwt, body } = 
 }
 
 export async function requestPaytrieLoginCode(email) {
-  if (typeof email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim())) {
+  if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     const error = new Error("A valid registered Paytrie customer email is required.");
     error.statusCode = 400;
     throw error;
@@ -143,7 +143,7 @@ export async function requestPaytrieLoginCode(email) {
 }
 
 export async function verifyPaytrieLoginCode({ email, code }) {
-  if (typeof email !== "string" || typeof code !== "string" || !/^\\d{4}$/.test(code.trim())) {
+  if (typeof email !== "string" || typeof code !== "string" || !/^\d{4}$/.test(code.trim())) {
     const error = new Error("A registered Paytrie email and 4-digit login code are required.");
     error.statusCode = 400;
     throw error;
