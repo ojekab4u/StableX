@@ -19,7 +19,7 @@
   <main class="kyb-wrap">
     <p class="eyebrow">STABLEX / COMPLIANCE INTEGRATION</p>
     <h1>Business verification</h1>
-    <p>Start a real KYB verification case using VOVE ID's sandbox API.</p>
+    <p>Start a VOVE-hosted business verification session linked to a StableX customer record.</p>
     <div class="kyb-warning"><strong>Sandbox only.</strong> Use synthetic test business details and VOVE-approved test data. Do not submit real customer identity documents or sensitive personal information in this learning project.</div>
     <section class="kyb-panel">
       <h2>Provider connection</h2>
@@ -30,8 +30,9 @@
       <h2>Create a KYB case</h2>
       <form id="kyb-form">
         <div class="kyb-grid">
+          <label class="kyb-field"><span>StableX customer ID *</span><input name="customerId" required minlength="2" placeholder="customer-001"></label>
           <label class="kyb-field"><span>Business legal name *</span><input name="businessName" required minlength="2" placeholder="StableX Demo Trading Ltd"></label>
-          <label class="kyb-field"><span>Country *</span><input name="country" required placeholder="Nigeria"></label>
+          <label class="kyb-field"><span>Country (ISO-2) *</span><input name="country" required maxlength="2" minlength="2" placeholder="NG"></label>
           <label class="kyb-field"><span>Registration number</span><input name="registrationNumber" placeholder="TEST-REG-001"></label>
           <label class="kyb-field"><span>City</span><input name="city" placeholder="Lagos"></label>
           <label class="kyb-field full"><span>Business address</span><input name="address" placeholder="Synthetic test address only"></label>
@@ -42,7 +43,7 @@
       <div id="kyb-result"></div>
     </section>
     <section class="kyb-panel">
-      <h2>Retrieve local case record</h2>
+      <h2>Track persisted VOVE verification</h2>
       <form id="lookup-form">
         <label class="kyb-field"><span>VOVE case reference</span><input name="refId" required placeholder="stablex_..."></label>
         <p><button class="kyb-btn" type="submit">Check case status</button></p>
