@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getPool } from "../db/pool.js";
 import { getAsset, canHoldWallet, getWalletEligibleAssets } from "../config/assets.js";
-import { getCustomerGateStatus } from "./complianceService.js";
 import { verifyMessage, isAddress } from "viem";
 
 
@@ -113,8 +112,6 @@ export async function registerExternalWallet({ customerId, address, chainId, wal
   if (message !== expectedMessage || !signature) throw fail("A valid wallet ownership signature is required.");
   const valid = await verifyMessage({ address, message, signature });
   if (!valid) throw fail("Wallet ownership signature could not be verified.", 401);
-  const gate = await getCustomerGateStatus(customerId);
-  if (!gate.gate.approved) throw fail("Complete identity verification before connecting an external wallet.", 403);
   const result = await getPool().query(
     `INSERT INTO external_wallets(external_wallet_id,customer_id,address,chain_id,wallet_provider,status)
      VALUES($1,$2,$3,$4,$5,'ACTIVE')
