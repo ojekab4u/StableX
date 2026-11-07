@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getPool } from "../db/pool.js";
 import { getAsset, canHoldWallet, getWalletEligibleAssets } from "../config/assets.js";
 import { verifyMessage, isAddress } from "viem";
+import { getCustomerGateStatus } from "./complianceService.js";
 
 
 function assetIcon(code) {
