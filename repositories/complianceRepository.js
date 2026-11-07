@@ -79,10 +79,14 @@ export async function updateComplianceProviderStatus({ caseId, providerStatus, s
     }
     const updated = await client.query(
       `UPDATE compliance_cases
-       SET status=$1, provider_status=$2, updated_at=NOW()
-       WHERE case_id=$3
-       RETURNING case_id AS "caseId", status, provider_status AS "providerStatus", updated_at AS "updatedAt"`,
-      [status, providerStatus, caseId]
+       SET status=$1, provider_status=$2,
+           decision_reason=CASE WHEN $1 IN ('APPROVED','REJECTED') THEN $3 ELSE decision_reason END,
+           decided_at=CASE WHEN $1 IN ('APPROVED','REJECTED') THEN NOW() ELSE decided_at END,
+           updated_at=NOW()
+       WHERE case_id=$4
+       RETURNING case_id AS "caseId", status, provider_status AS "providerStatus",
+                 decided_at AS "decidedAt", updated_at AS "updatedAt"`,
+      [status, providerStatus, `VOVE provider outcome: ${providerStatus}`, caseId]
     );
     if (previous !== status || current.rows[0].provider_status !== providerStatus) {
       await client.query(
