@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SANDBOX_URL = "https://api.voveid.net/v2";
-const cases = new Map();
 
 function config() {
   const apiKey = process.env.VOVE_API_KEY || process.env.VOVE_ID_API_KEY;
@@ -39,7 +38,7 @@ export function getVoveKybReadiness() {
   };
 }
 
-export async function createVoveKycCase({ fullName, country, dateOfBirth, email, phone, type = "INDIVIDUAL" }) {
+export async function createVoveKycCase({ fullName, country, dateOfBirth, email, phone, type = "INDIVIDUAL", registrationNumber, city, address }) {
   const settings = config();
   const refId = `stablex_${type === "BUSINESS" ? "kyb" : "kyc"}_${randomUUID()}`;
   const payload = {
@@ -50,6 +49,10 @@ export async function createVoveKycCase({ fullName, country, dateOfBirth, email,
     ...(dateOfBirth ? { dateOfBirth } : {}),
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
+    ...(type === "BUSINESS" ? { type: "BUSINESS" } : {}),
+    ...(registrationNumber ? { registrationNumber } : {}),
+    ...(city ? { city } : {}),
+    ...(address ? { address } : {}),
   };
 
   const response = await fetch(`${settings.baseUrl}/sessions`, {
@@ -101,83 +104,35 @@ export async function createVoveKycCase({ fullName, country, dateOfBirth, email,
       token,
     },
   };
-  cases.set(refId, record);
   return record;
 }
 
-export async function createVoveKybCase({ businessName, country, registrationNumber, city, address }) {
+export async function getVoveKycResult(refId, { subjectType = "INDIVIDUAL" } = {}) {
   const settings = config();
-  const refId = `stablex_kyb_${randomUUID()}`;
-  const payload = {
-    refId,
-    ...(settings.flowId ? { flowId: settings.flowId } : {}),
-    fullName: businessName,
-    country,
-    ...(registrationNumber ? { registrationNumber } : {}),
-    ...(city ? { city } : {}),
-    ...(address ? { address } : {}),
-    type: "BUSINESS",
-  };
 
-  const response = await fetch(`${settings.baseUrl}/sessions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": settings.apiKey,
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20000),
-  });
-
-  const raw = await response.text();
-  let result;
-  try { result = raw ? JSON.parse(raw) : {}; } catch { result = { message: raw.slice(0, 1000) }; }
-
-  if (!response.ok) {
-    const error = new Error(result.message || result.error || `VOVE returned HTTP ${response.status}`);
-    error.statusCode = response.status >= 500 ? 502 : 400;
-    error.providerStatus = response.status;
-    throw error;
+  if (subjectType === "BUSINESS") {
+    const url = new URL(`${settings.baseUrl}/kyb/case`);
+    url.searchParams.set("search", refId);
+    url.searchParams.set("limit", "1");
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "x-api-key": settings.apiKey },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      const records = Array.isArray(payload.data) ? payload.data : [];
+      const record = records.find((item) => item.refId === refId) ||
+        (payload.kybCase?.refId === refId ? payload.kybCase : null);
+      if (record) return record;
+    } else if (response.status >= 500) {
+      const error = new Error(`VOVE KYB result retrieval failed (${response.status})`);
+      error.statusCode = 502;
+      throw error;
+    }
+    // Older hosted-session configurations may expose the result through /users.
   }
 
-  const token = result.token || result.sessionToken;
-  if (!token) {
-    throw new Error("VOVE response did not include a session token.");
-  }
-
-  const link = new URL("https://web.voveid.net/");
-  link.searchParams.set("authToken", token);
-  link.searchParams.set("publicKey", settings.publicKey);
-  link.searchParams.set("environment", settings.environment);
-
-  const record = {
-    provider: "VOVE ID",
-    refId,
-    businessName,
-    country,
-    status: "NOT_STARTED",
-    flow: settings.flowId || null,
-    verificationUrl: link.toString(),
-    createdAt: new Date().toISOString(),
-    lastUpdatedAt: new Date().toISOString(),
-    environment: settings.environment,
-    providerResponse: {
-      refId,
-      status: "NOT_STARTED",
-      flow: settings.flowId || null,
-      token,
-    },
-  };
-  cases.set(refId, record);
-  return record;
-}
-
-export function getVoveKybCase(refId) {
-  return cases.get(refId) || null;
-}
-
-export async function getVoveKycResult(refId) {
-  const settings = config();
   const response = await fetch(`${settings.baseUrl}/users/${encodeURIComponent(refId)}`, {
     method: "GET",
     headers: {
@@ -189,33 +144,16 @@ export async function getVoveKycResult(refId) {
 
   if (!response.ok) {
     const error = new Error(`VOVE result retrieval failed (${response.status})`);
-    error.statusCode = response.status >= 500 ? 502 : 400;
+    error.statusCode = 502;
     throw error;
   }
-
   return await response.json();
 }
 
-export function verifyVoveWebhookSignature(rawBody, signature, secret, svixId, svixTimestamp) {
-  if (!rawBody || !signature || !secret || !svixId || !svixTimestamp) return false;
+export function verifyVoveWebhookSignature(rawBody, signature, secret) {
+  if (!rawBody || !signature || !secret) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
   const received = Buffer.from(signature);
   const calculated = Buffer.from(expected);
   return received.length === calculated.length && timingSafeEqual(received, calculated);
-}
-
-export function applyVoveKybWebhook(event) {
-  const data = event?.data || {};
-  const refId = data.refId || data.caseId || data.sessionRefId;
-  if (!refId) return { updated: false, reason: "Webhook did not include a case refId." };
-  const record = cases.get(refId);
-  if (!record) return { updated: false, reason: "Case is not present in this running StableX process." };
-
-  const type = String(event.type || "");
-  const status = data.status || data.case?.status || data.session?.status ||
-    (type.endsWith(".completed") ? "COMPLETED" : type.endsWith(".rejected") ? "REJECTED" : null);
-  if (status) record.status = status;
-  record.lastUpdatedAt = new Date().toISOString();
-  record.lastWebhookEvent = type;
-  return { updated: true, refId, status: record.status };
 }

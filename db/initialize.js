@@ -72,6 +72,7 @@ const schemaStatements = [
     subject_data JSONB NOT NULL,
     screening JSONB NOT NULL DEFAULT '{}'::jsonb,
     status VARCHAR(20) NOT NULL CHECK (status IN ('SUBMITTED','IN_REVIEW','APPROVED','REJECTED')),
+    provider_status VARCHAR(32),
     decision_reason TEXT,
     provider VARCHAR(40) NOT NULL,
     provider_reference VARCHAR(255),
@@ -80,7 +81,20 @@ const schemaStatements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS compliance_cases_customer_idx ON compliance_cases (customer_id)`,
-  `CREATE INDEX IF NOT EXISTS compliance_cases_status_idx ON compliance_cases (status)`
+  `ALTER TABLE compliance_cases ADD COLUMN IF NOT EXISTS provider_status VARCHAR(32)`,
+  `UPDATE compliance_cases SET provider_reference=screening->>'voveCaseId' WHERE provider='VOVE ID' AND provider_reference IS NULL AND screening ? 'voveCaseId'`,
+  `UPDATE compliance_cases SET status='SUBMITTED', provider_status=COALESCE(provider_status, 'NOT_STARTED'), decision_reason=NULL, decided_at=NULL WHERE provider='VOVE ID' AND status='APPROVED' AND (decision_reason ILIKE '%Auto-approved for demo%' OR decision_reason ILIKE '%sandbox simulation mode%')`,
+  `UPDATE compliance_cases SET screening=screening - 'voveToken' - 'verificationUrl' WHERE screening ? 'voveToken' OR screening ? 'verificationUrl'`,
+  `CREATE INDEX IF NOT EXISTS compliance_cases_status_idx ON compliance_cases (status)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS compliance_cases_provider_reference_idx ON compliance_cases (provider, provider_reference) WHERE provider_reference IS NOT NULL`,
+  `CREATE TABLE IF NOT EXISTS routing_quotes (
+    quote_id UUID PRIMARY KEY, provider VARCHAR(80) NOT NULL,
+    from_currency VARCHAR(12) NOT NULL, to_currency VARCHAR(12) NOT NULL,
+    source_amount NUMERIC(24,8) NOT NULL, quote_data JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    selected_at TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS routing_quotes_expiry_idx ON routing_quotes (expires_at)`
 
 ];
 
@@ -93,7 +107,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

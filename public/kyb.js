@@ -19,9 +19,10 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = document.querySelector("#create-case");
   button.disabled = true;
-  message.textContent = "Creating case with VOVE sandbox…";
+  message.textContent = "Creating and linking a verification case with VOVE…";
   result.replaceChildren();
   const values = Object.fromEntries(new FormData(form).entries());
+  values.country = values.country.trim().toUpperCase();
   try {
     const response = await fetch("/api/kyb/cases", {
       method: "POST",
@@ -34,15 +35,15 @@ form.addEventListener("submit", async (event) => {
     const card = document.createElement("div");
     card.className = "kyb-result";
     const details = document.createElement("p");
-    details.textContent = `Reference: ${data.case.refId} | Status: ${data.case.status} | Environment: ${data.case.environment}`;
+    details.textContent = `StableX case: ${data.case.caseId} | Customer: ${data.case.customerId} | VOVE reference: ${data.case.refId} | StableX status: ${data.case.status} | VOVE status: ${data.case.providerStatus}`;
     const link = document.createElement("a");
-    link.href = data.case.verificationUrl;
+    link.href = data.verificationUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.textContent = "Open hosted VOVE verification session";
     const warning = document.createElement("p");
     warning.className = "kyb-note";
-    warning.textContent = "This link is a sensitive, time-limited verification session. Do not share it publicly. A created case is not an approval.";
+    warning.textContent = "This is a sensitive, time-limited verification link. StableX records the case as submitted; completing the hosted flow does not by itself activate the account.";
     card.append(details, link, warning);
     result.append(card);
     document.querySelector("#lookup-form [name=refId]").value = data.case.refId;
@@ -57,12 +58,13 @@ document.querySelector("#lookup-form").addEventListener("submit", async (event) 
   event.preventDefault();
   const refId = new FormData(event.currentTarget).get("refId");
   const target = document.querySelector("#lookup-result");
-  target.textContent = "Loading…";
+  target.textContent = "Loading latest persisted verification status…";
   try {
     const response = await fetch(`/api/kyb/cases/${encodeURIComponent(refId)}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not retrieve case.");
-    target.textContent = `Provider: VOVE ID | Reference: ${data.case.refId} | Status: ${data.case.status} | Last updated: ${data.case.lastUpdatedAt}`;
+    const record = data.case;
+    target.textContent = `StableX case: ${record.caseId} | Customer: ${record.customerId} | VOVE: ${record.providerStatus || "Awaiting provider update"} | StableX decision: ${record.status} | Last updated: ${new Date(record.updatedAt).toLocaleString()}`;
   } catch (error) {
     target.textContent = error.message;
   }

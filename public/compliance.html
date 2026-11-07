@@ -26,7 +26,7 @@
 </head>
 <body>
   <h1>StableX Compliance Console <span id="mode" style="vertical-align: middle"></span></h1>
-  <p class="sub">KYC / KYB / AML gate. Simulated screening only — no real verification is performed. Customer compliance must be APPROVED before a transfer can move past DRAFT.</p>
+  <p class="sub">VOVE-hosted KYC / KYB status tracking. Creating a verification session is not approval. Customers remain restricted until an authoritative verified result or an authorized compliance decision is recorded.</p>
 
   <section>
     <h2 style="font-size:1.05rem">1. Submit a compliance case</h2>
@@ -78,6 +78,10 @@
     <button id="decideBtn">Record decision</button>
     <p class="error" id="decideError"></p>
     <pre id="decideOut" hidden></pre>
+    <h3 style="font-size:.95rem;margin-top:24px">VOVE verification queue</h3>
+    <button class="secondary" id="allCasesBtn">Refresh all customer cases</button>
+    <p class="error" id="allCasesError"></p>
+    <div id="allCasesOut"></div>
   </section>
 
 <script type="module">
@@ -97,7 +101,8 @@
   async function loadReadiness() {
     const r = await fetch("/api/compliance/readiness");
     const data = await r.json();
-    $("mode").innerHTML = `<span class="badge ${data.mode === "SIMULATOR" ? "SUBMITTED" : "APPROVED"}">${data.mode}</span>`;
+    $("mode").textContent = data.mode;
+    $("mode").title = data.note || "";
   }
 
   $("submitBtn").addEventListener("click", async () => {
@@ -114,6 +119,12 @@
       const data = await res.json();
       if (!res.ok) return fail("submitError", data.error || "Request failed.");
       show("submitOut", "submitError", JSON.stringify(data, null, 2));
+      if (data.verificationUrl) {
+        const link = document.createElement("a");
+        link.href = data.verificationUrl; link.target = "_blank"; link.rel = "noopener noreferrer";
+        link.textContent = "Open VOVE hosted verification";
+        $("submitOut").after(link);
+      }
     } catch (e) { fail("submitError", e.message); }
   });
 
@@ -134,12 +145,31 @@
       const data = await res.json();
       if (!res.ok) return fail("listError", data.error || "Request failed.");
       const rows = (data.cases || []).map((c) =>
-        `<tr><td>${c.caseId.slice(0, 8)}…</td><td>${c.requirement}</td><td><span class="badge ${c.status}">${c.status}</span></td><td>${new Date(c.createdAt).toLocaleString()}</td></tr>`
+        `<tr><td>${c.caseId.slice(0, 8)}…</td><td>${c.requirement}</td><td>${c.providerStatus || "—"}</td><td><span class="badge ${c.status}">${c.status}</span></td><td>${c.providerReference || "—"}</td><td>${new Date(c.createdAt).toLocaleString()}</td></tr>`
       ).join("");
       $("casesOut").innerHTML = rows
-        ? `<table><tr><th>Case</th><th>Req</th><th>Status</th><th>Created</th></tr>${rows}</table>`
+        ? `<table><tr><th>Case</th><th>Req</th><th>VOVE status</th><th>StableX status</th><th>VOVE ref</th><th>Created</th></tr>${rows}</table>`
         : "<p class='sub'>No cases on record.</p>";
     } catch (e) { fail("listError", e.message); }
+  });
+
+  $("allCasesBtn").addEventListener("click", async () => {
+    try {
+      const token = $("operatorToken").value.trim();
+      if (!token) throw new Error("Enter the operator token first.");
+      const res = await fetch("/api/compliance/cases/all", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load compliance cases.");
+      const rows = (data.cases || []).map((c) =>
+        `<tr><td>${c.customerId}</td><td>${c.requirement}</td><td>${c.providerStatus || "—"}</td><td><span class="badge ${c.status}">${c.status}</span></td><td>${c.providerReference || "—"}</td><td>${new Date(c.updatedAt).toLocaleString()}</td></tr>`
+      ).join("");
+      $("allCasesOut").innerHTML = rows
+        ? `<table><tr><th>Customer</th><th>Type</th><th>VOVE status</th><th>StableX status</th><th>VOVE ref</th><th>Updated</th></tr>${rows}</table>`
+        : "<p class='sub'>No compliance cases recorded.</p>";
+      fail("allCasesError", "");
+    } catch (e) { fail("allCasesError", e.message); }
   });
 
   $("decideBtn").addEventListener("click", async () => {

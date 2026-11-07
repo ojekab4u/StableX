@@ -62,14 +62,21 @@ export async function applyQuoteSelection({ transferId, customerId, quote }) {
  const client=await getPool().connect();
  try {
   await client.query("BEGIN");
+  const reservedQuote = await client.query(
+   `UPDATE routing_quotes SET selected_at=NOW()
+    WHERE quote_id=$1 AND selected_at IS NULL AND expires_at>NOW()
+    RETURNING quote_id`,
+   [quote.quoteId]
+  );
+  if(!reservedQuote.rowCount){const e=new Error("Quote is expired or has already been selected.");e.statusCode=409;throw e;}
   const current=await client.query("SELECT status FROM transfers WHERE transfer_id=$1 AND customer_id=$2 FOR UPDATE",[transferId,customerId]);
   if(!current.rowCount){const e=new Error("Transfer not found.");e.statusCode=404;throw e;}
   const previous=current.rows[0].status;
   if(previous!=="DRAFT"){const e=new Error(`Only DRAFT transfers can receive a quote. This transfer is ${previous}.`);e.statusCode=409;throw e;}
   const updated=await client.query(
-   `UPDATE transfers SET status='QUOTED',quote_data=$1::jsonb,version=version+1,updated_at=NOW()
-    WHERE transfer_id=$2 RETURNING transfer_id AS "transferId",status,quote_data AS quote,version,updated_at AS "updatedAt"`,
-   [JSON.stringify(quote),transferId]);
+   `UPDATE transfers SET status='QUOTED',destination_amount=$1,quote_data=$2::jsonb,version=version+1,updated_at=NOW()
+    WHERE transfer_id=$3 RETURNING transfer_id AS "transferId",status,destination_amount AS "destinationAmount",quote_data AS quote,version,updated_at AS "updatedAt"`,
+   [quote.destinationAmount,JSON.stringify(quote),transferId]);
   await client.query(`INSERT INTO transfer_events(transfer_id,from_status,to_status,actor_type,actor_id,reason)
    VALUES($1,'DRAFT','QUOTED','CUSTOMER',$2,$3)`,[transferId,customerId,quote.provider]);
   await client.query(`INSERT INTO audit_logs(actor_type,actor_id,action,resource_type,resource_id,metadata)

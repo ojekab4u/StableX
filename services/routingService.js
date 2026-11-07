@@ -6,11 +6,10 @@ import { getPaycrestRate } from "./providers/paycrestService.js";
 import { getBridgeRate } from "./providers/bridgeService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { readTransfer, applyQuoteSelection } from "../repositories/transferRepository.js";
+import { saveRoutingQuote, readRoutingQuote } from "../repositories/routingQuoteRepository.js";
 
-// Issued quotes are held in memory and expire after the configured TTL.
-// A quote is a priced offer; liquidity reservation and execution remain disabled.
-// NO SIMULATION — only real provider rates.
-const issuedQuotes = new Map();
+// Quotes are persisted so selection survives server restarts and multiple instances.
+// They remain provider previews/offers; persistence does not reserve liquidity or enable execution.
 const QUOTE_TTL_MS = Math.max(10, Number(process.env.ROUTING_QUOTE_TTL_SECONDS || 120)) * 1000;
 
 function normalizeAmount(value) {
@@ -103,7 +102,7 @@ function normalizeProviderResult(provider, request, result) {
     destinationAmount: normalizedDestination ?? null,
     rate: normalizedRate ?? null,
     fee: pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]),
-    feeCurrency: pickNumber(raw, ["feeCurrency", "fee_currency"]) ?? request.to,
+    feeCurrency: raw?.feeCurrency || raw?.fee_currency || request.to,
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
     expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
@@ -111,17 +110,9 @@ function normalizeProviderResult(provider, request, result) {
   };
 }
 
-function rememberIssued(quote) {
-  pruneExpired();
-  issuedQuotes.set(quote.quoteId, quote);
+async function rememberIssued(quote) {
+  await saveRoutingQuote(quote);
   return quote;
-}
-
-function pruneExpired() {
-  const now = Date.now();
-  for (const [quoteId, quote] of issuedQuotes) {
-    if (Date.parse(quote.expiresAt) <= now) issuedQuotes.delete(quoteId);
-  }
 }
 
 // One call fans out to every candidate liquidity provider.
@@ -150,7 +141,7 @@ async function collectSingleHopCandidates(request) {
     if (!item) continue;
     if (item.quoteId) {
       candidates.push(item);
-      rememberIssued(item);
+      await rememberIssued(item);
     } else {
       unavailableProviders.push(item);
     }
@@ -176,7 +167,11 @@ export async function getRoutingQuotes({ from, to, amount }) {
   // If no provider covers this corridor, return empty candidates.
   return {
     application: "StableX",
-    quoteType: direct.candidates.length > 0 ? "LIVE" : "NO_PROVIDER",
+    quoteType: direct.candidates.length === 0
+      ? "NO_PROVIDER"
+      : direct.candidates.some((quote) => quote.providerClass === "LIVE")
+        ? "LIVE_PROVIDER_QUOTES"
+        : "INDICATIVE_PROVIDER_PREVIEWS",
     from: request.from,
     to: request.to,
     amount: request.amount,
@@ -190,8 +185,9 @@ export async function getRoutingQuotes({ from, to, amount }) {
 }
 
 export async function getRoutingQuote(quoteId) {
-  pruneExpired();
-  return issuedQuotes.get(quoteId) ?? null;
+  const quote = await readRoutingQuote(quoteId);
+  if (!quote || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
+  return quote;
 }
 
 export async function selectQuoteForTransfer({ customerId, transferId, quoteId }) {
@@ -206,15 +202,13 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
     throw error;
   }
 
-  const quote = issuedQuotes.get(quoteId);
+  const quote = await readRoutingQuote(quoteId);
   if (!quote) {
-    pruneExpired();
     const error = new Error("Quote not found or expired. Request new quotes and select again.");
     error.statusCode = 404;
     throw error;
   }
   if (Date.parse(quote.expiresAt) <= Date.now()) {
-    issuedQuotes.delete(quoteId);
     const error = new Error("This quote has expired. Request new quotes and select again.");
     error.statusCode = 410;
     throw error;
@@ -247,7 +241,7 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
     throw error;
   }
 
-  const selection = applyQuoteSelection({
+  const selection = await applyQuoteSelection({
     transferId,
     customerId,
     quote: {
@@ -266,6 +260,5 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
       selectedAt: new Date().toISOString(),
     },
   });
-  issuedQuotes.delete(quoteId);
   return selection;
 }
