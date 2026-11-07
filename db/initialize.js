@@ -1,4 +1,5 @@
 import { getPool } from "./pool.js";
+import { providerOrderSchemaStatement } from "./providerOrderSchema.js";
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS orchestration_intents (
@@ -147,6 +148,8 @@ const schemaStatements = [
   )`
 
 ];
+
+schemaStatements.push(providerOrderSchemaStatement);
 
 export async function initializeDatabase() {
   const pool = getPool();
