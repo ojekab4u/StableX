@@ -82,6 +82,9 @@ const schemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS compliance_cases_customer_idx ON compliance_cases (customer_id)`,
   `ALTER TABLE compliance_cases ADD COLUMN IF NOT EXISTS provider_status VARCHAR(32)`,
+  `UPDATE compliance_cases SET provider_reference=screening->>'voveCaseId' WHERE provider='VOVE ID' AND provider_reference IS NULL AND screening ? 'voveCaseId'`,
+  `UPDATE compliance_cases SET status='SUBMITTED', provider_status=COALESCE(provider_status, 'NOT_STARTED'), decision_reason=NULL, decided_at=NULL WHERE provider='VOVE ID' AND status='APPROVED' AND (decision_reason ILIKE '%Auto-approved for demo%' OR decision_reason ILIKE '%sandbox simulation mode%')`,
+  `UPDATE compliance_cases SET screening=screening - 'voveToken' - 'verificationUrl' WHERE screening ? 'voveToken' OR screening ? 'verificationUrl'`,
   `CREATE INDEX IF NOT EXISTS compliance_cases_status_idx ON compliance_cases (status)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS compliance_cases_provider_reference_idx ON compliance_cases (provider, provider_reference) WHERE provider_reference IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS routing_quotes (
@@ -104,7 +107,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
