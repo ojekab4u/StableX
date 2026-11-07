@@ -95,6 +95,32 @@ const schemaStatements = [
     selected_at TIMESTAMPTZ
   )`,
   `CREATE INDEX IF NOT EXISTS routing_quotes_expiry_idx ON routing_quotes (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS provider_order_attempts (
+    order_id UUID PRIMARY KEY,
+    transfer_id UUID NOT NULL UNIQUE REFERENCES transfers(transfer_id),
+    customer_id VARCHAR(128) NOT NULL,
+    provider VARCHAR(80) NOT NULL,
+    execution_mode VARCHAR(20) NOT NULL CHECK (execution_mode = 'SIMULATED'),
+    status VARCHAR(48) NOT NULL,
+    idempotency_key VARCHAR(128) NOT NULL,
+    request_fingerprint CHAR(64) NOT NULL,
+    provider_order_reference VARCHAR(128) NOT NULL UNIQUE,
+    quote_snapshot JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(customer_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS provider_order_customer_idx ON provider_order_attempts (customer_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS provider_order_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    order_id UUID NOT NULL REFERENCES provider_order_attempts(order_id),
+    from_status VARCHAR(48),
+    to_status VARCHAR(48) NOT NULL,
+    actor_id VARCHAR(128) NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS provider_order_events_order_idx ON provider_order_events (order_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS wallet_accounts (
     wallet_id UUID PRIMARY KEY,
     customer_id VARCHAR(128) NOT NULL,
