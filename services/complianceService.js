@@ -124,6 +124,15 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   };
 }
 
+export async function getComplianceCaseByProviderReference(providerReference) {
+  if (typeof providerReference !== "string" || providerReference.length < 8 || providerReference.length > 255) {
+    const error = new Error("A valid VOVE reference is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return readComplianceCaseByProviderReference("VOVE ID", providerReference);
+}
+
 export async function getComplianceCase(caseId) {
   if (typeof caseId !== "string" || !/^[0-9a-f-]{36}$/i.test(caseId)) {
     const error = new Error("A valid caseId is required.");
