@@ -12,6 +12,7 @@ import {
   getPaytrieReadiness,
 } from "./paytrieService.js";
 import { setTransferStatus } from "./transferService.js";
+import { getCustomerGateStatus } from "./complianceService.js";
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
@@ -79,6 +80,8 @@ export async function createPaytrieProviderOrder({ transferId, customerId, idemp
     return { replayed: true, attempt: priorAttempt, message: "A provider order attempt already exists for this transfer. StableX did not submit another order." };
   }
   if (transfer.status !== "QUOTED") throw fail(`Provider order requires a QUOTED transfer. Current status: ${transfer.status}.`, 409);
+  const gate = await getCustomerGateStatus(customerId);
+  if (!gate.gate.approved) throw fail(`Compliance gate: Paytrie order creation requires APPROVED status. Current status: ${gate.gate.status}.`, 403);
   const wallet = await getBaseWallet(customerId);
   const attemptId = randomUUID();
   const transaction = buildPaytrieRequest(transfer, wallet, attemptId);
