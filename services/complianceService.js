@@ -2,8 +2,11 @@ import { randomUUID } from "node:crypto";
 import {
   saveComplianceCase,
   readComplianceCase,
+  readComplianceCaseByProviderReference,
   readComplianceCasesForCustomer,
+  readAllComplianceCases,
   updateComplianceCaseStatus,
+  updateComplianceProviderStatus,
 } from "../repositories/complianceRepository.js";
 import {
   createVoveKycCase,
@@ -15,43 +18,22 @@ const customerIdRegex = /^[A-Za-z0-9._:-]{2,128}$/;
 const nameRegex = /^[A-Za-z .,'-]{2,120}$/;
 const countryRegex = /^[A-Z]{2}$/;
 
-function normalizeText(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 export function getComplianceReadiness() {
   const voveReady = getVoveKybReadiness();
   const voveConfigured = voveReady.configured;
-
   return {
     application: "StableX",
-    module: "Compliance gate (M1)",
-    mode: voveConfigured ? "PROVIDER_CONFIGURED" : "SIMULATOR",
+    module: "VOVE identity verification",
+    mode: voveConfigured ? "VOVE_SANDBOX" : "NOT_CONFIGURED",
     realProviderConnected: voveConfigured,
     autoApprove: false,
     checks: [
-      {
-        requirement: "KYC",
-        subject: "INDIVIDUAL",
-        providerConfigured: voveConfigured,
-        activeImplementation: voveConfigured ? "VOVE_SANDBOX_ADAPTER" : "NOT_CONFIGURED",
-      },
-      {
-        requirement: "KYB",
-        subject: "BUSINESS",
-        providerConfigured: voveConfigured,
-        activeImplementation: voveConfigured ? "VOVE_SANDBOX_ADAPTER" : "NOT_CONFIGURED",
-      },
-      {
-        requirement: "AML",
-        subject: "ANY",
-        providerConfigured: voveConfigured,
-        activeImplementation: voveConfigured ? "VOVE_SANDBOX_ADAPTER" : "NOT_CONFIGURED",
-      },
+      { requirement: "KYC", subject: "INDIVIDUAL", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_HOSTED_SESSION" : "NOT_CONFIGURED" },
+      { requirement: "KYB", subject: "BUSINESS", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_HOSTED_SESSION_REQUIRES_FLOW_VALIDATION" : "NOT_CONFIGURED" },
     ],
     note: voveConfigured
-      ? "Compliance gate powered by VOVE ID sandbox. KYC via /v2/sessions API. KYB simulated in sandbox."
-      : "VOVE ID not configured. Set VOVE_API_KEY and VOVE_PUBLIC_KEY in .env. No compliance cases can be created.",
+      ? "Hosted VOVE verification sessions are enabled. Case creation is not approval; final status is tracked from VOVE results and authorized review."
+      : "VOVE ID is not configured. Set the server-side VOVE credentials before creating verification sessions.",
   };
 }
 
@@ -73,7 +55,7 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   }
 
   const cleanSubject = {};
-  for (const field of ["fullName", "firstName", "lastName", "dateOfBirth", "country", "email", "businessName", "registrationNumber"]) {
+  for (const field of ["fullName", "firstName", "lastName", "dateOfBirth", "country", "email", "phone", "businessName", "registrationNumber"]) {
     if (subject[field] !== undefined) {
       if (typeof subject[field] !== "string" || !subject[field].trim() || subject[field].length > 200) {
         const error = new Error(`Invalid subject field: ${field}.`);
@@ -103,32 +85,14 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   }
 
   const requirement = subjectType === "INDIVIDUAL" ? "KYC" : "KYB";
-
-  // Create real Vove case — no auto-approval, no simulation
-  let voveResult;
-  try {
-    if (subjectType === "BUSINESS") {
-      // Vove KYB uses the same /v2/sessions endpoint with KYB flow ID
-      voveResult = await createVoveKycCase({
-        fullName: cleanSubject.businessName || name,
-        country: cleanSubject.country,
-        email: cleanSubject.email || "",
-        phone: cleanSubject.phone || "",
-        type: "BUSINESS",
-      });
-    } else {
-      voveResult = await createVoveKycCase({
-        fullName: name,
-        country: cleanSubject.country,
-        dateOfBirth: cleanSubject.dateOfBirth || "",
-        email: cleanSubject.email || "",
-        phone: cleanSubject.phone || "",
-      });
-    }
-  } catch (error) {
-    // Re-throw Vove errors so the caller sees real API errors
-    throw error;
-  }
+  const voveResult = await createVoveKycCase({
+    fullName: subjectType === "BUSINESS" ? businessName : name,
+    country: cleanSubject.country,
+    dateOfBirth: cleanSubject.dateOfBirth || "",
+    email: cleanSubject.email || "",
+    phone: cleanSubject.phone || "",
+    ...(subjectType === "BUSINESS" ? { type: "BUSINESS" } : {}),
+  });
 
   const caseId = randomUUID();
   const created = await saveComplianceCase({
@@ -138,28 +102,25 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
     requirement,
     subject: cleanSubject,
     screening: {
-      method: "VOVE_SANDBOX_ADAPTER",
+      method: "VOVE_HOSTED_SESSION",
       provider: "VOVE ID",
       environment: process.env.VOVE_ID_ENVIRONMENT || "Sandbox",
-      screenedAt: new Date().toISOString(),
-      voveCaseId: voveResult.refId,
-      voveToken: voveResult.token,
-      verificationUrl: voveResult.verificationUrl,
+      voveRefId: voveResult.refId,
+      flow: voveResult.flow || null,
     },
-    status: "APPROVED",
-    decisionReason: voveResult.isKybSimulation
-      ? "KYB case created in sandbox simulation mode. Vove sandbox does not expose KYB case creation endpoint."
-      : "Case created via VOVE ID sandbox. Auto-approved for demo.",
+    status: "SUBMITTED",
+    providerStatus: voveResult.status || "NOT_STARTED",
+    decisionReason: null,
     provider: "VOVE ID",
-    decidedAt: new Date().toISOString(),
-    voveRefId: voveResult.refId,
+    providerReference: voveResult.refId,
+    decidedAt: null,
   });
 
   return {
-    case: { ...created, id: caseId },
-    gateMessage: `Compliance case created via VOVE ID. Case ID: ${caseId}. Ref: ${voveResult.refId}. Customer must complete verification at: ${voveResult.verificationUrl}`,
+    case: created,
+    gateMessage: `VOVE verification session created. StableX case: ${caseId}. VOVE reference: ${voveResult.refId}. The customer must complete verification using the supplied link.`,
     verificationUrl: voveResult.verificationUrl,
-    isKybSimulation: voveResult.isKybSimulation,
+    isKybSimulation: Boolean(voveResult.isKybSimulation),
   };
 }
 
@@ -182,6 +143,11 @@ export async function listComplianceCases(customerId) {
   return { cases, gateStatus: evaluateGate(cases) };
 }
 
+export async function listAllComplianceCases() {
+  const cases = await readAllComplianceCases();
+  return { cases, count: cases.length };
+}
+
 export async function decideComplianceCase({ caseId, status, reason, actorId }) {
   if (typeof caseId !== "string" || !/^[0-9a-f-]{36}$/i.test(caseId)) {
     const error = new Error("A valid caseId is required.");
@@ -191,19 +157,12 @@ export async function decideComplianceCase({ caseId, status, reason, actorId }) 
   return updateComplianceCaseStatus({ caseId, status, reason, actorId });
 }
 
-function decisionForCase(record) {
-  if (record.status === "APPROVED") return "Customer compliance gate is satisfied by this case. Transfer lifecycle transitions are unlocked.";
-  if (record.status === "REJECTED") return "Customer is blocked from forward transfer transitions while rejected compliance screening is on record.";
-  return "Case is awaiting review. Forward transfer transitions remain locked until an APPROVED decision exists.";
-}
-
 function evaluateGate(cases) {
   const approved = cases.find((item) => item.status === "APPROVED");
   const rejectedAfterApproval = approved && cases.some(
     (item) => item.status === "REJECTED" &&
       new Date(item.createdAt) > new Date(approved.createdAt)
   );
-
   if (approved && !rejectedAfterApproval) {
     return {
       approved: true,
@@ -231,69 +190,53 @@ export async function getCustomerGateStatus(customerId) {
   return { customerId, gate: evaluateGate(cases), caseCount: cases.length };
 }
 
-export async function verifyVoveKycResult(refId) {
-  const settings = config();
-  const response = await fetch(`${settings.baseUrl}/users/${encodeURIComponent(refId)}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": settings.apiKey,
-    },
-    signal: AbortSignal.timeout(10000),
-  });
+function normalizeVoveOutcome(event, result) {
+  const data = event?.data || {};
+  const eventType = String(event?.type || "").toLowerCase();
+  const rawStatus = result?.status || result?.data?.status || result?.user?.status ||
+    data.status || data.case?.status || data.session?.status ||
+    (eventType.endsWith(".rejected") ? "REJECTED" :
+      eventType.endsWith(".completed") ? "COMPLETED" : "UNKNOWN");
+  const providerStatus = String(rawStatus).trim().toUpperCase();
 
-  if (!response.ok) {
-    const error = new Error(`VOVE result retrieval failed (${response.status})`);
-    error.statusCode = response.status >= 500 ? 502 : 400;
-    throw error;
+  if (["VERIFIED", "APPROVED"].includes(providerStatus)) return { providerStatus, status: "APPROVED" };
+  if (providerStatus === "REJECTED") return { providerStatus, status: "REJECTED" };
+  if (["COMPLETED", "IN_REVIEW", "IN_PROGRESS", "PENDING_REVIEW"].includes(providerStatus)) {
+    return { providerStatus, status: "IN_REVIEW" };
   }
-
-  return await response.json();
+  return { providerStatus, status: "SUBMITTED" };
 }
 
 export async function processVoveWebhook(event) {
   const data = event?.data || event || {};
   const refId = data.refId || data.caseId || data.sessionRefId;
   if (!refId) {
-    return { updated: false, reason: "Webhook did not include a case refId." };
+    return { updated: false, reason: "Webhook did not include a VOVE refId." };
   }
 
-  // Find the compliance case by voveRefId
-  const cases = await readComplianceCasesForCustomer("");
-  const caseRecord = cases.find(c => c.voveRefId === refId);
-
+  const caseRecord = await readComplianceCaseByProviderReference("VOVE ID", String(refId));
   if (!caseRecord) {
-    return { updated: false, reason: `Case not found for refId: ${refId}` };
+    return { updated: false, reason: `No StableX compliance case is mapped to VOVE refId: ${refId}` };
   }
 
-  // Get the result from Vove API
-  const result = await getVoveKycResult(refId);
-
-  const voveStatus = result.status || data.status || "UNKNOWN";
-
-  // Map Vove status to our case status
-  let status;
-  if (voveStatus === "COMPLETED" || voveStatus === "APPROVED" || voveStatus === "VERIFIED") {
-    status = "APPROVED";
-  } else if (voveStatus === "REJECTED" || voveStatus === "FAILED") {
-    status = "REJECTED";
-  } else {
-    status = "PENDING";
-  }
-
-  const updated = await updateComplianceCaseStatus({
-    id: caseRecord.id,
-    customerId: caseRecord.customerId,
-    status,
-    actorId: "vove-webhook",
-    reason: `Webhook event: ${type || "unknown"} - Status: ${voveStatus}`,
+  // Fetch the latest provider record rather than trusting an unsigned status field
+  // or treating a hosted-flow completion as a compliance approval.
+  const result = await getVoveKycResult(String(refId));
+  const outcome = normalizeVoveOutcome(event, result);
+  const updated = await updateComplianceProviderStatus({
+    caseId: caseRecord.caseId,
+    providerStatus: outcome.providerStatus,
+    status: outcome.status,
+    eventType: event?.type || "unknown",
   });
 
   return {
     updated: true,
-    refId,
-    caseId: caseRecord.id,
-    status,
+    refId: String(refId),
+    caseId: caseRecord.caseId,
+    customerId: caseRecord.customerId,
+    status: updated.status,
+    providerStatus: updated.providerStatus,
     previousStatus: caseRecord.status,
   };
 }
