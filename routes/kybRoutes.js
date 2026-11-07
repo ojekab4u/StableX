@@ -3,6 +3,7 @@ import {
   submitComplianceCase,
   getComplianceCaseByProviderReference,
   processVoveWebhook,
+  refreshVoveComplianceCase,
 } from "../services/complianceService.js";
 import { getVoveKybReadiness, verifyVoveWebhookSignature } from "../services/voveKybService.js";
 
@@ -54,6 +55,20 @@ kybRouter.post("/cases", async (req, res) => {
       error: error.message,
       providerStatus: error.providerStatus || null,
     });
+  }
+});
+
+// Operator-only pull refresh for cases where a VOVE webhook was missed.
+kybRouter.post("/cases/:refId/refresh", async (req, res) => {
+  const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+  if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+    return res.status(401).json({ error: "Unauthorized operator action." });
+  }
+  try {
+    const result = await refreshVoveComplianceCase(req.params.refId);
+    return res.status(result.updated ? 200 : 202).json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 502).json({ error: error.message });
   }
 });
 
