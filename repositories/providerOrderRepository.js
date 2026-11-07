@@ -94,7 +94,13 @@ export async function updateProviderOrderAttempt({ attemptId, status, providerOr
 
 export async function readProviderOrderAttempt({ transferId, customerId }) {
   const result = await getPool().query(
-    `${SELECT} a
+    `SELECT a.attempt_id AS "attemptId", a.transfer_id AS "transferId",
+       a.provider, a.idempotency_key AS "idempotencyKey", a.status,
+       a.provider_order_id AS "providerOrderId", a.provider_status AS "providerStatus",
+       a.request_payload AS request, a.response_payload AS response,
+       a.error_message AS "errorMessage", a.created_at AS "createdAt",
+       a.updated_at AS "updatedAt"
+     FROM provider_order_attempts a
      JOIN transfers t ON t.transfer_id=a.transfer_id
      WHERE a.transfer_id=$1 AND t.customer_id=$2`,
     [transferId, customerId]
