@@ -235,7 +235,7 @@ export async function processVoveWebhook(event) {
 
   // Fetch the latest provider record rather than trusting an unsigned status field
   // or treating a hosted-flow completion as a compliance approval.
-  const result = await getVoveKycResult(String(refId));
+  const result = await getVoveKycResult(String(refId), { subjectType: caseRecord.subjectType });
   const outcome = normalizeVoveOutcome(event, result);
   const updated = await updateComplianceProviderStatus({
     caseId: caseRecord.caseId,
