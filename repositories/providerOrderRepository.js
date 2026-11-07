@@ -21,6 +21,11 @@ export async function createProviderOrderAttempt({ attemptId, transferId, custom
       error.statusCode = 404;
       throw error;
     }
+    if (transfer.rows[0].status !== "QUOTED") {
+      const error = new Error("Provider order attempts can only be created for a QUOTED transfer.");
+      error.statusCode = 409;
+      throw error;
+    }
     const existing = await client.query(
       `${SELECT} WHERE transfer_id=$1 FOR UPDATE`,
       [transferId]
