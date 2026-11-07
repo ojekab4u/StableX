@@ -4,6 +4,11 @@ import { getAsset, canHoldWallet, getWalletEligibleAssets } from "../config/asse
 import { getCustomerGateStatus } from "./complianceService.js";
 import { verifyMessage, isAddress } from "viem";
 
+
+function assetIcon(code) {
+  return ({ NGN: "🇳🇬", CAD: "🇨🇦", USD: "🇺🇸", GBP: "🇬🇧", EUR: "🇪🇺", USDC: "🪙", USDT: "🪙", EURC: "🪙", CADD: "🪙", CADC: "🪙" })[code] || "💳";
+}
+
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
 export async function createWallet({ customerId, currency, country = "GLOBAL" }) {
@@ -43,7 +48,7 @@ export async function listWallets(customerId) {
   );
   return result.rows.map((row) => {
     const asset = getAsset(row.currency);
-    return { ...row, balance: Number(row.balance), assetName: asset?.name || row.currency, assetType: asset?.type || "UNKNOWN" };
+    return { ...row, balance: Number(row.balance), assetName: asset?.name || row.currency, assetType: asset?.type || "UNKNOWN", region: asset?.region || "GLOBAL", icon: assetIcon(row.currency) };
   });
 }
 
@@ -51,7 +56,7 @@ export async function listEligibleWalletAssets(customerId, country = "GLOBAL") {
   const existing = new Set((await listWallets(customerId)).map((w) => w.currency));
   return getWalletEligibleAssets(String(country).toUpperCase())
     .filter((asset) => !existing.has(asset.code))
-    .map(({ code, name, type, region, status, settlement }) => ({ currency: code, name, type, region: region || "GLOBAL", status, settlement }));
+    .map(({ code, name, type, region, status, settlement }) => ({ currency: code, name, type, region: region || "GLOBAL", status, settlement, icon: assetIcon(code) }));
 }
 
 export async function getWalletLedger(customerId, currency) {
