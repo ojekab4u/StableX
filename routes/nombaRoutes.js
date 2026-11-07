@@ -79,12 +79,13 @@ nombaRouter.post("/webhook", async (req, res) => {
     const result = await applyNombaWebhook(event);
 
     if (!result.updated) {
-      return res.status(200).json({ received: true, updated: false, reason: result.reason });
+      return res.status(200).json({ received: true, ...result });
     }
 
     return res.status(200).json({
       received: true,
       updated: true,
+      duplicate: false,
       refId: result.refId,
       customerId: result.customerId,
       amount: result.amount,
