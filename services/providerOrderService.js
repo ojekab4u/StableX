@@ -66,18 +66,17 @@ export async function createPaytrieProviderOrder({ transferId, customerId, idemp
   if (typeof idempotencyKey !== "string" || idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128) {
     throw fail("Send an Idempotency-Key header containing 8–128 characters.");
   }
+  const transfer = await readTransfer(transferId, customerId);
+  if (!transfer) throw fail("Transfer not found for this customer.", 404);
+  const priorAttempt = await readProviderOrderAttempt({ transferId, customerId });
+  if (priorAttempt && priorAttempt.status !== "REJECTED") {
+    return { replayed: true, attempt: priorAttempt, message: "An unresolved or accepted provider order attempt already exists for this transfer. StableX did not submit another order." };
+  }
   if (!getPaytrieReadiness().apiKeyPresent) {
     throw fail("Paytrie order creation is disabled. Configure PAYTRIE_API_KEY first; public quote access is not sufficient.", 503);
   }
   if (typeof userJwt !== "string" || userJwt.trim().length < 20) {
     throw fail("Authenticate the verified Paytrie customer and send its short-lived JWT in X-Paytrie-User-Token.", 401);
-  }
-
-  const transfer = await readTransfer(transferId, customerId);
-  if (!transfer) throw fail("Transfer not found for this customer.", 404);
-  const priorAttempt = await readProviderOrderAttempt({ transferId, customerId });
-  if (priorAttempt) {
-    return { replayed: true, attempt: priorAttempt, message: "A provider order attempt already exists for this transfer. StableX did not submit another order." };
   }
   if (transfer.status !== "QUOTED") throw fail(`Provider order requires a QUOTED transfer. Current status: ${transfer.status}.`, 409);
   const gate = await getCustomerGateStatus(customerId);
