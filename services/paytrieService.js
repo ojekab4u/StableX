@@ -16,8 +16,12 @@ export function getPaytrieReadiness() {
     status: hasUsableKey ? "CREDENTIAL_PRESENT_CONNECTION_NOT_TESTED" : "PUBLIC_QUOTES_NO_KEY_REQUIRED",
     supportedStablecoinPairs: ["CAD/USDC-BASE", "CAD/CADC-BASE", "USDC-BASE/CAD", "CADC-BASE/CAD"],
     quoteEndpoint: API_BASE + "/quotes",
-    transactionCreationEnabled: false,
-    note: "Paytrie v2 quote endpoint is public (verified live against api.paytrie.com without credentials). Transaction creation requires an authenticated Paytrie user JWT and is intentionally not enabled in this prototype.",
+    transactionCreationEnabled: hasUsableKey,
+    authenticationRequired: "PAYTRIE_USER_JWT_PER_CUSTOMER",
+    transactionEndpoint: API_BASE + "/transactions",
+    note: hasUsableKey
+      ? "Integrator API key is configured. A verified Paytrie customer must authenticate and provide a short-lived user JWT before an order can be created."
+      : "Public quotes are available, but transaction creation is disabled until PAYTRIE_API_KEY is configured and a verified Paytrie customer supplies a short-lived JWT.",
   };
 }
 
@@ -90,4 +94,97 @@ export async function getPaytrieQuote({ from, to, amount }) {
     executable: false,
     note: "This is a live provider quote, not a completed purchase or transfer. Paytrie transaction creation requires a separately authenticated user JWT and customer payment.",
   };
+}
+
+
+function requirePaytrieApiKey() {
+  const apiKey = String(process.env.PAYTRIE_API_KEY || "").trim();
+  if (!apiKey || /^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(apiKey)) {
+    const error = new Error("Paytrie order creation requires PAYTRIE_API_KEY. Public quote access does not authorize transactions.");
+    error.statusCode = 503;
+    throw error;
+  }
+  return apiKey;
+}
+
+async function paytrieRequest(path, { method = "GET", apiKey, userJwt, body } = {}) {
+  const headers = { Accept: "application/json", "Content-Type": "application/json", "x-api-key": apiKey || requirePaytrieApiKey() };
+  if (userJwt) headers.Authorization = `Bearer ${userJwt}`;
+  const response = await fetch(API_BASE + path, {
+    method,
+    headers,
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await response.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; }
+  catch { data = { message: text.slice(0, 1000) }; }
+  if (!response.ok || data.success === false) {
+    const detail = Array.isArray(data.errors) ? data.errors.map((item) => item.message).filter(Boolean).join("; ") : null;
+    const error = new Error(detail || data.message || data.error || `Paytrie returned HTTP ${response.status}`);
+    error.statusCode = response.status >= 500 ? 502 : response.status || 502;
+    error.providerStatus = response.status;
+    throw error;
+  }
+  return data.data ?? data;
+}
+
+export async function requestPaytrieLoginCode(email) {
+  if (typeof email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim())) {
+    const error = new Error("A valid registered Paytrie customer email is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return paytrieRequest("/auth/login-codes", {
+    method: "POST",
+    body: { email: email.trim().toLowerCase() },
+  });
+}
+
+export async function verifyPaytrieLoginCode({ email, code }) {
+  if (typeof email !== "string" || typeof code !== "string" || !/^\\d{4}$/.test(code.trim())) {
+    const error = new Error("A registered Paytrie email and 4-digit login code are required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const result = await paytrieRequest("/auth/login-codes/verify", {
+    method: "POST",
+    body: { email: email.trim().toLowerCase(), code: code.trim() },
+  });
+  if (!result.accessToken) {
+    const error = new Error("Paytrie did not return an access token.");
+    error.statusCode = 502;
+    throw error;
+  }
+  return { accessToken: result.accessToken, tokenType: result.tokenType || "Bearer", expiresIn: result.expiresIn || 3600 };
+}
+
+export async function createPaytrieTransaction({ userJwt, transaction }) {
+  if (typeof userJwt !== "string" || userJwt.trim().length < 20) {
+    const error = new Error("A Paytrie customer JWT is required in X-Paytrie-User-Token.");
+    error.statusCode = 401;
+    throw error;
+  }
+  return paytrieRequest("/transactions", {
+    method: "POST",
+    userJwt: userJwt.trim(),
+    body: transaction,
+  });
+}
+
+export async function getPaytrieTransaction({ userJwt, transactionId }) {
+  if (typeof userJwt !== "string" || userJwt.trim().length < 20) {
+    const error = new Error("A Paytrie customer JWT is required in X-Paytrie-User-Token.");
+    error.statusCode = 401;
+    throw error;
+  }
+  if (typeof transactionId !== "string" || !transactionId.trim()) {
+    const error = new Error("A Paytrie transaction ID is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return paytrieRequest(`/transactions/${encodeURIComponent(transactionId)}`, {
+    userJwt: userJwt.trim(),
+  });
 }
