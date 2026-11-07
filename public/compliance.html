@@ -77,7 +77,11 @@
     <input id="reason" />
     <button id="decideBtn">Record decision</button>
     <p class="error" id="decideError"></p>
-    <pre id="decideOut" hidden></pre>\n    <h3 style="font-size:.95rem;margin-top:24px">VOVE verification queue</h3>\n    <button class="secondary" id="allCasesBtn">Refresh all customer cases</button>\n    <p class="error" id="allCasesError"></p>\n    <div id="allCasesOut"></div>
+    <pre id="decideOut" hidden></pre>
+    <h3 style="font-size:.95rem;margin-top:24px">VOVE verification queue</h3>
+    <button class="secondary" id="allCasesBtn">Refresh all customer cases</button>
+    <p class="error" id="allCasesError"></p>
+    <div id="allCasesOut"></div>
   </section>
 
 <script type="module">
@@ -97,7 +101,8 @@
   async function loadReadiness() {
     const r = await fetch("/api/compliance/readiness");
     const data = await r.json();
-    $("mode").textContent = data.mode;\n    $("mode").title = data.note || "";
+    $("mode").textContent = data.mode;
+    $("mode").title = data.note || "";
   }
 
   $("submitBtn").addEventListener("click", async () => {
@@ -113,7 +118,13 @@
       });
       const data = await res.json();
       if (!res.ok) return fail("submitError", data.error || "Request failed.");
-      show("submitOut", "submitError", JSON.stringify(data, null, 2));\n      if (data.verificationUrl) {\n        const link = document.createElement("a");\n        link.href = data.verificationUrl; link.target = "_blank"; link.rel = "noopener noreferrer";\n        link.textContent = "Open VOVE hosted verification";\n        $("submitOut").after(link);\n      }
+      show("submitOut", "submitError", JSON.stringify(data, null, 2));
+      if (data.verificationUrl) {
+        const link = document.createElement("a");
+        link.href = data.verificationUrl; link.target = "_blank"; link.rel = "noopener noreferrer";
+        link.textContent = "Open VOVE hosted verification";
+        $("submitOut").after(link);
+      }
     } catch (e) { fail("submitError", e.message); }
   });
 
