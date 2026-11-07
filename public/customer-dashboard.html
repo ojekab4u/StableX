@@ -598,6 +598,9 @@
       // Link the external wallet to this StableX customer only after the wallet
       // signs a one-time ownership statement. This does not grant StableX custody.
       try {
+        const activeChainId = Number(await window.ethereum.request({ method: "eth_chainId" }));
+        if (activeChainId !== 84532) throw new Error("Switch to Base Sepolia before linking this wallet.");
+        chainId = activeChainId;
         const message = `StableX wallet connection\nCustomer: ${customerId}\nAddress: ${walletAddress.toLowerCase()}\nChain ID: ${chainId}`;
         const signature = await window.ethereum.request({
           method: "personal_sign",
