@@ -26,6 +26,12 @@ import { kybRouter } from "./routes/kybRoutes.js";
 import { orchestrationRouter } from "./routes/orchestrationRoutes.js";
 import { transferRouter } from "./routes/transferRoutes.js";
 import { providerRouter } from "./routes/providerRoutes.js";
+import { complianceRouter } from "./routes/complianceRoutes.js";
+import { routingRouter } from "./routes/routingRoutes.js";
+import { baseSettlementRouter } from "./routes/baseSettlementRoutes.js";
+import { customerRouter } from "./routes/customerRoutes.js";
+import { nombaRouter } from "./routes/nombaRoutes.js";
+import { bridgeRouter } from "./routes/bridgeRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
 const app = express();
@@ -475,6 +481,12 @@ app.use("/api/kyb", kybRouter);
 app.use("/api/orchestration", orchestrationRouter);
 app.use("/api/transfers", transferRouter);
 app.use("/api/providers", providerRouter);
+app.use("/api/compliance", complianceRouter);
+app.use("/api/routing", routingRouter);
+app.use("/api/base/settlement", baseSettlementRouter);
+app.use("/api/customer", customerRouter);
+app.use("/api/nomba", nombaRouter);
+app.use("/api/bridge", bridgeRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {

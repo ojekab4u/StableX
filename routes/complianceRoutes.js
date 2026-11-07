@@ -1,0 +1,113 @@
+import { Router } from "express";
+import {
+  getComplianceReadiness,
+  submitComplianceCase,
+  getComplianceCase,
+  listComplianceCases,
+  decideComplianceCase,
+  getCustomerGateStatus,
+  processVoveWebhook,
+} from "../services/complianceService.js";
+import { verifyVoveWebhookSignature } from "../services/voveKybService.js";
+
+export const complianceRouter = Router();
+const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
+
+complianceRouter.get("/readiness", (_req, res) => {
+  return res.json(getComplianceReadiness());
+});
+
+complianceRouter.post("/cases", async (req, res) => {
+  try {
+    const result = await submitComplianceCase({
+      customerId: req.body?.customerId,
+      subjectType: req.body?.subjectType,
+      subject: req.body?.subject,
+    });
+    return res.status(201).json(result);
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.get("/cases", async (req, res) => {
+  try {
+    return res.json(await listComplianceCases(String(req.query.customerId || "")));
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.get("/cases/all", async (req, res) => {
+  try {
+    const cases = await listComplianceCases("");
+    return res.json(cases);
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.get("/cases/:caseId", async (req, res) => {
+  try {
+    const record = await getComplianceCase(req.params.caseId);
+    return record ? res.json({ case: record }) : res.status(404).json({ error: "Compliance case not found." });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.get("/status", async (req, res) => {
+  try {
+    return res.json(await getCustomerGateStatus(String(req.query.customerId || "")));
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.post("/cases/:caseId/decision", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const decision = await decideComplianceCase({
+      caseId: req.params.caseId,
+      status: req.body?.status,
+      reason: req.body?.reason,
+      actorId: req.body?.actorId,
+    });
+    return res.json({ message: "Only the compliance record changed; no transfer state was modified.", decision });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.post("/webhook", async (req, res) => {
+  try {
+    const signature = req.headers["svix-signature"] || req.headers["svix-signature".toLowerCase()];
+    const svixId = req.headers["svix-id"];
+    const svixTimestamp = req.headers["svix-timestamp"];
+
+    // Verify signature if headers are present
+    if (svixId && signature && svixTimestamp) {
+      const isValid = verifyVoveWebhookSignature(
+        req.rawBody || JSON.stringify(req.body),
+        signature,
+        process.env.VOVE_WEBHOOK_SECRET || process.env.VOVE_ID_WEBHOOK_SECRET,
+        svixId,
+        svixTimestamp
+      );
+      if (!isValid) {
+        return res.status(401).json({ error: "Invalid webhook signature" });
+      }
+    }
+
+    const result = await processVoveWebhook({
+      ...req.body,
+    });
+
+    return res.status(200).json(result);
+  } catch (e) {
+    return fail(res, e);
+  }
+});

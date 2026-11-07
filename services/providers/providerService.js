@@ -1,11 +1,14 @@
 import { getHoneycoinRate, getHoneycoinReadiness } from "./honeycoinService.js";
 import { getPaycrestRate, getPaycrestReadiness } from "./paycrestService.js";
+import { getPaytrieQuote, getPaytrieReadiness } from "../paytrieService.js";
+import { getPartnerReadiness } from "./partnerCatalog.js";
 
 export function getProviderReadiness() {
   return {
     mode: "PROVIDER_ADAPTER_PREPARATION",
     executionEnabled: false,
-    providers: [getHoneycoinReadiness(), getPaycrestReadiness()],
+    providers: [getPaytrieReadiness(), getHoneycoinReadiness(), getPaycrestReadiness()],
+    partners: getPartnerReadiness(),
     note: "Configuration presence is not a successful connection test, provider approval, live liquidity confirmation or permission to move funds.",
   };
 }
@@ -19,6 +22,9 @@ export async function getProviderRatePreviews({ from, to, amount, network = "bas
   }
   if (selected === "all" || selected === "paycrest") {
     tasks.push(["Paycrest", () => getPaycrestRate({ from, to, amount, network })]);
+  }
+  if (selected === "all" || selected === "paytrie") {
+    tasks.push(["Paytrie", () => getPaytrieQuote({ from, to, amount })]);
   }
   if (!tasks.length) {
     const error = new Error("Provider must be honeycoin, paycrest, or all.");

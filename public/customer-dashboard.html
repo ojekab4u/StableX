@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StableX Customer Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/viem@2.x/dist/viem.min.js"></script>
+<style>
+  :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { margin: 0; background: #f8fafc; color: #1e293b; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+  .header h1 { font-size: 1.25rem; color: #0f172a; margin: 0; }
+
+  /* Wallet connection */
+  .wallet-bar { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; }
+  .wallet-bar input { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; width: 200px; }
+  .wallet-bar select { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; width: 130px; }
+  .wallet-bar button { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .wallet-bar button:hover { background: #1d4ed8; }
+  .wallet-bar button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .wallet-connected { background: #10b981; }
+  .wallet-connected:hover { background: #059669; }
+
+  /* Status badges */
+  .status-approved { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+  .status-pending { background: #fef9c3; color: #854d0e; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+  .status-rejected { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+
+  /* Cards */
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 24px; }
+  .card h2 { font-size: 1rem; color: #334155; margin: 0 0 16px 0; font-weight: 600; }
+
+  /* Compliance */
+  .compliance-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+  .compliance-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+  .compliance-item h3 { font-size: 0.85rem; color: #64748b; margin: 0 0 8px 0; }
+  .compliance-item .value { font-size: 1.1rem; font-weight: 700; color: #1e293b; }
+
+  /* Wallet creation */
+  .wallet-section { margin-bottom: 20px; }
+  .wallet-title { font-size: 0.85rem; color: #64748b; margin-bottom: 12px; }
+  .wallet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .wallet-option { border: 2px solid #e2e8f0; border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; text-align: center; }
+  .wallet-option:hover { border-color: #2563eb; background: #f8fafc; }
+  .wallet-option.selected { border-color: #2563eb; background: #dbeafe; color: #1e40af; }
+  .wallet-option .flag { font-size: 1.5rem; margin-bottom: 6px; display: block; }
+  .wallet-option .code { font-weight: 700; font-size: 0.95rem; display: block; margin-bottom: 4px; }
+  .wallet-option .region { font-size: 0.65rem; color: #94a3b8; display: block; }
+  .wallet-option.disabled { opacity: 0.5; cursor: not-allowed; }
+  .wallet-option.disabled:hover { border-color: #e2e8f0; background: transparent; }
+  .create-btn { width: 100%; background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+  .create-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  /* Your Wallets */
+  .wallets-list { margin-bottom: 20px; }
+  .wallet-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .wallet-item-info { display: flex; align-items: center; gap: 10px; }
+  .wallet-item-flag { font-size: 1.2rem; }
+  .wallet-item-code { font-weight: 700; }
+  .wallet-item-balance { font-weight: 600; color: #0f172a; }
+
+  /* Token balances (on-chain) */
+  .token-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .token-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; }
+  .token-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .token-card-symbol { font-weight: 700; font-size: 1.1rem; }
+  .token-card-balance { font-size: 1.25rem; font-weight: 700; color: #0f172a; }
+  .token-card-label { font-size: 0.75rem; color: #64748b; }
+
+  /* Action buttons */
+  .actions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+  .action-btn { background: #f97316; color: #fff; border: none; border-radius: 8px; padding: 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: opacity 0.2s; }
+  .action-btn:hover { opacity: 0.9; }
+  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .action-btn .icon { font-size: 1.6rem; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+  .tab-btn { background: transparent; border: none; border-bottom: 2px solid transparent; padding: 10px 16px; font-size: 0.85rem; font-weight: 600; color: #64748b; cursor: pointer; }
+  .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Forms */
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 0.85rem; color: #475569; margin-bottom: 6px; }
+  .form-group select, .form-group input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .form-row.single { grid-template-columns: 1fr; }
+  .btn-submit { width: 100%; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+  .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+  .error { color: #dc2626; font-size: 0.8rem; margin-top: 6px; display: none; }
+  .success { color: #16a34a; font-size: 0.8rem; margin-top: 6px; display: none; }
+
+  /* Reset text overflow for all elements */
+  * {
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    word-break: break-word;
+  }
+  
+  /* Table */
+  .table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed; }
+  .table th { text-align: left; padding: 10px; color: #64748b; border-bottom: 1px solid #e2e8f0; white-space: nowrap; overflow-wrap: anywhere; word-break: break-all; max-width: 200px; }
+  .table td { padding: 10px; border-bottom: 1px solid #f1f5f9; overflow-wrap: anywhere; word-break: break-all; max-width: 200px; }
+  .table tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+  .badge-approved { background: #dcfce7; color: #166534; }
+  .badge-pending { background: #fef9c3; color: #854d0e; }
+  .badge-rejected { background: #fee2e2; color: #991b1b; }
+  
+  /* Responsive table container */
+  .table-container {
+    overflow-x: auto;
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+  .table-container .table {
+    width: auto;
+    min-width: 600px;
+  }
+  .table th {
+    white-space: nowrap;
+  }
+
+  .empty { text-align: center; color: #94a3b8; padding: 24px; }
+  .hint { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+
+  /* KYC/KYB form */
+  .kyc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .kyc-grid.single { grid-template-columns: 1fr; }
+
+  /* Virtual account */
+  .va-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin-top: 16px; }
+  .va-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
+  .va-field { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; }
+  .va-field-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; }
+  .va-field-value { font-weight: 700; color: #1e40af; word-break: break-all; }
+
+  /* Connection status */
+  .conn-indicator { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+  .conn-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .conn-dot.connected { background: #10b981; box-shadow: 0 0 0 2px rgba(16, 185, 120, 0.2); }
+  .conn-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>StableX Customer Dashboard</h1>
+    <div class="wallet-bar">
+      <span class="conn-indicator">
+        <span class="conn-dot disconnected" id="connDot"></span>
+        <span id="connStatus">Wallet not connected</span>
+      </span>
+      <button id="connectWalletBtn" class="wallet-connected">Connect Wallet</button>
+   
+      <input type="text" id="ctxCustomerId" placeholder="Customer ID" value="customer-001" />
+      <button id="ctxLoadBtn">Load Customer</button>
+    </div>
+  </div>
+</div>
+
+  <!-- Compliance Status -->
+  <div class="card">
+    <h2>Compliance Gate (VOVE ID)</h2>
+    <div class="compliance-grid">
+      <div class="compliance-item">
+        <h3>Mode</h3>
+        <div class="value" id="complianceMode">–</div>
+      </div>
+      <div class="compliance-item">
+        <h3>Provider</h3>
+        <div class="value" id="complianceProvider">–</div>
+      </div>
+      <div class="compliance-item">
+        <h3>Auto Approve</h3>
+        <div class="value" id="complianceAutoApprove">–</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="compliance-item">
+        <h3>KYC (Individual)</h3>
+        <div class="value status-pending" id="kycStatus">Not submitted</div>
+      </div>
+      <div class="compliance-item">
+        <h3>KYB (Business)</h3>
+        <div class="value status-pending" id="kybStatus">Not submitted</div>
+      </div>
+      <div class="compliance-item">
+        <h3>AML Screening</h3>
+        <div class="value status-pending" id="amlStatus">Not screened</div>
+      </div>
+    </div>
+    <button class="btn-submit" id="refreshComplianceBtn">Refresh Compliance Status</button>
+    <div class="error" id="complianceError"></div>
+  </div>
+
+  <!-- KYC/KYB Onboarding -->
+  <div class="card">
+    <h2>KYC / KYB Onboarding (VOVE ID)</h2>
+    <p class="hint">Submit your compliance case. Individual = KYC, Business = KYB. Both handled via VOVE ID. No auto-approval — real case creation via Vove API.</p>
+    <div class="form-row">
+      <div>
+        <label>Subject Type</label>
+        <select id="kycSubjectType">
+          <option value="INDIVIDUAL">Individual (KYC)</option>
+          <option value="BUSINESS">Business (KYB)</option>
+        </select>
+      </div>
+      <div class="single">
+        <label>Full Name / Business Name</label>
+        <input type="text" id="kycFullName" placeholder="e.g. John Doe or Acme Ltd" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>Country (ISO-2)</label>
+        <input type="text" id="kycCountry" value="NG" maxlength="2" />
+      </div>
+      <div>
+        <label>Registration Number (business only)</label>
+        <input type="text" id="kycRegNo" placeholder="e.g. RC123456" />
+      </div>
+      <div>
+        <label>City</label>
+        <input type="text" id="kycCity" placeholder="e.g. Lagos" />
+      </div>
+      <div>
+        <label>Address</label>
+        <input type="text" id="kycAddress" placeholder="e.g. 123 Marina Street" />
+      </div>
+    </div>
+    <button class="btn-submit" id="kycSubmitBtn">Submit Compliance Case</button>
+    <div class="error" id="kycError"></div>
+    <div class="success" id="kycSuccess"></div>
+  </div>
+
+  <!-- Compliance Cases List -->
+  <div class="card">
+    <h2>Compliance Cases</h2>
+    <p class="hint">All compliance cases with status. Click Refresh to reload.</p>
+    <button class="btn-submit" id="refreshCasesBtn">Refresh Cases</button>
+    <div class="table-container">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Case ID</th>
+            <th>Customer ID</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Verification URL</th>
+          </tr>
+        </thead>
+        <tbody id="complianceCasesBody">
+          <tr><td colspan="6" class="empty">Loading cases...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- On-chain Token Balances -->
+  <div class="card">
+    <h2>On-chain Token Balances (Base Sepolia)</h2>
+    <p class="hint">Balances read directly from Base Sepolia token contracts for your connected wallet address.</p>
+    <div class="token-grid" id="tokenGrid">
+      <div class="empty">Connect wallet to see token balances</div>
+    </div>
+  </div>
+
+  <!-- Wallet Creation -->
+  <div class="card">
+    <h2>Create Wallet</h2>
+    <div class="wallet-section">
+      <div class="wallet-title">Choose your wallet currency</div>
+      <div class="wallet-grid" id="walletGrid"></div>
+      <button class="create-btn" id="createWalletBtn" disabled>Create Selected Wallet</button>
+    </div>
+  </div>
+
+  <!-- Your Wallets -->
+  <div class="card">
+    <h2>Your Wallets</h2>
+    <div class="wallets-list" id="walletsList">
+      <div class="empty">Load a customer to see wallets</div>
+    </div>
+  </div>
+
+  <!-- NGN Virtual Account (Nomba) -->
+  <div class="card">
+    <h2>NGN Virtual Account (Nomba)</h2>
+    <p class="hint">Generate a dedicated NGN bank account number. Fund it via bank transfer from any Nigerian bank. Nomba webhook will credit your wallet automatically.</p>
+    <div class="form-row">
+      <div class="single">
+        <label>Account Name</label>
+        <input type="text" id="nombaAccountName" placeholder="Full name for the virtual account" />
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="email" id="nombaEmail" placeholder="you@example.com" />
+      </div>
+      <div>
+        <label>Phone</label>
+        <input type="tel" id="nombaPhone" placeholder="+2348012345678" />
+      </div>
+      <div>
+        <label>BVN (optional)</label>
+        <input type="text" id="nombaBvn" placeholder="11-digit BVN" />
+      </div>
+    </div>
+    <button class="btn-submit" id="nombaCreateBtn">Generate NGN Virtual Account</button>
+    <div class="error" id="nombaError"></div>
+    <div class="success" id="nombaSuccess"></div>
+    <div id="nombaAccountCard" class="va-card" style="display:none;">
+      <h3 style="margin:0 0 12px 0;font-size:0.9rem;">Your NGN Virtual Account</h3>
+      <div class="va-details">
+        <div class="va-field">
+          <div class="va-field-label">Account Number</div>
+          <div class="va-field-value" id="vaAccountNumber">–</div>
+        </div>
+        <div class="va-field">
+          <div class="va-field-label">Bank</div>
+          <div class="va-field-value" id="vaBankName">–</div>
+        </div>
+        <div class="va-field">
+          <div class="va-field-label">Currency</div>
+          <div class="va-field-value" id="vaCurrency">NGN</div>
+        </div>
+        <div class="va-field">
+          <div class="va-field-label">Balance</div>
+          <div class="va-field-value" id="vaBalance">₦0.00</div>
+        </div>
+        <div class="va-field">
+          <div class="va-field-label">Status</div>
+          <div class="va-field-value" id="vaStatus">–</div>
+        </div>
+        <div class="va-field">
+          <div class="va-field-label">Reference</div>
+          <div class="va-field-value" id="vaRefId">–</div>
+        </div>
+      </div>
+      <div class="hint">Transfer NGN from any Nigerian bank app to this account number. Nomba will notify StableX via webhook and your wallet will be credited automatically.</div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="actions">
+    <button class="action-btn" data-tab="add"><span class="icon">💵</span><span>Add money</span></button>
+    <button class="action-btn" data-tab="exchange"><span class="icon">🔄</span><span>Exchange</span></button>
+    <button class="action-btn" data-tab="send"><span class="icon">📤</span><span>Send on-chain</span></button>
+    <button class="action-btn" data-tab="history"><span class="icon">🧾</span><span>History</span></button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="add">Add money</button>
+    <button class="tab-btn" data-tab="exchange">Exchange</button>
+    <button class="tab-btn" data-tab="send">Send on-chain</button>
+    <button class="tab-btn" data-tab="history">History</button>
+  </div>
+
+  <!-- Add Money Tab -->
+  <div class="tab-panel active" id="tab-add">
+    <div class="form-group">
+      <label>Wallet</label>
+      <select id="addCurrency"></select>
+    </div>
+    <div class="form-group">
+      <label>Amount</label>
+      <input type="number" id="addAmount" placeholder="0.00" min="0" step="0.01" />
+    </div>
+    <div class="error" id="addError"></div>
+    <button class="btn-submit" id="addBtn">Credit Wallet</button>
+    <div class="success" id="addSuccess"></div>
+  </div>
+
+  <!-- Exchange Tab -->
+  <div class="tab-panel" id="tab-exchange">
+    <div class="form-group">
+      <label>From Wallet</label>
+      <select id="exFrom"></select>
+      <div class="hint" id="exFromBalance"></div>
+    </div>
+    <div class="form-group">
+      <label>Amount to send</label>
+      <input type="number" id="exAmount" placeholder="0" min="0" step="0.0001" />
+    </div>
+    <div class="form-group">
+      <label>To Currency</label>
+      <select id="exTo"></select>
+    </div>
+    <div class="form-group">
+      <label>Estimated receive</label>
+      <input type="text" id="exReceive" readonly placeholder="–" />
+    </div>
+    <div class="error" id="exError"></div>
+    <button class="btn-submit" id="exBtn" disabled>Exchange</button>
+    <div class="success" id="exSuccess"></div>
+  </div>
+
+  <!-- Send Tab -->
+  <div class="tab-panel" id="tab-send">
+    <div class="form-group">
+      <label>Token</label>
+      <select id="sendToken"></select>
+      <div class="hint" id="sendTokenBalance"></div>
+    </div>
+    <div class="form-group">
+      <label>Recipient address</label>
+      <input type="text" id="sendToAddress" placeholder="0x..." />
+    </div>
+    <div class="form-group">
+      <label>Amount</label>
+      <input type="number" id="sendAmount" placeholder="0" min="0" step="0.000001" />
+    </div>
+    <div class="error" id="sendError"></div>
+    <button class="btn-submit" id="sendBtn" disabled>Execute Settlement</button>
+    <div class="success" id="sendSuccess"></div>
+    <div class="hint">Sends on Base Sepolia testnet. Your connected wallet signs the transaction. Requires APPROVED compliance.</div>
+  </div>
+
+  <!-- History Tab -->
+  <div class="tab-panel" id="tab-history">
+    <table class="table">
+      <thead>
+        <tr><th>Date</th><th>Type</th><th>Currency</th><th>Amount</th><th>Status</th></tr>
+      </thead>
+      <tbody id="historyBody">
+        <tr><td colspan="5" class="empty">Load a customer to see history</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script type="module">
+  const API = "http://localhost:3000";
+  const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
+
+  // Token contract addresses on Base Sepolia
+  const TOKENS = {
+    USDC: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    EURC: "0x808456652fdb597867f38412077A9182bf77359F",
+  };
+
+  let customerId = "customer-001";
+  let customerCountry = "GLOBAL";
+  let selectedWallet = null;
+  let walletAddress = null;
+  let chainId = 84532;
+  let onChainBalances = {};
+  let currentBalances = {};
+
+  // DOM refs
+  const connectWalletBtn = document.getElementById("connectWalletBtn");
+  const connDot = document.getElementById("connDot");
+  const connStatus = document.getElementById("connStatus");
+  const ctxCustomerId = document.getElementById("ctxCustomerId");
+  const ctxCountry = document.getElementById("ctxCountry");
+  const ctxLoadBtn = document.getElementById("ctxLoadBtn");
+  const walletGrid = document.getElementById("walletGrid");
+  const createWalletBtn = document.getElementById("createWalletBtn");
+  const walletsList = document.getElementById("walletsList");
+  const addCurrency = document.getElementById("addCurrency");
+  const addAmount = document.getElementById("addAmount");
+  const addBtn = document.getElementById("addBtn");
+  const addError = document.getElementById("addError");
+  const addSuccess = document.getElementById("addSuccess");
+  const exFrom = document.getElementById("exFrom");
+  const exFromBalance = document.getElementById("exFromBalance");
+  const exAmount = document.getElementById("exAmount");
+  const exTo = document.getElementById("exTo");
+  const exReceive = document.getElementById("exReceive");
+  const exBtn = document.getElementById("exBtn");
+  const exError = document.getElementById("exError");
+  const exSuccess = document.getElementById("exSuccess");
+  const sendToken = document.getElementById("sendToken");
+  const sendTokenBalance = document.getElementById("sendTokenBalance");
+  const sendToAddress = document.getElementById("sendToAddress");
+  const sendAmount = document.getElementById("sendAmount");
+  const sendBtn = document.getElementById("sendBtn");
+  const sendError = document.getElementById("sendError");
+  const sendSuccess = document.getElementById("sendSuccess");
+  const historyBody = document.getElementById("historyBody");
+  const tokenGrid = document.getElementById("tokenGrid");
+
+  // Compliance DOM
+  const complianceMode = document.getElementById("complianceMode");
+  const complianceProvider = document.getElementById("complianceProvider");
+  const complianceAutoApprove = document.getElementById("complianceAutoApprove");
+  const kycStatus = document.getElementById("kycStatus");
+  const kybStatus = document.getElementById("kybStatus");
+  const amlStatus = document.getElementById("amlStatus");
+  const refreshComplianceBtn = document.getElementById("refreshComplianceBtn");
+  const complianceError = document.getElementById("complianceError");
+
+  // KYC DOM
+  const kycSubjectType = document.getElementById("kycSubjectType");
+  const kycFullName = document.getElementById("kycFullName");
+  const kycCountry = document.getElementById("kycCountry");
+  const kycRegNo = document.getElementById("kycRegNo");
+  const kycCity = document.getElementById("kycCity");
+  const kycAddress = document.getElementById("kycAddress");
+  const kycSubmitBtn = document.getElementById("kycSubmitBtn");
+  const kycError = document.getElementById("kycError");
+  const kycSuccess = document.getElementById("kycSuccess");
+
+  // Nomba DOM
+  const nombaAccountName = document.getElementById("nombaAccountName");
+  const nombaEmail = document.getElementById("nombaEmail");
+  const nombaPhone = document.getElementById("nombaPhone");
+  const nombaBvn = document.getElementById("nombaBvn");
+  const nombaCreateBtn = document.getElementById("nombaCreateBtn");
+  const nombaError = document.getElementById("nombaError");
+  const nombaSuccess = document.getElementById("nombaSuccess");
+  const nombaAccountCard = document.getElementById("nombaAccountCard");
+  const vaAccountNumber = document.getElementById("vaAccountNumber");
+  const vaBankName = document.getElementById("vaBankName");
+  const vaCurrency = document.getElementById("vaCurrency");
+  const vaBalance = document.getElementById("vaBalance");
+  const vaStatus = document.getElementById("vaStatus");
+  const vaRefId = document.getElementById("vaRefId");
+
+  // Tab switching
+  function showTab(name) {
+    document.querySelectorAll(".tab-panel").forEach(el => el.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+    document.getElementById("tab-" + name).classList.add("active");
+    const btn = document.querySelector(".tab-btn[data-tab='" + name + "']");
+    if (btn) btn.classList.add("active");
+  }
+
+  document.querySelectorAll(".action-btn").forEach(btn => {
+    btn.addEventListener("click", () => showTab(btn.dataset.tab));
+  });
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => showTab(btn.dataset.tab));
+  });
+
+  // API helper
+  async function api(path, opts = {}) {
+    const r = await fetch(API + path, {
+      method: opts.method || "GET",
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+    return d;
+  }
+
+  // --- Wallet Connection ---
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      alert("MetaMask not installed. Please install MetaMask browser extension.");
+      return;
+    }
+    try {
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      walletAddress = accounts[0];
+
+      // Switch to Base Sepolia
+      try {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x14A34" }], // 84532 in hex
+        });
+      } catch (switchError) {
+        // Chain not added, try to add it
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: "0x14A34",
+              chainName: "Base Sepolia",
+              nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+              rpcUrls: [BASE_SEPOLIA_RPC],
+              blockExplorerUrls: ["https://sepolia.basescan.org"],
+            }],
+          });
+        } catch (addError) {
+          console.error("Failed to add Base Sepolia:", addError);
+        }
+      }
+
+      connDot.className = "conn-dot connected";
+      connStatus.textContent = `Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+      connectWalletBtn.textContent = "Connected";
+      connectWalletBtn.className = "wallet-connected";
+      connectWalletBtn.disabled = true;
+      await loadTokenBalances();
+    } catch (e) {
+      alert("Failed to connect wallet: " + e.message);
+    }
+  }
+
+  connectWalletBtn.addEventListener("click", connectWallet);
+
+  // Listen for account changes
+  if (window.ethereum) {
+    window.ethereum.on("accountsChanged", (accounts) => {
+      if (accounts.length === 0) {
+        walletAddress = null;
+        connDot.className = "conn-dot disconnected";
+        connStatus.textContent = "Wallet not connected";
+        connectWalletBtn.textContent = "Connect MetaMask";
+        connectWalletBtn.disabled = false;
+        tokenGrid.innerHTML = '<div class="empty">Connect wallet to see token balances</div>';
+        sendToken.innerHTML = "";
+        sendBtn.disabled = true;
+      } else {
+        walletAddress = accounts[0];
+        connDot.className = "conn-dot connected";
+        connStatus.textContent = `Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+        loadTokenBalances();
+      }
+    });
+  }
+
+  // Load token balances from Base Sepolia contracts via server API
+  async function loadTokenBalances() {
+    if (!walletAddress) return;
+
+    tokenGrid.innerHTML = "";
+    onChainBalances = {};
+    for (const [symbol, address] of Object.entries(TOKENS)) {
+      try {
+        const d = await api(`/api/base/settlement/token-balance?token=${symbol}&address=${walletAddress}`);
+        const formatted = Number(d.balance || 0);
+        onChainBalances[symbol] = formatted;
+
+        const el = document.createElement("div");
+        el.className = "token-card";
+        el.innerHTML = `
+          <div class="token-card-header">
+            <span class="token-card-symbol">${d.token || symbol}</span>
+            <span class="conn-indicator" style="font-size:0.7rem;">Base Sepolia</span>
+          </div>
+          <div class="token-card-balance">${formatted.toFixed(6)}</div>
+          <div class="token-card-label">${d.token || symbol} balance</div>
+        `;
+        tokenGrid.appendChild(el);
+      } catch (e) {
+        console.error(`Failed to load ${symbol} balance:`, e.message);
+        const el = document.createElement("div");
+        el.className = "token-card";
+        el.innerHTML = `
+          <div class="token-card-header">
+            <span class="token-card-symbol">${symbol}</span>
+            <span class="conn-indicator" style="font-size:0.7rem;">Base Sepolia</span>
+          </div>
+          <div class="token-card-balance">0</div>
+          <div class="token-card-label">${symbol} balance</div>
+        `;
+        tokenGrid.appendChild(el);
+      }
+    }
+    // Refresh dropdowns to include on-chain balances
+    populateCurrencyDropdowns({ ...currentBalances, ...onChainBalances });
+  }
+
+  // Load customer
+  ctxLoadBtn.addEventListener("click", async () => {
+    customerId = ctxCustomerId.value.trim() || "customer-001";
+    customerCountry = ctxCountry.value;
+    try {
+      await api("/api/customer/country", { method: "POST", body: { customerId, country: customerCountry } });
+      await loadCompliance();
+      await loadWallets();
+      await loadSummary();
+      await loadTokenBalances();
+      await loadNombaAccounts();
+    } catch (e) {
+      alert("Failed to load customer: " + e.message);
+    }
+  });
+
+  // --- Compliance ---
+
+  async function loadCompliance() {
+    try {
+      const d = await api("/api/compliance/readiness");
+      complianceMode.textContent = d.mode;
+      complianceProvider.textContent = d.realProviderConnected ? "VOVE ID (real)" : "None";
+      complianceAutoApprove.textContent = d.autoApprove ? "Enabled" : "Disabled";
+
+      const kyc = d.checks.find(c => c.requirement === "KYC");
+      const kyb = d.checks.find(c => c.requirement === "KYB");
+      const aml = d.checks.find(c => c.requirement === "AML");
+
+      kycStatus.textContent = kyc.providerConfigured ? "VOVE ID configured" : "Not configured";
+      kycStatus.className = kyc.providerConfigured ? "status-approved" : "status-pending";
+      kybStatus.textContent = kyb.providerConfigured ? "VOVE ID configured" : "Not configured";
+      kybStatus.className = kyb.providerConfigured ? "status-approved" : "status-pending";
+      amlStatus.textContent = aml.providerConfigured ? "VOVE ID configured" : "Not configured";
+      amlStatus.className = aml.providerConfigured ? "status-approved" : "status-pending";
+    } catch (e) {
+      complianceError.textContent = e.message;
+      complianceError.style.display = "block";
+    }
+  }
+
+  async function loadComplianceCases() {
+    try {
+      const d = await api("/api/compliance/cases");
+      const cases = d.cases || [];
+      const body = document.getElementById("complianceCasesBody");
+      body.innerHTML = "";
+      if (!cases || cases.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" class="empty">No compliance cases yet.</td></tr>';
+        return;
+      }
+      for (const c of cases) {
+        const statusClass = c.status === "APPROVED" ? "status-approved" : c.status === "REJECTED" ? "status-rejected" : "status-pending";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${c.id || c.refId || "—"}</td>
+          <td>${c.customerId || "—"}</td>
+          <td>${c.subjectType || "—"}</td>
+          <td><span class="${c.status === "APPROVED" ? "status-approved" : c.status === "REJECTED" ? "status-rejected" : "status-pending"}">${c.status || "PENDING"}</span></td>
+          <td>${c.createdAt ? new Date(c.createdAt).toLocaleString() : "—"}</td>
+          <td>${c.refId ? `<a href="${c.verificationUrl}" target="_blank" rel="noopener">${c.refId.slice(0, 8)}...</a>` : "—"}</td>
+        `;
+        body.appendChild(tr);
+      }
+    } catch (e) {
+      document.getElementById("complianceCasesBody").innerHTML = `<tr><td colspan="6" class="error">Failed to load cases: ${e.message}</td></tr>`;
+    }
+  }
+
+  refreshComplianceBtn.addEventListener("click", loadCompliance);
+
+  document.getElementById("refreshCasesBtn").addEventListener("click", loadComplianceCases);
+
+  kycSubmitBtn.addEventListener("click", async () => {
+    const subjectType = kycSubjectType.value;
+    const fullName = kycFullName.value.trim();
+    const country = kycCountry.value.trim().toUpperCase();
+    const regNo = kycRegNo.value.trim();
+    const city = kycCity.value.trim();
+    const address = kycAddress.value.trim();
+
+    if (!fullName) { kycError.textContent = "Full name / business name is required."; kycError.style.display = "block"; return; }
+    if (!country || country.length !== 2) { kycError.textContent = "Enter a valid 2-letter country code (e.g. NG)."; kycError.style.display = "block"; return; }
+
+    try {
+      const subject = {
+        fullName,
+        country,
+        ...(regNo ? { registrationNumber: regNo } : {}),
+        ...(city ? { city } : {}),
+        ...(address ? { address } : {}),
+      };
+      const d = await api("/api/compliance/cases", {
+        method: "POST",
+        body: { customerId, subjectType, subject },
+      });
+      kycSuccess.textContent = `Compliance case submitted: ${d.case.id}. Status: ${d.case.status}. ${d.gateMessage}`;
+      kycSuccess.style.display = "block";
+      kycError.style.display = "none";
+      kycFullName.value = "";
+      kycRegNo.value = "";
+      kycCity.value = "";
+      kycAddress.value = "";
+      await loadCompliance();
+    } catch (e) {
+      kycError.textContent = e.message;
+      kycError.style.display = "block";
+    }
+  });
+
+  // --- Wallets ---
+
+  async function loadWallets() {
+    try {
+      const d = await api(`/api/customer/wallets/${customerId}`);
+      renderWallets(d.wallets || []);
+      renderWalletGrid(d.wallets || []);
+      loadSummary();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function renderWallets(wallets) {
+    walletsList.innerHTML = "";
+    if (!wallets || wallets.length === 0) {
+      walletsList.innerHTML = '<div class="empty">No wallets yet. Create one above.</div>';
+      return;
+    }
+    for (const w of wallets) {
+      const el = document.createElement("div");
+      el.className = "wallet-item";
+      el.innerHTML = `
+        <div class="wallet-item-info">
+          <span class="wallet-item-flag">${w.icon}</span>
+          <span><span class="wallet-item-code">${w.currency}</span> <span style="font-size:0.75rem;color:#64748b;">${w.region}</span></span>
+        </div>
+        <span class="wallet-item-balance">${w.balance.toFixed(2)}</span>
+      `;
+      walletsList.appendChild(el);
+    }
+  }
+
+  async function renderWalletGrid(existingCurrencies) {
+    try {
+      const d = await api(`/api/customer/wallets/eligible/${customerId}?country=${customerCountry}`);
+      walletGrid.innerHTML = "";
+      for (const a of d.eligible) {
+        const el = document.createElement("div");
+        el.className = `wallet-option ${existingCurrencies.includes(a.currency) ? "disabled" : ""}`;
+        el.onclick = () => selectWallet(a.currency);
+        el.innerHTML = `
+          <span class="flag">${a.icon}</span>
+          <span class="code">${a.currency}</span>
+          <span class="region">${a.region}</span>
+        `;
+        walletGrid.appendChild(el);
+      }
+      createWalletBtn.disabled = !selectedWallet || (existingCurrencies && existingCurrencies.includes(selectedWallet));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function selectWallet(currency) {
+    selectedWallet = currency;
+    document.querySelectorAll(".wallet-option").forEach(el => {
+      el.classList.remove("selected");
+      if (el.querySelector(".code").textContent === currency) el.classList.add("selected");
+    });
+    createWalletBtn.disabled = false;
+  }
+
+  createWalletBtn.addEventListener("click", async () => {
+    try {
+      await api("/api/customer/wallets", { method: "POST", body: { customerId, currency: selectedWallet } });
+      selectedWallet = null;
+      createWalletBtn.disabled = true;
+      document.querySelectorAll(".wallet-option").forEach(el => el.classList.remove("selected"));
+      await loadWallets();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  async function loadSummary() {
+    try {
+      const d = await api(`/api/customer/summary/${customerId}`);
+      currentBalances = d.balances;
+      populateCurrencyDropdowns(d.balances);
+      renderHistory(d.history || []);
+    } catch (e) {
+      console.error("Summary load failed:", e);
+    }
+  }
+
+  function populateCurrencyDropdowns(balances) {
+    addCurrency.innerHTML = "";
+    exFrom.innerHTML = "";
+    exTo.innerHTML = "";
+    sendToken.innerHTML = "";
+
+    const allWallets = Object.entries(balances);
+
+    // addCurrency: show ALL wallet currencies
+    for (const [cur, bal] of allWallets) {
+      const o = document.createElement("option");
+      o.value = cur;
+      o.textContent = `${cur} (balance: ${bal.toFixed(2)})`;
+      addCurrency.appendChild(o);
+    }
+    // exFrom: show ALL wallet currencies
+    for (const [cur, bal] of allWallets) {
+      const o = document.createElement("option");
+      o.value = cur;
+      o.textContent = `${cur} (balance: ${bal.toFixed(2)})`;
+      exFrom.appendChild(o);
+    }
+    // exTo: show ALL currencies
+    for (const [cur, bal] of allWallets) {
+      const o = document.createElement("option");
+      o.value = cur;
+      o.textContent = cur;
+      exTo.appendChild(o);
+    }
+    // sendToken: show ALL on-chain tokens (even with 0 balance) so user can select
+    const onchain = ["USDC", "EURC", "CADD", "CADC"];
+    for (const code of onchain) {
+      const bal = balances[code] || 0;
+      const o = document.createElement("option");
+      o.value = code;
+      o.textContent = `${code} (balance: ${bal.toFixed(6)} available)`;
+      sendToken.appendChild(o);
+    }
+
+    if (allWallets.length === 0) {
+      addBtn.disabled = true;
+      exBtn.disabled = true;
+      sendBtn.disabled = true;
+    } else {
+      addBtn.disabled = false;
+    }
+    updateExchangeQuote();
+    updateSendBalance();
+  }
+
+  // --- Exchange ---
+
+  async function updateExchangeQuote() {
+    const from = exFrom.value;
+    const to = exTo.value;
+    const amt = parseFloat(exAmount.value);
+    if (!from || !to || !amt || amt <= 0) {
+      exReceive.value = "–";
+      exBtn.disabled = true;
+      return;
+    }
+    try {
+      const d = await api("/api/routing/quotes", { method: "POST", body: { from, to, amount: amt } });
+      if (d.candidates && d.candidates.length > 0) {
+        const best = d.candidates[0];
+        const receive = best.destinationAmount || 0;
+        exReceive.value = receive.toFixed(4) + " " + to;
+        exBtn.disabled = false;
+        exError.style.display = "none";
+      } else {
+        exReceive.value = "–";
+        exBtn.disabled = true;
+        exError.textContent = d.disclaimer || "No quotes available.";
+        exError.style.display = "block";
+      }
+    } catch (e) {
+      exReceive.value = "–";
+      exBtn.disabled = true;
+      exError.textContent = e.message;
+      exError.style.display = "block";
+    }
+  }
+
+  function updateSendBalance() {
+    const token = sendToken.value;
+    if (!token) { sendTokenBalance.textContent = "No on-chain balances."; return; }
+  }
+
+  exFrom.addEventListener("change", updateExchangeQuote);
+  exTo.addEventListener("change", updateExchangeQuote);
+  exAmount.addEventListener("input", updateExchangeQuote);
+  sendToken.addEventListener("change", updateSendBalance);
+  sendToken.addEventListener("change", updateSendButton);
+  sendToAddress.addEventListener("input", updateSendButton);
+  sendAmount.addEventListener("input", updateSendButton);
+
+  function updateSendButton() {
+    const token = sendToken.value;
+    const to = sendToAddress.value.trim();
+    const amt = parseFloat(sendAmount.value);
+    sendBtn.disabled = !token || !to || !amt || amt <= 0;
+  }
+
+  addBtn.addEventListener("click", async () => {
+    const cur = addCurrency.value;
+    const amt = parseFloat(addAmount.value);
+    if (!amt || amt <= 0) {
+      addError.textContent = "Enter a valid amount.";
+      addError.style.display = "block";
+      return;
+    }
+    try {
+      await api("/api/customer/credit", { method: "POST", body: { customerId, currency: cur, amount: amt, reference: "demo_fund" } });
+      addSuccess.textContent = `Credited ${amt} ${cur}.`;
+      addSuccess.style.display = "block";
+      addAmount.value = "";
+      await loadWallets();
+      await loadSummary();
+    } catch (e) {
+      addError.textContent = e.message;
+      addError.style.display = "block";
+    }
+  });
+
+  exBtn.addEventListener("click", async () => {
+    const from = exFrom.value;
+    const to = exTo.value;
+    const amt = parseFloat(exAmount.value);
+    if (!amt || amt <= 0) return;
+
+    try {
+      // Pre-check balance before attempting debit
+      const wallets = await api(`/api/customer/wallets/${customerId}`);
+      const wallet = wallets.wallets.find(w => w.currency === from);
+      const currentBal = wallet ? wallet.balance : 0;
+      if (currentBal < amt) {
+        exError.textContent = `Insufficient ${from} balance. Available: ${currentBal}, requested: ${amt}. Please select a wallet with sufficient balance.`;
+        exError.style.display = "block";
+        return;
+      }
+
+      await api("/api/customer/debit", { method: "POST", body: { customerId, currency: from, amount: amt, reference: "exchange", meta: { to } } });
+      const d = await api("/api/routing/quotes", { method: "POST", body: { from, to, amount: amt } });
+      const best = d.candidates[0];
+      const receive = best.destinationAmount;
+      await api("/api/customer/credit", { method: "POST", body: { customerId, currency: to, amount: receive, reference: "exchange", meta: { from } } });
+      exSuccess.textContent = `Exchanged ${amt} ${from} → ${receive.toFixed(4)} ${to}.`;
+      exSuccess.style.display = "block";
+      exAmount.value = "";
+      updateExchangeQuote();
+      await loadWallets();
+      await loadSummary();
+    } catch (e) {
+      exError.textContent = e.message;
+      exError.style.display = "block";
+    }
+  });
+
+  // --- Send (proper transfer lifecycle with wallet signing) ---
+
+  sendBtn.addEventListener("click", async () => {
+    const token = sendToken.value;
+    const to = sendToAddress.value.trim();
+    const amt = parseFloat(sendAmount.value);
+    if (!token || !to || !amt || amt <= 0) return;
+    if (!walletAddress) {
+      sendError.textContent = "Please connect your wallet first.";
+      sendError.style.display = "block";
+      return;
+    }
+
+    try {
+      // Step 1: Create beneficiary
+      const beneficiary = await api("/api/transfers/beneficiaries", {
+        method: "POST",
+        body: {
+          customerId,
+          details: {
+            name: "Recipient",
+            country: customerCountry || "GLOBAL",
+            currency: token,
+            walletAddress: to,
+          },
+        },
+      });
+
+      // Step 2: Prepare transfer (creates DRAFT + advances to QUOTED)
+      const prepared = await api("/api/transfers/prepare", {
+        method: "POST",
+        body: { customerId, beneficiaryId: beneficiary.beneficiaryId, from: token, to: token, amount: amt },
+      });
+
+      // Step 3: Execute settlement via server (operator signs with BASE_SEPOLIA_PRIVATE_KEY)
+      // TODO: For true customer-signed transactions, use wallet.writeContract directly
+      const result = await api("/api/base/settlement/settle", {
+        method: "POST",
+        body: { transferId: prepared.transferId, customerId, recipientAddress: to, amount: amt, tokenSymbol: token },
+      });
+
+      sendSuccess.textContent = `Sent ${amt} ${token} to ${to} on Base Sepolia. Tx: ${result.txHash}`;
+      sendSuccess.style.display = "block";
+      sendAmount.value = "";
+      sendToAddress.value = "";
+      await loadWallets();
+      await loadSummary();
+      await loadTokenBalances();
+    } catch (e) {
+      sendError.textContent = e.message;
+      sendError.style.display = "block";
+    }
+  });
+
+  // --- Nomba NGN Virtual Account ---
+
+  async function loadNombaAccounts() {
+    try {
+      const d = await api(`/api/nomba/virtual-accounts/${customerId}`);
+      if (d.accounts && d.accounts.length > 0) {
+        const acc = d.accounts[0];
+        nombaAccountCard.style.display = "block";
+        vaAccountNumber.textContent = acc.accountNumber;
+        vaBankName.textContent = acc.bankName;
+        vaCurrency.textContent = acc.currency;
+        vaBalance.textContent = "₦" + acc.balance.toLocaleString();
+        vaStatus.textContent = acc.status;
+        vaRefId.textContent = acc.refId;
+      }
+    } catch (e) {
+      if (e.message.includes("404")) return;
+      console.error("Nomba load failed:", e.message);
+    }
+  }
+
+  nombaCreateBtn.addEventListener("click", async () => {
+    const accountName = nombaAccountName.value.trim();
+    const email = nombaEmail.value.trim();
+    const phone = nombaPhone.value.trim();
+    const bvn = nombaBvn.value.trim();
+
+    if (!accountName) { nombaError.textContent = "Account name is required."; nombaError.style.display = "block"; return; }
+
+    try {
+      const d = await api("/api/nomba/virtual-accounts", {
+        method: "POST",
+        body: { customerId, customerName: accountName, email, phone, bvn },
+      });
+      const acc = d.account;
+      nombaAccountCard.style.display = "block";
+      vaAccountNumber.textContent = acc.accountNumber;
+      vaBankName.textContent = acc.bankName;
+      vaCurrency.textContent = acc.currency;
+      vaBalance.textContent = "₦" + acc.balance.toLocaleString();
+      vaStatus.textContent = acc.status;
+      vaRefId.textContent = acc.refId;
+      nombaSuccess.textContent = `NGN virtual account created: ${acc.accountNumber}. Fund it via bank transfer from any Nigerian bank.`;
+      nombaSuccess.style.display = "block";
+      nombaError.style.display = "none";
+      nombaAccountName.value = "";
+      nombaEmail.value = "";
+      nombaPhone.value = "";
+      nombaBvn.value = "";
+    } catch (e) {
+      nombaError.textContent = e.message;
+      nombaError.style.display = "block";
+    }
+  });
+
+  // --- History ---
+
+  async function renderHistory(history) {
+    historyBody.innerHTML = "";
+    if (!history || history.length === 0) {
+      historyBody.innerHTML = '<tr><td colspan="5" class="empty">No transactions yet</td></tr>';
+      return;
+    }
+    for (const tx of history) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${new Date(tx.createdAt).toLocaleDateString()}</td>
+        <td>${tx.sourceCurrency ? "Debit" : "Credit"}</td>
+        <td>${tx.destinationCurrency || tx.sourceCurrency}</td>
+        <td>${(tx.destinationAmount !== null ? tx.destinationAmount : tx.sourceAmount).toFixed(2)}</td>
+        <td><span class="badge badge-approved">${tx.status}</span></td>
+      `;
+      historyBody.appendChild(tr);
+    }
+  }
+
+  // Init
+  loadCompliance();
+  loadComplianceCases();
+  loadWallets();
+</script>
+</body>
+</html>

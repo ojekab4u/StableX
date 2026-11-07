@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StableX — Compliance Console</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body { margin: 0 auto; max-width: 760px; padding: 24px; background: #f8fafc; color: #1e293b; }
+  h1 { font-size: 1.4rem; } .sub { color: #64748b; font-size: .95rem; margin-bottom: 24px; }
+  section { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .95rem; }
+  button { margin-top: 14px; background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; font-size: .95rem; cursor: pointer; }
+  button.secondary { background: #64748b; }
+  button:disabled { opacity: .5; cursor: default; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+  .APPROVED { background: #dcfce7; color: #166534; } .REJECTED { background: #fee2e2; color: #991b1b; }
+  .SUBMITTED, .IN_REVIEW, .PENDING { background: #fef9c3; color: #854d0e; }
+  .NOT_SUBMITTED { background: #e2e8f0; color: #475569; }
+  pre { background: #f1f5f9; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: .8rem; }
+  .error { color: #b91c1c; font-size: .9rem; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 10px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+</style>
+</head>
+<body>
+  <h1>StableX Compliance Console <span id="mode" style="vertical-align: middle"></span></h1>
+  <p class="sub">KYC / KYB / AML gate. Simulated screening only — no real verification is performed. Customer compliance must be APPROVED before a transfer can move past DRAFT.</p>
+
+  <section>
+    <h2 style="font-size:1.05rem">1. Submit a compliance case</h2>
+    <label for="customerId">Customer ID</label>
+    <input id="customerId" placeholder="customer-001" />
+    <label for="subjectType">Subject type</label>
+    <select id="subjectType">
+      <option value="INDIVIDUAL">Individual (KYC)</option>
+      <option value="BUSINESS">Business (KYB)</option>
+    </select>
+    <label for="fullName">Full name / business name</label>
+    <input id="fullName" placeholder="Ada Lovelace" />
+    <label for="country">Country (ISO-2)</label>
+    <input id="country" placeholder="NG" maxlength="2" style="text-transform:uppercase" />
+    <label for="dateOfBirth">Date of birth (individual, optional)</label>
+    <input id="dateOfBirth" type="date" />
+    <button id="submitBtn">Submit case</button>
+    <p class="error" id="submitError"></p>
+    <pre id="submitOut" hidden></pre>
+  </section>
+
+  <section>
+    <h2 style="font-size:1.05rem">2. Gate status for a customer</h2>
+    <button class="secondary" id="statusBtn">Check gate status</button>
+    <p class="error" id="statusError"></p>
+    <p id="statusOut" hidden>Gate status: <span class="badge"></span></p>
+  </section>
+
+  <section>
+    <h2 style="font-size:1.05rem">3. Case list</h2>
+    <button class="secondary" id="listBtn">List cases for customer ID</button>
+    <p class="error" id="listError"></p>
+    <div id="casesOut"></div>
+  </section>
+
+  <section>
+    <h2 style="font-size:1.05rem">4. Operator decision (manual review)</h2>
+    <label for="operatorToken">Operator bearer token (kept server-side; never stored here)</label>
+    <input id="operatorToken" placeholder="STABLEX_OPERATOR_TOKEN value" style="margin-bottom:10px" />
+    <label for="caseId">Case to decide (UUID)</label>
+    <input id="caseId" />
+    <label for="decision">Decision</label>
+    <select id="decision">
+      <option value="APPROVED">APPROVED</option>
+      <option value="REJECTED">REJECTED</option>
+    </select>
+    <label for="reason">Reason (optional)</label>
+    <input id="reason" />
+    <button id="decideBtn">Record decision</button>
+    <p class="error" id="decideError"></p>
+    <pre id="decideOut" hidden></pre>
+  </section>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const requireCustomer = () => {
+    const id = $("customerId").value.trim();
+    if (!id) { throw new Error("Enter a customer ID first."); }
+    return id;
+  };
+  const show = (out, err, value, node = "pre") => {
+    $(err).textContent = "";
+    $(out).hidden = false;
+    $(out)[node === "pre" ? "textContent" : "innerHTML"] = value;
+  };
+  const fail = (errNode, message) => { $(errNode).textContent = message; };
+
+  async function loadReadiness() {
+    const r = await fetch("/api/compliance/readiness");
+    const data = await r.json();
+    $("mode").innerHTML = `<span class="badge ${data.mode === "SIMULATOR" ? "SUBMITTED" : "APPROVED"}">${data.mode}</span>`;
+  }
+
+  $("submitBtn").addEventListener("click", async () => {
+    try {
+      const customerId = requireCustomer();
+      const subjectType = $("subjectType").value;
+      const fullName = $("fullName").value.trim();
+      const subject = { fullName, country: $("country").value.trim().toUpperCase() };
+      if ($("dateOfBirth").value) subject.dateOfBirth = $("dateOfBirth").value;
+      const res = await fetch("/api/compliance/cases", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId, subjectType, subject }),
+      });
+      const data = await res.json();
+      if (!res.ok) return fail("submitError", data.error || "Request failed.");
+      show("submitOut", "submitError", JSON.stringify(data, null, 2));
+    } catch (e) { fail("submitError", e.message); }
+  });
+
+  $("statusBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/api/compliance/status?customerId=${encodeURIComponent(requireCustomer())}`);
+      const data = await res.json();
+      if (!res.ok) return fail("statusError", data.error || "Request failed.");
+      $("statusOut").hidden = false;
+      $("statusOut").querySelector(".badge").textContent = data.gate.status;
+      $("statusOut").querySelector(".badge").className = `badge ${data.gate.status}`;
+    } catch (e) { fail("statusError", e.message); }
+  });
+
+  $("listBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/api/compliance/cases?customerId=${encodeURIComponent(requireCustomer())}`);
+      const data = await res.json();
+      if (!res.ok) return fail("listError", data.error || "Request failed.");
+      const rows = (data.cases || []).map((c) =>
+        `<tr><td>${c.caseId.slice(0, 8)}…</td><td>${c.requirement}</td><td><span class="badge ${c.status}">${c.status}</span></td><td>${new Date(c.createdAt).toLocaleString()}</td></tr>`
+      ).join("");
+      $("casesOut").innerHTML = rows
+        ? `<table><tr><th>Case</th><th>Req</th><th>Status</th><th>Created</th></tr>${rows}</table>`
+        : "<p class='sub'>No cases on record.</p>";
+    } catch (e) { fail("listError", e.message); }
+  });
+
+  $("decideBtn").addEventListener("click", async () => {
+    try {
+      const caseId = $("caseId").value.trim();
+      const token = $("operatorToken").value.trim();
+      if (!caseId || !token) throw new Error("Case UUID and operator token are required.");
+      const res = await fetch(`/api/compliance/cases/${caseId}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: $("decision").value, reason: $("reason").value.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) return fail("decideError", data.error || "Request failed.");
+      show("decideOut", "decideError", JSON.stringify(data, null, 2));
+    } catch (e) { fail("decideError", e.message); }
+  });
+
+  loadReadiness();
+</script>
+</body>
+</html>

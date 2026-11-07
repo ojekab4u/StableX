@@ -55,6 +55,31 @@ export async function updateTransferStatus({id,customerId,status,actorId,reason}
 }
 
 
+// Customer-side quote selection: locks the chosen quote onto a DRAFT
+// transfer and advances it to QUOTED in one transaction. Runs the store's
+// own event and audit rows because this transition is made by CUSTOMER.
+export async function applyQuoteSelection({ transferId, customerId, quote }) {
+ const client=await getPool().connect();
+ try {
+  await client.query("BEGIN");
+  const current=await client.query("SELECT status FROM transfers WHERE transfer_id=$1 AND customer_id=$2 FOR UPDATE",[transferId,customerId]);
+  if(!current.rowCount){const e=new Error("Transfer not found.");e.statusCode=404;throw e;}
+  const previous=current.rows[0].status;
+  if(previous!=="DRAFT"){const e=new Error(`Only DRAFT transfers can receive a quote. This transfer is ${previous}.`);e.statusCode=409;throw e;}
+  const updated=await client.query(
+   `UPDATE transfers SET status='QUOTED',quote_data=$1::jsonb,version=version+1,updated_at=NOW()
+    WHERE transfer_id=$2 RETURNING transfer_id AS "transferId",status,quote_data AS quote,version,updated_at AS "updatedAt"`,
+   [JSON.stringify(quote),transferId]);
+  await client.query(`INSERT INTO transfer_events(transfer_id,from_status,to_status,actor_type,actor_id,reason)
+   VALUES($1,'DRAFT','QUOTED','CUSTOMER',$2,$3)`,[transferId,customerId,quote.provider]);
+  await client.query(`INSERT INTO audit_logs(actor_type,actor_id,action,resource_type,resource_id,metadata)
+   VALUES('CUSTOMER',$1,'TRANSFER_QUOTE_SELECTED','TRANSFER',$2,$3::jsonb)`,
+   [customerId,transferId,JSON.stringify({quoteId:quote.quoteId,provider:quote.provider,providerClass:quote.providerClass,destinationAmount:quote.destinationAmount})]);
+  await client.query("COMMIT");
+  return {transfer:updated.rows[0],quote};
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+}
+
 export async function recordProviderEvent({provider,eventId,eventType,payload}) {
  const result=await getPool().query(
   `INSERT INTO provider_events(provider,provider_event_id,event_type,payload)

@@ -39,6 +39,22 @@ async function loadReadiness() {
       card.append(list);
       cards.append(card);
     }
+    for (const partner of data.partners?.friendly || []) {
+      const card = makeElement("article", "provider-card");
+      const top = makeElement("div", "provider-card-top");
+      top.append(makeElement("h3", "", partner.name));
+      top.append(makeElement("span", `provider-status ${partner.configured ? "ok" : "warn"}`, partner.configured ? "Credentials present" : "Awaiting credentials"));
+      card.append(top);
+      card.append(makeElement("p", "", `${partner.role}. ${partner.docsUrl}`));
+      const list = makeElement("ul");
+      for (const corridor of partner.corridors || []) list.append(makeElement("li", "", `Corridor: ${corridor.toLowerCase()}`));
+      for (const capability of partner.capabilities || []) list.append(makeElement("li", "", capability.replaceAll("_", " ").toLowerCase()));
+      for (const task of partner.configurationTasks || []) list.append(makeElement("li", "", `Task: ${task.replace(/_/g, " ").toLowerCase()}`));
+      for (const question of partner.openQuestions || []) list.append(makeElement("li", "", `Question: ${question.replace(/_/g, " ").toLowerCase()}`));
+      for (const missing of partner.missingVariables || []) list.append(makeElement("li", "", `Missing: ${missing}`));
+      card.append(list);
+      cards.append(card);
+    }
     updated.textContent = `Last checked: ${new Date().toLocaleTimeString()} · Execution enabled: no`;
   } catch (error) {
     cards.replaceChildren(makeElement("p", "provider-muted", error.message));

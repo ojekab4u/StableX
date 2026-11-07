@@ -64,7 +64,23 @@ const schemaStatements = [
     actor_id VARCHAR(128), reason TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `CREATE INDEX IF NOT EXISTS transfer_events_transfer_idx ON transfer_events (transfer_id, created_at)`
+  `CREATE INDEX IF NOT EXISTS transfer_events_transfer_idx ON transfer_events (transfer_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS compliance_cases (
+    case_id UUID PRIMARY KEY, customer_id VARCHAR(128) NOT NULL,
+    subject_type VARCHAR(16) NOT NULL CHECK (subject_type IN ('INDIVIDUAL','BUSINESS')),
+    requirement VARCHAR(8) NOT NULL CHECK (requirement IN ('KYC','KYB','AML')),
+    subject_data JSONB NOT NULL,
+    screening JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('SUBMITTED','IN_REVIEW','APPROVED','REJECTED')),
+    decision_reason TEXT,
+    provider VARCHAR(40) NOT NULL,
+    provider_reference VARCHAR(255),
+    decided_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS compliance_cases_customer_idx ON compliance_cases (customer_id)`,
+  `CREATE INDEX IF NOT EXISTS compliance_cases_status_idx ON compliance_cases (status)`
 
 ];
 
@@ -77,7 +93,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { getPaytrieQuote, getPaytrieReadiness } from "./paytrieService.js";
+import { getVoveKybReadiness } from "./voveKybService.js";
+import { getHoneycoinReadiness } from "./providers/honeycoinService.js";
+import { getPaycrestReadiness } from "./providers/paycrestService.js";
+import { getPartnerReadiness } from "./providers/partnerCatalog.js";
 import { saveOrchestrationIntent, findOrchestrationIntent } from "../repositories/orchestrationRepository.js";
 
 export function getOrchestrationOverview() {
@@ -19,10 +23,15 @@ export function getOrchestrationOverview() {
       { id: "reconciliation", name: "Webhook, status and audit trail", state: "PARTIAL_IN_MEMORY" },
     ],
     providers: [
-      { name: "VOVE ID", role: "KYC / KYB", status: "KYB_CODE_PRESENT_CREDENTIALS_REQUIRED" },
+      { name: "VOVE ID", role: "KYC / KYB", ...getVoveKybReadiness() },
       { name: "Paytrie", role: "CAD / USDC / CADC quotes and purchase workflow", ...getPaytrieReadiness() },
-      { name: "Honeycoin", role: "African fiat on/off-ramp and payouts", status: "DOCUMENTED_NOT_CONNECTED" },
-      { name: "Paycrest", role: "Stablecoin / local fiat routing", status: "DOCUMENTED_NOT_CONNECTED" },
+      ...getPartnerReadiness().friendly.map((partner) => ({
+        name: partner.name,
+        role: partner.role,
+        status: partner.status,
+      })),
+      { name: "Honeycoin", role: "African fiat on/off-ramp and payouts", ...getHoneycoinReadiness() },
+      { name: "Paycrest", role: "Stablecoin / local fiat routing", ...getPaycrestReadiness() },
     ],
     safety: "StableX coordinates providers; it is not itself a bank, stablecoin issuer or liquidity provider. No real transfer is executed by this prototype.",
   };

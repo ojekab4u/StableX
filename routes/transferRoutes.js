@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createBeneficiary,listBeneficiaries,createTransfer,getTransfer,getTransfers,setTransferStatus } from "../services/transferService.js";
 import { recordProviderEvent } from "../repositories/transferRepository.js";
+import { getCustomerGateStatus } from "../services/complianceService.js";
 export const transferRouter=Router();
 const fail=(res,e)=>res.status(e.statusCode||503).json({error:e.message});
 transferRouter.post("/beneficiaries",async(req,res)=>{try{return res.status(201).json({beneficiary:await createBeneficiary(req.body||{})});}catch(e){return fail(res,e);}});
@@ -9,6 +10,30 @@ transferRouter.post("/",async(req,res)=>{try{const result=await createTransfer({
 transferRouter.get("/",async(req,res)=>{try{return res.json({transfers:await getTransfers(String(req.query.customerId||""))});}catch(e){return fail(res,e);}});
 transferRouter.get("/:id",async(req,res)=>{try{const transfer=await getTransfer(req.params.id,String(req.query.customerId||""));return transfer?res.json({transfer}):res.status(404).json({error:"Transfer not found."});}catch(e){return fail(res,e);}});
 transferRouter.patch("/:id/status",async(req,res)=>{try{const operatorToken=process.env.STABLEX_OPERATOR_TOKEN;if(!operatorToken||req.get("Authorization")!==`Bearer ${operatorToken}`)return res.status(401).json({error:"Unauthorized operator action."});const transfer=await setTransferStatus({id:req.params.id,customerId:String(req.body?.customerId||""),status:req.body?.status,actorId:req.body?.actorId,reason:req.body?.reason});return res.json({message:"State recorded only; no provider or blockchain action was triggered.",transfer});}catch(e){return fail(res,e);}});
+
+// Prepare a transfer for settlement: creates DRAFT, then advances to QUOTED (operator action)
+transferRouter.post("/prepare",async(req,res)=>{try{
+  const { customerId, beneficiaryId, from, to, amount } = req.body || {};
+  if (!customerId || !beneficiaryId || !from || !to || !amount) {
+    return res.status(400).json({ error: "customerId, beneficiaryId, from, to and amount are required." });
+  }
+  // Create DRAFT transfer
+  const draft = await createTransfer({ customerId, beneficiaryId, from, to, amount, idempotencyKey: "stablex_prepare_" + Date.now() });
+  // Advance to QUOTED via operator (simulates quote selection)
+  const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+  const gate = await getCustomerGateStatus(customerId);
+  if (!gate.gate.approved) {
+    return res.status(403).json({ error: `Compliance gate: transfer cannot be prepared. Customer status is ${gate.gate.status}.` });
+  }
+  const quoted = await setTransferStatus({
+    id: draft.id,
+    customerId,
+    status: "QUOTED",
+    actorId: "operator",
+    reason: "Prepared for settlement",
+  });
+  return res.status(201).json({ message: "Transfer prepared for settlement.", transferId: draft.id, status: quoted.status, transfer: quoted });
+}catch(e){return fail(res,e);}});
 
 transferRouter.post("/provider-events",async(req,res)=>{
  try {

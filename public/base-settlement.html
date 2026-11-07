@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StableX — Base Settlement Console</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body { margin: 0 auto; max-width: 760px; padding: 24px; background: #f8fafc; color: #1e293b; }
+  h1 { font-size: 1.4rem; } .sub { color: #64748b; font-size: .95rem; margin-bottom: 24px; }
+  section { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin: 10px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .95rem; }
+  button { margin-top: 14px; background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; font-size: .95rem; cursor: pointer; }
+  button.secondary { background: #64748b; } button:disabled { opacity: .5; cursor: default; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+  .READY { background: #dcfce7; color: #166534; } .NOT_READY { background: #fee2e2; color: #991b1b; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 10px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+  .error { color: #b91c1c; font-size: .9rem; margin-top: 10px; }
+  pre { background: #f1f5f9; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: .8rem; }
+  .hint { font-size: .85rem; color: #64748b; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>StableX Base Settlement Console</h1>
+<p class="sub">Real USDC transfers on Base Sepolia testnet (M4). Requires an operator wallet with real Sepolia ETH for gas. All settlements are gated by the M1 compliance gate.</p>
+
+<section>
+  <h2 style="font-size:1.05rem">1. Settlement readiness</h2>
+  <button id="readinessBtn">Check settlement status</button>
+  <p class="error" id="readinessError"></p>
+  <div id="readinessOut"></div>
+</section>
+
+<section>
+  <h2 style="font-size:1.05rem">2. Operator ETH balance (gas)</h2>
+  <button class="secondary" id="balanceBtn">Check operator balance</button>
+  <p class="error" id="balanceError"></p>
+  <div id="balanceOut"></div>
+</section>
+
+<section>
+  <h2 style="font-size:1.05rem">3. Token balance (any address)</h2>
+  <label for="tToken">Token</label>
+  <select id="tToken"><option>USDC</option><option>EURC</option></select>
+  <label for="tAddress">Wallet address</label>
+  <input id="tAddress" placeholder="0x..." />
+  <button class="secondary" id="tBalanceBtn">Check token balance</button>
+  <p class="error" id="tBalanceError"></p>
+  <div id="tBalanceOut"></div>
+</section>
+
+<section>
+  <h2 style="font-size:1.05rem">4. Simulate settlement (no gas spent)</h2>
+  <label for="sTransferId">Transfer ID (QUOTED)</label>
+  <input id="sTransferId" />
+  <label for="sCustomerId">Customer ID (must have APPROVED compliance case)</label>
+  <input id="sCustomerId" />
+  <label for="sToken">Token</label>
+  <select id="sToken"><option>USDC</option><option>EURC</option></select>
+  <label for="sAmount">Amount</label>
+  <input id="sAmount" type="number" value="100" min="1" />
+  <label for="sRecipient">Recipient address</label>
+  <input id="sRecipient" placeholder="0x..." />
+  <button id="sBtn">Simulate settlement</button>
+  <p class="error" id="sError"></p>
+  <pre id="sOut" hidden></pre>
+</section>
+
+<section>
+  <h2 style="font-size:1.05rem">5. Execute settlement (real on-chain tx)</h2>
+  <label for="eTransferId">Transfer ID (QUOTED)</label>
+  <input id="eTransferId" />
+  <label for="eCustomerId">Customer ID</label>
+  <input id="eCustomerId" />
+  <label for="eToken">Token</label>
+  <select id="eToken"><option>USDC</option><option>EURC</option></select>
+  <label for="eAmount">Amount</label>
+  <input id="eAmount" type="number" value="100" min="1" />
+  <label for="eRecipient">Recipient address</label>
+  <input id="eRecipient" placeholder="0x..." />
+  <button id="eBtn">Execute on-chain settlement</button>
+  <p class="error" id="eError"></p>
+  <pre id="eOut" hidden></pre>
+  <p class="hint">This sends a real transaction on Base Sepolia. Gas is paid from the operator wallet (BASE_SEPOLIA_PRIVATE_KEY in .env).</p>
+</section>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const base = "/api/base/settlement";
+
+  async function get(path) {
+    const r = await fetch(base + path);
+    return { status: r.status, data: await r.json() };
+  }
+  async function post(path, body) {
+    const r = await fetch(base + path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}),
+    });
+    return { status: r.status, data: await r.json() };
+  }
+  function show(outId, errId, data) {
+    $(errId).textContent = "";
+    const el = $(outId);
+    el.hidden = false;
+    el.textContent = JSON.stringify(data, null, 2);
+  }
+  function fail(outId, errId, message) {
+    $(errId).textContent = message;
+    $(outId).hidden = true;
+  }
+
+  $("readinessBtn").addEventListener("click", async () => {
+    try {
+      const { status, data } = await get("/readiness");
+      const badge = document.createElement("span");
+      badge.className = `badge ${data.configured ? "READY" : "NOT_READY"}`;
+      badge.textContent = data.configured ? "READY" : "NOT_READY";
+      $("readinessOut").innerHTML = "";
+      $("readinessOut").appendChild(badge);
+      $("readinessOut").append(document.createTextNode(" " + data.status));
+      show("readinessOut", "readinessError", data);
+    } catch (e) { fail("readinessOut", "readinessError", e.message); }
+  });
+
+  $("balanceBtn").addEventListener("click", async () => {
+    try {
+      const { status, data } = await get("/balance");
+      show("balanceOut", "balanceError", data);
+    } catch (e) { fail("balanceOut", "balanceError", e.message); }
+  });
+
+  $("tBalanceBtn").addEventListener("click", async () => {
+    try {
+      const { status, data } = await get(`/token-balance?token=${$("tToken").value}&address=${encodeURIComponent($("tAddress").value)}`);
+      show("tBalanceOut", "tBalanceError", data);
+    } catch (e) { fail("tBalanceOut", "tBalanceError", e.message); }
+  });
+
+  $("sBtn").addEventListener("click", async () => {
+    try {
+      const { status, data } = await post("/simulate", {
+        transferId: $("sTransferId").value.trim(),
+        customerId: $("sCustomerId").value.trim(),
+        token: $("sToken").value,
+        amount: Number($("sAmount").value),
+        recipientAddress: $("sRecipient").value.trim(),
+      });
+      show("sOut", "sError", data);
+    } catch (e) { fail("sOut", "sError", e.message); }
+  });
+
+  $("eBtn").addEventListener("click", async () => {
+    try {
+      const { status, data } = await post("/settle", {
+        transferId: $("eTransferId").value.trim(),
+        customerId: $("eCustomerId").value.trim(),
+        token: $("eToken").value,
+        amount: Number($("eAmount").value),
+        recipientAddress: $("eRecipient").value.trim(),
+      });
+      show("eOut", "eError", data);
+    } catch (e) { fail("eOut", "eError", e.message); }
+  });
+</script>
+</body>
+</html>

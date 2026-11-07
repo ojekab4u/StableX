@@ -6,25 +6,26 @@ const TOKEN_LABELS = {
 };
 
 export function getPaytrieReadiness() {
+  const apiKey = String(process.env.PAYTRIE_API_KEY || "").trim();
+  const hasUsableKey = Boolean(apiKey) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(apiKey);
   return {
-    provider: "Paytrie",
+    name: "Paytrie",
     apiVersion: "v2",
-    configured: Boolean(process.env.PAYTRIE_API_KEY),
-    status: process.env.PAYTRIE_API_KEY ? "CREDENTIAL_PRESENT_CONNECTION_NOT_TESTED" : "AWAITING_API_KEY",
+    configured: true, // quotes work publicly; an API key is optional
+    apiKeyPresent: hasUsableKey,
+    status: hasUsableKey ? "CREDENTIAL_PRESENT_CONNECTION_NOT_TESTED" : "PUBLIC_QUOTES_NO_KEY_REQUIRED",
     supportedStablecoinPairs: ["CAD/USDC-BASE", "CAD/CADC-BASE", "USDC-BASE/CAD", "CADC-BASE/CAD"],
     quoteEndpoint: API_BASE + "/quotes",
     transactionCreationEnabled: false,
-    note: "Paytrie v2 quotes are live only when a valid API key is configured. Transaction creation also requires an authenticated Paytrie user JWT and is intentionally not enabled in this prototype.",
+    note: "Paytrie v2 quote endpoint is public (verified live against api.paytrie.com without credentials). Transaction creation requires an authenticated Paytrie user JWT and is intentionally not enabled in this prototype.",
   };
 }
 
 export async function getPaytrieQuote({ from, to, amount }) {
-  const apiKey = process.env.PAYTRIE_API_KEY;
-  if (!apiKey) {
-    const error = new Error("Paytrie is not configured. Set PAYTRIE_API_KEY on the StableX server.");
-    error.statusCode = 503;
-    throw error;
-  }
+  // Verified live 2026-11-04: the /quotes endpoint answers without an API key.
+  // When an optional key is present it is attached; otherwise public access is used.
+  const apiKey = String(process.env.PAYTRIE_API_KEY || "").trim();
+  const hasUsableKey = Boolean(apiKey) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(apiKey);
 
   const source = String(from || "").toUpperCase();
   const destination = String(to || "").toUpperCase();
@@ -54,9 +55,12 @@ export async function getPaytrieQuote({ from, to, amount }) {
   url.searchParams.set("leftSideValue", String(value));
   url.searchParams.set("rightSideLabel", rightSideLabel);
 
+  const headers = { Accept: "application/json" };
+  if (hasUsableKey) headers["x-api-key"] = apiKey;
+
   const response = await fetch(url, {
     method: "GET",
-    headers: { "x-api-key": apiKey, Accept: "application/json" },
+    headers,
     signal: AbortSignal.timeout(20000),
   });
   const raw = await response.text();
@@ -73,7 +77,7 @@ export async function getPaytrieQuote({ from, to, amount }) {
 
   const quote = data.data || data;
   return {
-    provider: "Paytrie",
+    name: "Paytrie",
     quoteType: "LIVE_PROVIDER_QUOTE",
     quoteId: quote.quoteId ?? null,
     from: quote.leftSideLabel || leftSideLabel,

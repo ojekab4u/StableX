@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StableX — Quote &amp; Routing Console</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body { margin: 0 auto; max-width: 760px; padding: 24px; background: #f8fafc; color: #1e293b; }
+  h1 { font-size: 1.4rem; } .sub { color: #64748b; font-size: .95rem; margin-bottom: 24px; }
+  section { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin: 10px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .95rem; }
+  button { margin-top: 14px; background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; font-size: .95rem; cursor: pointer; }
+  button.secondary { background: #64748b; } button:disabled { opacity: .5; cursor: default; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+  .SIMULATION { background: #fef9c3; color: #854d0e; } .INDICATIVE { background: #dbeafe; color: #1e40af; } .LIVE { background: #dcfce7; color: #166534; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 10px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+  .error { color: #b91c1c; font-size: .9rem; margin-top: 10px; }
+  pre { background: #f1f5f9; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: .8rem; }
+  select.qid { margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>StableX Quote &amp; Routing Console</h1>
+<p class="sub">Compares candidate providers, ranks them by the estimated amount a recipient receives, and locks the chosen quote onto a draft transfer. Selecting a quote requires an APPROVED compliance case. No orders are created and no funds move.</p>
+
+<section>
+  <h2 style="font-size:1.05rem">1. Compare providers</h2>
+  <label for="from">From</label>
+  <select id="from"></select>
+  <label for="to">To</label>
+  <select id="to"></select>
+  <label for="amount">Amount</label>
+  <input id="amount" type="number" value="100" min="1" />
+  <button id="quoteBtn">Get ranked quotes</button>
+  <p class="error" id="quoteError"></p>
+  <div id="quotesOut"></div>
+</section>
+
+<section>
+  <h2 style="font-size:1.05rem">2. Select the quote for your draft transfer</h2>
+  <label for="customerId">Customer ID (must have an APPROVED compliance case)</label>
+  <input id="customerId" placeholder="cust-001" />
+  <label for="transferId">Transfer ID (DRAFT)</label>
+  <input id="transferId" />
+  <label for="quoteId">Quote to lock on</label>
+  <select id="quoteId" class="qid"></select>
+  <button id="selectBtn">Lock quote onto transfer</button>
+  <p class="error" id="selectError"></p>
+  <pre id="selectOut" hidden></pre>
+</section>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  let ASSETS = ["USDC", "USDT", "NGN", "CAD"];
+
+  async function loadAssets() {
+    try {
+      const data = await (await fetch("/api/assets")).json();
+      ASSETS = data.assets.map((a) => a.code);
+    } catch { /* fall back to defaults */ }
+    for (const select of [$("from"), $("to")]) {
+      select.innerHTML = ASSETS.map((code) => `<option>${code}</option>`).join("");
+    }
+    $("from").value = "USDC"; $("to").value = "NGN";
+  }
+
+  $("quoteBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/routing/quotes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: $("from").value, to: $("to").value, amount: Number($("amount").value) }),
+      });
+      const data = await res.json();
+      if (!res.ok) return fail("quoteError", data.error || "Request failed.");
+      const rows = (data.candidates || []).map((q, i) => `
+        <tr><td>#${i + 1}</td><td>${q.provider}</td><td><span class="badge ${q.providerClass}">${q.providerClass}</span></td>
+        <td>${q.destinationAmount ?? "?"} ${q.to}</td><td>${q.rate ? Number(q.rate).toFixed(4) : "?"}</td></tr>`).join("");
+      $("quotesOut").innerHTML = (data.candidates || []).length
+        ? `<table><tr><th>Rank</th><th>Provider</th><th>Class</th><th>Recipient gets</th><th>Rate</th></tr>${rows}</table>`
+        : "<p class='sub'>No candidate quotes for this route.</p>";
+      $("quoteId").innerHTML = (data.candidates || [])
+        .map((q) => `<option value="${q.quoteId}">#${(data.candidates.indexOf(q) + 1)} ${q.provider} (${q.providerClass}) — ${q.destinationAmount ?? "?"} ${q.to}</option>`)
+        .join("") || "<option disabled>No quotes issued</option>";
+      fail("quoteError", "");
+    } catch (e) { fail("quoteError", e.message); }
+  });
+
+  $("selectBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/routing/select", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: $("customerId").value.trim(),
+          transferId: $("transferId").value.trim(),
+          quoteId: $("quoteId").value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return fail("selectError", data.error || "Request failed.");
+      $("selectOut").hidden = false;
+      $("selectOut").textContent = JSON.stringify(data, null, 2);
+      fail("selectError", "");
+    } catch (e) { fail("selectError", e.message); }
+  });
+
+  function fail(node, message) { $(node).textContent = message; }
+  loadAssets();
+</script>
+</body>
+</html>
