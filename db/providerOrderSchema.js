@@ -1,7 +1,7 @@
 export const providerOrderSchemaStatement = `
   CREATE TABLE IF NOT EXISTS provider_order_attempts (
     attempt_id UUID PRIMARY KEY,
-    transfer_id UUID NOT NULL UNIQUE REFERENCES transfers(transfer_id),
+    transfer_id UUID NOT NULL REFERENCES transfers(transfer_id),
     provider VARCHAR(80) NOT NULL,
     idempotency_key VARCHAR(128) NOT NULL,
     status VARCHAR(24) NOT NULL CHECK (status IN ('SUBMITTING','ACCEPTED','REJECTED','UNKNOWN')),
