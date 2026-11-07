@@ -62,6 +62,13 @@ export async function applyQuoteSelection({ transferId, customerId, quote }) {
  const client=await getPool().connect();
  try {
   await client.query("BEGIN");
+  const reservedQuote = await client.query(
+   `UPDATE routing_quotes SET selected_at=NOW()
+    WHERE quote_id=$1 AND selected_at IS NULL AND expires_at>NOW()
+    RETURNING quote_id`,
+   [quote.quoteId]
+  );
+  if(!reservedQuote.rowCount){const e=new Error("Quote is expired or has already been selected.");e.statusCode=409;throw e;}
   const current=await client.query("SELECT status FROM transfers WHERE transfer_id=$1 AND customer_id=$2 FOR UPDATE",[transferId,customerId]);
   if(!current.rowCount){const e=new Error("Transfer not found.");e.statusCode=404;throw e;}
   const previous=current.rows[0].status;
