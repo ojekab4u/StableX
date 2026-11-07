@@ -1,118 +1,81 @@
 import { Router } from "express";
 import {
-  getCustomerWallets,
-  createCustomerWallet,
-  getWalletEligibleForCustomer,
-  getCustomerBalances,
-  creditBalance,
-  debitBalance,
-  getCustomerSummary,
-  setCustomerCountry,
-  getCustomerCountry,
-} from "../services/customerBalanceService.js";
+  createWallet, listWallets, listEligibleWalletAssets, getWalletLedger,
+  registerExternalWallet, listExternalWallets,
+} from "../services/walletService.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
 
 export const customerRouter = Router();
-const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
+const fail = (res, error) => res.status(error.statusCode || 503).json({ error: error.message });
 
-// --- Wallet endpoints ---
-
-customerRouter.get("/wallets/:customerId", (_req, res) => {
+// Account readiness is derived from the durable VOVE compliance records.
+customerRouter.get("/account/:customerId", async (req, res) => {
   try {
-    const customerId = _req.params.customerId;
-    return res.json({ customerId, wallets: getCustomerWallets(customerId) });
-  } catch (e) {
-    return fail(res, e);
-  }
+    const customerId = req.params.customerId;
+    const [gate, wallets, externalWallets] = await Promise.all([
+      getCustomerGateStatus(customerId), listWallets(customerId), listExternalWallets(customerId),
+    ]);
+    return res.json({ customerId, verification: gate.gate, walletCount: wallets.length, wallets, externalWallets });
+  } catch (error) { return fail(res, error); }
 });
 
-customerRouter.get("/wallets/eligible/:customerId", (_req, res) => {
+customerRouter.get("/wallets/eligible/:customerId", async (req, res) => {
   try {
-    const customerId = _req.params.customerId;
-    const country = _req.query.country || getCustomerCountry(customerId);
-    return res.json({ customerId, eligible: getWalletEligibleForCustomer(customerId, country) });
-  } catch (e) {
-    return fail(res, e);
-  }
+    const customerId = req.params.customerId;
+    const country = String(req.query.country || "GLOBAL").toUpperCase();
+    return res.json({ customerId, eligible: await listEligibleWalletAssets(customerId, country) });
+  } catch (error) { return fail(res, error); }
+});
+
+customerRouter.get("/wallets/:customerId", async (req, res) => {
+  try {
+    const customerId = req.params.customerId;
+    return res.json({ customerId, wallets: await listWallets(customerId) });
+  } catch (error) { return fail(res, error); }
 });
 
 customerRouter.post("/wallets", async (req, res) => {
   try {
     const { customerId, currency, country } = req.body || {};
-    if (!customerId || !currency) {
-      return res.status(400).json({ error: "customerId and currency are required." });
-    }
-
-    // Require KYC approval before creating wallet
-    const gate = await getCustomerGateStatus(customerId);
-    if (!gate.gate.approved) {
-      return res.status(403).json({
-        error: "Compliance gate not approved. Complete KYC/KYB verification first.",
-        gateStatus: gate.gate,
-      });
-    }
-
-    if (country) setCustomerCountry(customerId, country);
-    const wallet = createCustomerWallet(customerId, currency, getCustomerCountry(customerId));
+    if (!customerId || !currency) return res.status(400).json({ error: "customerId and currency are required." });
+    const wallet = await createWallet({ customerId, currency, country });
     return res.status(201).json({ wallet });
-  } catch (e) {
-    return fail(res, e);
-  }
+  } catch (error) { return fail(res, error); }
 });
 
-// --- Balance endpoints ---
-
-customerRouter.get("/balance/:customerId", (_req, res) => {
+customerRouter.get("/balance/:customerId", async (req, res) => {
   try {
-    return res.json({ customerId: _req.params.customerId, balances: getCustomerBalances(_req.params.customerId) });
-  } catch (e) {
-    return fail(res, e);
-  }
+    const wallets = await listWallets(req.params.customerId);
+    return res.json({ customerId: req.params.customerId, balances: Object.fromEntries(wallets.map((wallet) => [wallet.currency, wallet.balance])) });
+  } catch (error) { return fail(res, error); }
 });
 
-customerRouter.get("/summary/:customerId", async (_req, res) => {
+customerRouter.get("/summary/:customerId", async (req, res) => {
   try {
-    return res.json(await getCustomerSummary(_req.params.customerId));
-  } catch (e) {
-    return fail(res, e);
-  }
+    const customerId = req.params.customerId;
+    const [wallets, ledger] = await Promise.all([listWallets(customerId), getWalletLedger(customerId)]);
+    const totalCredited = ledger.filter((entry) => ["DEPOSIT", "CONVERSION_CREDIT", "ADJUSTMENT"].includes(entry.type) && entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
+    const totalDebited = ledger.filter((entry) => ["WITHDRAWAL", "CONVERSION_DEBIT"].includes(entry.type) && entry.amount < 0).reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
+    return res.json({ customerId, balances: Object.fromEntries(wallets.map((wallet) => [wallet.currency, wallet.balance])), totalCredited, totalDebited, transactionCount: ledger.length });
+  } catch (error) { return fail(res, error); }
 });
 
-customerRouter.post("/credit", async (req, res) => {
+customerRouter.get("/ledger/:customerId", async (req, res) => {
+  try { return res.json({ customerId: req.params.customerId, entries: await getWalletLedger(req.params.customerId, req.query.currency) }); }
+  catch (error) { return fail(res, error); }
+});
+
+customerRouter.post("/external-wallets", async (req, res) => {
   try {
-    const { customerId, currency, amount, reference, meta } = req.body || {};
-    if (!customerId || !currency || !Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: "customerId, currency and positive amount are required." });
-    }
-    return res.status(201).json(creditBalance(customerId, currency.toUpperCase(), amount, reference, meta));
-  } catch (e) {
-    return fail(res, e);
-  }
+    const wallet = await registerExternalWallet(req.body || {});
+    return res.status(201).json({ wallet });
+  } catch (error) { return fail(res, error); }
 });
 
-customerRouter.post("/debit", async (req, res) => {
-  try {
-    const { customerId, currency, amount, reference, meta } = req.body || {};
-    if (!customerId || !currency || !Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: "customerId, currency and positive amount are required." });
-    }
-    return res.status(200).json(debitBalance(customerId, currency.toUpperCase(), amount, reference, meta));
-  } catch (e) {
-    return fail(res, e);
-  }
+customerRouter.get("/external-wallets/:customerId", async (req, res) => {
+  try { return res.json({ customerId: req.params.customerId, wallets: await listExternalWallets(req.params.customerId) }); }
+  catch (error) { return fail(res, error); }
 });
 
-// --- Country ---
-
-customerRouter.post("/country", async (req, res) => {
-  try {
-    const { customerId, country } = req.body || {};
-    if (!customerId || !country) {
-      return res.status(400).json({ error: "customerId and country are required." });
-    }
-    setCustomerCountry(customerId, country);
-    return res.json({ customerId, country });
-  } catch (e) {
-    return fail(res, e);
-  }
-});
+// Deliberately no public /credit or /debit endpoint. Balances may only change
+// through verified provider events or controlled transfer/settlement services.
