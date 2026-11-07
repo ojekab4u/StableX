@@ -94,6 +94,16 @@ export async function postProviderCredit({ customerId, currency, amount, provide
        RETURNING entry_id AS "entryId"`,
       [randomUUID(), wallet.rows[0].wallet_id, customerId, assetCode, value, reference || providerEventId, provider, providerEventId, JSON.stringify(metadata)]
     );
+    if (!inserted.rowCount) {
+      const prior = await client.query(
+        "SELECT customer_id,asset_code,amount::text AS amount FROM wallet_ledger WHERE provider=$1 AND provider_event_id=$2",
+        [provider, providerEventId]
+      );
+      if (!prior.rowCount || prior.rows[0].customer_id !== customerId ||
+          prior.rows[0].asset_code !== assetCode || Number(prior.rows[0].amount) !== value) {
+        throw fail("Provider event ID was already used for a different credit. Manual reconciliation is required.", 409);
+      }
+    }
     const balance = await client.query(
       "SELECT COALESCE(SUM(amount),0)::text AS balance FROM wallet_ledger WHERE wallet_id=$1 AND status='POSTED'",
       [wallet.rows[0].wallet_id]
