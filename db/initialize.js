@@ -94,7 +94,57 @@ const schemaStatements = [
     expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     selected_at TIMESTAMPTZ
   )`,
-  `CREATE INDEX IF NOT EXISTS routing_quotes_expiry_idx ON routing_quotes (expires_at)`
+  `CREATE INDEX IF NOT EXISTS routing_quotes_expiry_idx ON routing_quotes (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS wallet_accounts (
+    wallet_id UUID PRIMARY KEY,
+    customer_id VARCHAR(128) NOT NULL,
+    asset_code VARCHAR(12) NOT NULL,
+    country_code VARCHAR(2),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','FROZEN','CLOSED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (customer_id, asset_code)
+  )`,
+  `CREATE INDEX IF NOT EXISTS wallet_accounts_customer_idx ON wallet_accounts (customer_id)`,
+  `CREATE TABLE IF NOT EXISTS wallet_ledger (
+    entry_id UUID PRIMARY KEY,
+    wallet_id UUID NOT NULL REFERENCES wallet_accounts(wallet_id),
+    customer_id VARCHAR(128) NOT NULL,
+    asset_code VARCHAR(12) NOT NULL,
+    entry_type VARCHAR(24) NOT NULL CHECK (entry_type IN ('DEPOSIT','WITHDRAWAL','CONVERSION_CREDIT','CONVERSION_DEBIT','ADJUSTMENT','REVERSAL')),
+    amount NUMERIC(24,8) NOT NULL CHECK (amount <> 0),
+    reference VARCHAR(255) NOT NULL,
+    provider VARCHAR(80),
+    provider_event_id VARCHAR(255),
+    status VARCHAR(20) NOT NULL DEFAULT 'POSTED' CHECK (status IN ('PENDING','POSTED','REVERSED')),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, provider_event_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS wallet_ledger_customer_idx ON wallet_ledger (customer_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS wallet_ledger_wallet_idx ON wallet_ledger (wallet_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS payment_details (
+    payment_detail_id UUID PRIMARY KEY,
+    customer_id VARCHAR(128) NOT NULL,
+    wallet_id UUID NOT NULL REFERENCES wallet_accounts(wallet_id),
+    provider VARCHAR(80) NOT NULL,
+    provider_reference VARCHAR(255) NOT NULL,
+    currency VARCHAR(12) NOT NULL,
+    details JSONB NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, provider_reference)
+  )`,
+  `CREATE INDEX IF NOT EXISTS payment_details_customer_idx ON payment_details (customer_id)`,
+  `CREATE TABLE IF NOT EXISTS external_wallets (
+    external_wallet_id UUID PRIMARY KEY,
+    customer_id VARCHAR(128) NOT NULL,
+    address VARCHAR(128) NOT NULL,
+    chain_id INTEGER NOT NULL,
+    wallet_provider VARCHAR(64),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (customer_id, chain_id, address)
+  )`
 
 ];
 
@@ -107,7 +157,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
