@@ -190,7 +190,7 @@ export async function getCustomerGateStatus(customerId) {
   return { customerId, gate: evaluateGate(cases), caseCount: cases.length };
 }
 
-function normalizeVoveOutcome(event, result) {
+export function normalizeVoveOutcome(event, result) {
   const data = event?.data || {};
   const eventType = String(event?.type || "").toLowerCase();
   const rawStatus = result?.status || result?.data?.status || result?.user?.status ||
