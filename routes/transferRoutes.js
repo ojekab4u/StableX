@@ -59,7 +59,8 @@ transferRouter.post("/:id/provider-order", async (req, res) => {
       confirm: req.body?.confirm,
     });
     const status = result.attempt?.status === "ACCEPTED" ? (result.replayed ? 200 : 201)
-      : result.attempt?.status === "UNKNOWN" ? 202 : 200;
+      : ["UNKNOWN", "SUBMITTING"].includes(result.attempt?.status) ? 202
+      : result.attempt?.status === "REJECTED" ? 422 : 200;
     return res.status(status).json(result);
   } catch (error) {
     return fail(res, error);
