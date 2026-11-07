@@ -26,13 +26,22 @@ export async function createProviderOrderAttempt({ attemptId, transferId, custom
       error.statusCode = 409;
       throw error;
     }
-    const existing = await client.query(
-      `${SELECT} WHERE transfer_id=$1 FOR UPDATE`,
+    const sameKey = await client.query(
+      `${SELECT} WHERE transfer_id=$1 AND idempotency_key=$2 FOR UPDATE`,
+      [transferId, idempotencyKey]
+    );
+    if (sameKey.rowCount) {
+      await client.query("COMMIT");
+      return { attempt: sameKey.rows[0], replayed: true };
+    }
+    const unresolved = await client.query(
+      `${SELECT} WHERE transfer_id=$1 AND status IN ('SUBMITTING','ACCEPTED','UNKNOWN')
+       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
       [transferId]
     );
-    if (existing.rowCount) {
+    if (unresolved.rowCount) {
       await client.query("COMMIT");
-      return { attempt: existing.rows[0], replayed: true };
+      return { attempt: unresolved.rows[0], replayed: true };
     }
     const inserted = await client.query(
       `INSERT INTO provider_order_attempts
@@ -102,7 +111,8 @@ export async function readProviderOrderAttempt({ transferId, customerId }) {
        a.updated_at AS "updatedAt"
      FROM provider_order_attempts a
      JOIN transfers t ON t.transfer_id=a.transfer_id
-     WHERE a.transfer_id=$1 AND t.customer_id=$2`,
+     WHERE a.transfer_id=$1 AND t.customer_id=$2
+     ORDER BY a.created_at DESC LIMIT 1`,
     [transferId, customerId]
   );
   return result.rows[0] || null;
