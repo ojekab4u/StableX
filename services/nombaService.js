@@ -53,6 +53,11 @@ export function verifyNombaWebhookSignature(rawBody, signature, secret) {
 }
 
 export async function createNombaVirtualAccount({ customerId, customerName, email, phone, bvn }) {
+  const existing = await getPool().query(
+    "SELECT details FROM payment_details WHERE provider='Nomba' AND customer_id=$1 AND status='ACTIVE' ORDER BY created_at DESC LIMIT 1",
+    [customerId]
+  );
+  if (existing.rowCount) return existing.rows[0].details;
   if (!isUsableCredential(apiKey())) {
     const error = new Error("Nomba API key not configured. Set NOMBA_API_KEY in .env.");
     error.statusCode = 503;
