@@ -55,7 +55,7 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   }
 
   const cleanSubject = {};
-  for (const field of ["fullName", "firstName", "lastName", "dateOfBirth", "country", "email", "phone", "businessName", "registrationNumber"]) {
+  for (const field of ["fullName", "firstName", "lastName", "dateOfBirth", "country", "email", "phone", "businessName", "registrationNumber", "city", "address"]) {
     if (subject[field] !== undefined) {
       if (typeof subject[field] !== "string" || !subject[field].trim() || subject[field].length > 200) {
         const error = new Error(`Invalid subject field: ${field}.`);
@@ -91,7 +91,12 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
     dateOfBirth: cleanSubject.dateOfBirth || "",
     email: cleanSubject.email || "",
     phone: cleanSubject.phone || "",
-    ...(subjectType === "BUSINESS" ? { type: "BUSINESS" } : {}),
+    ...(subjectType === "BUSINESS" ? {
+      type: "BUSINESS",
+      registrationNumber: cleanSubject.registrationNumber || "",
+      city: cleanSubject.city || "",
+      address: cleanSubject.address || "",
+    } : {}),
   });
 
   const caseId = randomUUID();
