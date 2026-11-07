@@ -56,7 +56,7 @@ customerRouter.get("/summary/:customerId", async (req, res) => {
     const [wallets, ledger] = await Promise.all([listWallets(customerId), getWalletLedger(customerId)]);
     const totalCredited = ledger.filter((entry) => ["DEPOSIT", "CONVERSION_CREDIT", "ADJUSTMENT"].includes(entry.type) && entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
     const totalDebited = ledger.filter((entry) => ["WITHDRAWAL", "CONVERSION_DEBIT"].includes(entry.type) && entry.amount < 0).reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
-    return res.json({ customerId, balances: Object.fromEntries(wallets.map((wallet) => [wallet.currency, wallet.balance])), totalCredited, totalDebited, transactionCount: ledger.length });
+    return res.json({ customerId, balances: Object.fromEntries(wallets.map((wallet) => [wallet.currency, wallet.balance])), totalCredited, totalDebited, transactionCount: ledger.length, history: ledger });
   } catch (error) { return fail(res, error); }
 });
 
