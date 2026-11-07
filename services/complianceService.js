@@ -221,6 +221,57 @@ export function normalizeVoveOutcome(event, result) {
   return { providerStatus, status: "SUBMITTED" };
 }
 
+export async function refreshVoveComplianceCase(providerReference) {
+  if (typeof providerReference !== "string" || providerReference.length < 8 || providerReference.length > 255) {
+    const error = new Error("A valid VOVE reference is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const caseRecord = await readComplianceCaseByProviderReference("VOVE ID", providerReference);
+  if (!caseRecord) {
+    const error = new Error("No StableX compliance case matches this VOVE reference. Backfill the legacy voveCaseId reference before refreshing.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const result = await getVoveKycResult(providerReference, { subjectType: caseRecord.subjectType });
+  const rawStatus = result?.status || result?.data?.status || result?.user?.status ||
+    result?.data?.user?.status || result?.kyc?.status || result?.verification?.status ||
+    result?.session?.status || result?.data?.session?.status || null;
+
+  if (!rawStatus) {
+    return {
+      updated: false,
+      reason: "VOVE returned a response without a recognised status field. No compliance decision was changed.",
+      caseId: caseRecord.caseId,
+      customerId: caseRecord.customerId,
+      refId: providerReference,
+      responseKeys: Object.keys(result || {}),
+      responseDataKeys: Object.keys(result?.data || {}),
+    };
+  }
+
+  const outcome = normalizeVoveOutcome({}, { status: rawStatus });
+  const updated = await updateComplianceProviderStatus({
+    caseId: caseRecord.caseId,
+    providerStatus: outcome.providerStatus,
+    status: outcome.status,
+    eventType: "MANUAL_STATUS_REFRESH",
+  });
+
+  return {
+    updated: true,
+    caseId: caseRecord.caseId,
+    customerId: caseRecord.customerId,
+    refId: providerReference,
+    previousStatus: caseRecord.status,
+    status: updated.status,
+    providerStatus: updated.providerStatus,
+    unchanged: Boolean(updated.unchanged),
+  };
+}
+
 export async function processVoveWebhook(event) {
   const data = event?.data || event || {};
   const refId = data.refId || data.caseId || data.sessionRefId;
