@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getCustomerGateStatus } from "./complianceService.js";
 import {
  createSimulatedProviderOrder,
  advanceSimulatedProviderOrder,
@@ -20,6 +21,12 @@ export async function createSimulatedOrder({ transferId, customerId, idempotency
  validateUuid(transferId, "transferId");
  if (typeof idempotencyKey !== "string" || idempotencyKey.length < 8 || idempotencyKey.length > 128) {
   const e = new Error("Send an Idempotency-Key header (8–128 characters)."); e.statusCode = 400; throw e;
+ }
+ const gate = await getCustomerGateStatus(customerId);
+ if (!gate.gate.approved) {
+  const e = new Error(`Compliance gate: provider-order rehearsal requires an APPROVED customer. Current status: ${gate.gate.status}.`);
+  e.statusCode = 403;
+  throw e;
  }
  const fingerprint = createHash("sha256").update(JSON.stringify({ transferId, customerId, executionMode: "SIMULATED" })).digest("hex");
  return createSimulatedProviderOrder({ transferId, customerId, idempotencyKey, fingerprint });
