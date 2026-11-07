@@ -6,7 +6,7 @@ import { getPaycrestRate } from "./providers/paycrestService.js";
 import { getBridgeRate } from "./providers/bridgeService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { readTransfer, applyQuoteSelection } from "../repositories/transferRepository.js";
-import { saveRoutingQuote, readRoutingQuote, markRoutingQuoteSelected } from "../repositories/routingQuoteRepository.js";
+import { saveRoutingQuote, readRoutingQuote } from "../repositories/routingQuoteRepository.js";
 
 // Quotes are persisted so selection survives server restarts and multiple instances.
 // They remain provider previews/offers; persistence does not reserve liquidity or enable execution.
@@ -260,6 +260,5 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
       selectedAt: new Date().toISOString(),
     },
   });
-  await markRoutingQuoteSelected(quoteId);
   return selection;
 }
