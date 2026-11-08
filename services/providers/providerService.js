@@ -1,6 +1,7 @@
 import { getHoneycoinRate, getHoneycoinReadiness } from "./honeycoinService.js";
 import { getPaycrestRate, getPaycrestReadiness } from "./paycrestService.js";
 import { getPaytrieQuote, getPaytrieReadiness } from "../paytrieService.js";
+import { getBridgeRate, getBridgeReadiness } from "./bridgeService.js";
 import { getPartnerReadiness } from "./partnerCatalog.js";
 import { getAerodromeReadiness } from "./aerodromeService.js";
 
@@ -8,14 +9,20 @@ export function getProviderReadiness() {
   return {
     mode: "PROVIDER_ADAPTER_PREPARATION",
     executionEnabled: false,
-    providers: [getPaytrieReadiness(), getHoneycoinReadiness(), getPaycrestReadiness(), getAerodromeReadiness()],
+    providers: [
+      getPaytrieReadiness(),
+      getHoneycoinReadiness(),
+      getPaycrestReadiness(),
+      getBridgeReadiness(),
+      getAerodromeReadiness(),
+    ],
     partners: getPartnerReadiness(),
     note: "Configuration presence is not a successful connection test, provider approval, live liquidity confirmation or permission to move funds.",
   };
 }
 
 export async function getProviderRatePreviews({ from, to, amount, network = "base", provider = "all" }) {
-  const selected = provider.toLowerCase();
+  const selected = String(provider || "all").toLowerCase();
   const tasks = [];
 
   if (selected === "all" || selected === "honeycoin") {
@@ -27,8 +34,11 @@ export async function getProviderRatePreviews({ from, to, amount, network = "bas
   if (selected === "all" || selected === "paytrie") {
     tasks.push(["Paytrie", () => getPaytrieQuote({ from, to, amount })]);
   }
+  if (selected === "all" || selected === "bridge") {
+    tasks.push(["Bridge", () => getBridgeRate({ from, to, amount })]);
+  }
   if (!tasks.length) {
-    const error = new Error("Provider must be honeycoin, paycrest, or all.");
+    const error = new Error("Provider must be honeycoin, paycrest, paytrie, bridge, or all.");
     error.statusCode = 400;
     throw error;
   }

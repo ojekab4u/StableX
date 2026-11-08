@@ -10,7 +10,7 @@ import { readTransfer, applyQuoteSelection } from "../repositories/transferRepos
 import { saveRoutingQuote, readRoutingQuote } from "../repositories/routingQuoteRepository.js";
 
 // Quotes are persisted so selection survives server restarts and multiple instances.
-// They remain provider previews/offers; persistence does not reserve liquidity or enable execution.
+// Persistence does not reserve liquidity or enable execution.
 const QUOTE_TTL_MS = Math.max(10, Number(process.env.ROUTING_QUOTE_TTL_SECONDS || 120)) * 1000;
 
 function normalizeAmount(value) {
@@ -58,19 +58,26 @@ function classify(quoteType) {
 function normalizeProviderResult(provider, request, result) {
   const raw = result.providerData ?? result.raw ?? result;
 
-  // Paycrest nests rates under buy/sell
+  // Paycrest nests direction-specific rates under buy/sell.
   let nestedRate = null;
   if (raw?.buy?.rate !== undefined || raw?.sell?.rate !== undefined) {
     nestedRate = result.direction === "OFFRAMP" ? raw.sell?.rate : raw.buy?.rate;
   }
 
   const destinationAmount =
+    extractNumeric(result.destinationAmount) ??
     extractNumeric(result.toAmount) ??
-    pickNumber(raw, ["toAmount", "netAmount", "amountReturned", "destinationAmount", "receivedAmount", "amount", "convertedAmount"]);
+    pickNumber(raw, [
+      "toAmount", "rightSideValue", "netAmount", "amountReturned",
+      "destinationAmount", "receivedAmount", "amount", "convertedAmount",
+    ]);
   const rate =
     extractNumeric(result.rate) ??
     extractNumeric(nestedRate) ??
-    pickNumber(raw, ["rate", "unitRate", "fxRate", "exchangeRate", "perUnitRate", "conversionRate"]);
+    pickNumber(raw, [
+      "rate", "unitRate", "fxRate", "exchangeRate", "perUnitRate",
+      "conversionRate", "sell_rate",
+    ]);
 
   let normalizedDestination = destinationAmount;
   let normalizedRate = rate;
@@ -104,11 +111,11 @@ function normalizeProviderResult(provider, request, result) {
     destinationAmount: normalizedDestination ?? null,
     rate: normalizedRate ?? null,
     fee: pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]),
-    feeCurrency: raw?.feeCurrency || raw?.fee_currency || request.to,
+    feeCurrency: result.feeCurrency || raw?.feeCurrency || raw?.fee_currency || request.to,
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
-    expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
+    expiresAt: result.expiresAt || new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
-    observedAt: result.observedAt || result.timestamp || new Date().toISOString(),
+    observedAt: result.observedAt || result.timestamp || raw?.updated_at || new Date().toISOString(),
     network: result.network || null,
     chainId: result.chainId || null,
     executionEnabled: result.executionEnabled === true,
@@ -121,8 +128,6 @@ async function rememberIssued(quote) {
   return quote;
 }
 
-// One call fans out to every candidate liquidity provider.
-// NO SIMULATION FALLBACK — only real provider rates.
 async function collectSingleHopCandidates(request) {
   const attempts = await Promise.allSettled([
     getPaytrieQuote(request)
@@ -158,10 +163,17 @@ async function collectSingleHopCandidates(request) {
   return { candidates, unavailableProviders };
 }
 
-function rankQuotes(quotes) {
-  return quotes.sort(
-    (a, b) => (b.destinationAmount ?? -Infinity) - (a.destinationAmount ?? -Infinity)
-  );
+// Executable offers always rank first. Non-executable provider/on-chain prices
+// are ranked by quote class, then destination amount within that class.
+export function rankRoutingQuotes(quotes) {
+  const priority = { ONCHAIN: 0, LIVE: 1, INDICATIVE: 2, SIMULATION: 3 };
+  return [...quotes].sort((a, b) => {
+    const executableDifference = Number(b.executionEnabled === true) - Number(a.executionEnabled === true);
+    if (executableDifference !== 0) return executableDifference;
+    const classDifference = (priority[a.providerClass] ?? 9) - (priority[b.providerClass] ?? 9);
+    if (classDifference !== 0) return classDifference;
+    return (b.destinationAmount ?? -Infinity) - (a.destinationAmount ?? -Infinity);
+  });
 }
 
 export async function getRoutingQuotes({ from, to, amount }) {
@@ -171,27 +183,33 @@ export async function getRoutingQuotes({ from, to, amount }) {
   };
 
   const direct = await collectSingleHopCandidates(request);
+  const hasExecutableQuotes = direct.candidates.some((quote) => quote.executionEnabled === true);
+  const hasOnchainQuotes = direct.candidates.some((quote) => quote.providerClass === "ONCHAIN");
+  const hasLiveProviderQuotes = direct.candidates.some((quote) => quote.providerClass === "LIVE");
 
-  // ONLY return real provider quotes. No simulation, no synthetic hub routes.
-  // If no provider covers this corridor, return empty candidates.
   return {
     application: "StableX",
     quoteType: direct.candidates.length === 0
       ? "NO_PROVIDER"
-      : direct.candidates.some((quote) => quote.providerClass === "ONCHAIN")
-        ? "LIVE_ONCHAIN_OR_PROVIDER_QUOTES"
-        : direct.candidates.some((quote) => quote.providerClass === "LIVE")
-          ? "LIVE_PROVIDER_QUOTES"
-          : "INDICATIVE_PROVIDER_PREVIEWS",
+      : hasExecutableQuotes
+        ? "EXECUTABLE_PROVIDER_QUOTES"
+        : hasOnchainQuotes
+          ? "LIVE_ONCHAIN_AND_PROVIDER_PREVIEWS"
+          : hasLiveProviderQuotes
+            ? "LIVE_PROVIDER_QUOTES_AND_INDICATIVE_PREVIEWS"
+            : "INDICATIVE_PROVIDER_PREVIEWS",
     from: request.from,
     to: request.to,
     amount: request.amount,
-    executionEnabled: false,
-    candidates: rankQuotes(direct.candidates),
+    executionEnabled: hasExecutableQuotes,
+    hasExecutableQuotes,
+    candidates: rankRoutingQuotes(direct.candidates),
     unavailableProviders: direct.unavailableProviders,
-    disclaimer: direct.candidates.length === 0
-      ? "No provider covers this corridor. Add provider credentials to enable quotes."
-      : "Quotes are offers to compare, not reservations of liquidity.",
+    disclaimer: hasExecutableQuotes
+      ? "Only candidates explicitly marked executionEnabled are eligible for provider execution. Selection alone does not move funds."
+      : direct.candidates.length === 0
+        ? "No provider covers this corridor. Add provider credentials or an eligible provider to enable rate previews."
+        : "No returned candidate is executable. These are live or indicative rate previews only; selecting one records the choice but does not create an order, reserve liquidity, collect funds or settle a transfer.",
   };
 }
 

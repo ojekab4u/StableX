@@ -3,7 +3,9 @@ const PUBLIC_KEY = () => String(process.env.HONEYCOIN_PUBLIC_KEY || "").trim();
 const isUsableCredential = (value) => Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(value.trim());
 
 function getBaseUrl() {
-  const configured = String(process.env.HONEYCOIN_API_BASE_URL || "").trim();
+  const configured = String(
+    process.env.HONEYCOIN_B2B_BASE_URL || process.env.HONEYCOIN_API_BASE_URL || ""
+  ).trim();
   if (configured) return configured.replace(/\/+$/, "");
   const sandbox = String(process.env.HONEYCOIN_ENVIRONMENT || "Sandbox").toLowerCase() !== "production";
   return sandbox

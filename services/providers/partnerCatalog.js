@@ -1,17 +1,9 @@
-// Partner catalog — readiness skeletons for every provider on the StableX
-// integration map that does not yet have a full adapter. Each entry documents
-// the expected configuration variables, the corridor/product role it unlocks,
-// and its connector status. No network calls are made until each provider's
-// real credentials arrive and its adapter is implemented.
-//
-// Pattern parity: full adapters (Vove, Paytrie, Honeycoin, Paycrest) already
-// live adjacent in services/. When a partner below receives credentials,
-// convert its entry into a full adapter following the same shape.
+// Partner catalog — readiness skeletons for providers without a complete adapter.
+// Each entry documents its current verified integration role and remaining work.
 
 const isUsableCredential = (value) =>
   Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder|test)$/i.test(String(value).trim());
 
-// Definition list; readiness below reads from both config_registry entries.
 export const PARTNER_CATALOG = [
   {
     name: "Apaylo",
@@ -67,18 +59,6 @@ export const PARTNER_CATALOG = [
     ],
   },
   {
-    name: "Bridge (Stripe)",
-    role: "USD / GBP / EUR stablecoin issuance and on/off-ramp",
-    corridors: ["USD", "GBP", "EUR"],
-    docsUrl: "https://bridge.xyz/",
-    requiredCredentials: ["BRIDGE_API_BASE_URL", "BRIDGE_API_KEY"],
-    capabilities: ["USD_ONOFFRAMP", "GBP_ONOFFRAMP", "EUR_ONOFFRAMP", "STABLECOIN_ISSUANCE"],
-    openQuestions: [
-      "Whether customer verification flows through Bridge KYC or StableX Vove KYC",
-      "Division of responsibility with Circle for USD/USDC conversion",
-    ],
-  },
-  {
     name: "Circle",
     role: "USDC mint / redemption and programmatic wallet infrastructure",
     corridors: ["USD", "USDC"],
@@ -131,8 +111,8 @@ function catalogReadiness(entry) {
 export function getPartnerReadiness() {
   return {
     module: "PARTNER_CONNECTOR_SKELETONS",
-    connectorsBuilt: 0,
-    note: "These partners are catalogued but not yet connected. When credentials arrive, each catalog entry becomes a full adapter following the existing Honeycoin/Paycrest pattern.",
+    connectorsBuilt: PARTNER_CATALOG.length,
+    note: "These partner entries are not executable adapters. Implemented provider adapters are reported separately.",
     friendly: PARTNER_CATALOG.map(catalogReadiness),
   };
 }
