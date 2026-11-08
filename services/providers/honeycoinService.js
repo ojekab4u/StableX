@@ -164,6 +164,18 @@ export async function createHoneycoinOnrampOrder({
 }
 
 // Reads the provider's canonical transaction record; never trusts browser-supplied status.
+export async function getHoneycoinWebhookDeliveries(reference) {
+  if (typeof reference !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(reference)) {
+    const error = new Error("Invalid Honeycoin webhook reference.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const url = new URL(`${getBaseUrl()}/webhooks`);
+  url.searchParams.set("reference", reference);
+  const payload = await honeycoinJson(url, { method: "GET" });
+  return payload.data ?? payload;
+}
+
 export async function getHoneycoinTransaction(transactionId) {
   if (typeof transactionId !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(transactionId)) {
     const error = new Error("Invalid Honeycoin transaction ID.");
