@@ -31,7 +31,7 @@
       <div><label for="customerId">Customer ID</label><input id="customerId" value="customer-001"></div>
       <div><label for="email">Customer email</label><input id="email" type="email" placeholder="customer@example.com"></div>
     </div>
-    <label for="transfer">Select a quoted NGN → USDC transfer</label>
+    <label for="transfer">Select an NGN → USDC transfer</label>
     <select id="transfer"><option value="">Loading transfers…</option></select>
     <div class="grid">
       <div><label for="method">Payment method</label><select id="method"><option value="opay">OPay (sandbox redirect flow)</option><option value="bank">Bank transfer</option></select></div>
@@ -71,7 +71,7 @@
     if (!customerId) throw new Error("Enter a customer ID.");
     const data = await api("/api/transfers?customerId=" + encodeURIComponent(customerId));
     const eligible = (data.transfers || []).filter((t) =>
-      t.status === "QUOTED" &&
+      ["QUOTED", "AWAITING_FUNDING", "FUNDED", "SETTLEMENT_PENDING"].includes(t.status) &&
       t.sourceCurrency === "NGN" &&
       t.destinationCurrency === "USDC" &&
       t.quote?.provider === "Honeycoin"
@@ -95,8 +95,26 @@
     try { await loadTransfers(); show("Loaded eligible transfers. Select one to create its Honeycoin order."); }
     catch (e) { show(e.message); }
   });
-  $("transfer").addEventListener("change", () => {
-    $("create").disabled = !$("transfer").value;
+  $("transfer").addEventListener("change", async () => {
+    const transferId = $("transfer").value;
+    $("create").disabled = !transferId;
+    $("refresh").disabled = true;
+    currentOrder = null;
+    if (!transferId) return;
+    try {
+      const data = await api("/api/transfers/" + encodeURIComponent(transferId) +
+        "/provider-order?customerId=" + encodeURIComponent($("customerId").value.trim()));
+      currentOrder = data.order;
+      show(data);
+      $("refresh").disabled = false;
+      if (currentOrder.redirectUrl) {
+        $("redirect").href = currentOrder.redirectUrl;
+        $("redirectWrap").hidden = false;
+      } else $("redirectWrap").hidden = true;
+    } catch (e) {
+      show("No order exists yet for this transfer. Create one when ready.");
+      $("redirectWrap").hidden = true;
+    }
   });
   $("create").addEventListener("click", async () => {
     const transferId = $("transfer").value;
