@@ -103,7 +103,13 @@ export async function createHoneycoinOrderForTransfer({
   const transfer = await readTransfer(transferId, customerId);
   if (!transfer) throw fail("Transfer not found for this customer.", 404);
   const existing = await readProviderOrderByTransfer(transferId, customerId);
-  if (existing) {
+  // Recover only the specific pre-request JavaScript ReferenceError from the
+  // previous release. This error occurred before fetch(), so no Honeycoin
+  // transaction could have been created. Never retry ambiguous network errors.
+  const retryKnownLocalReferenceError = existing?.status === "CREATE_FAILED" &&
+    !existing.providerTransactionId &&
+    existing.failureReason === "receiverAddress is not defined";
+  if (existing && !retryKnownLocalReferenceError) {
     return { created: false, order: publicOrder(existing), message: "An order already exists for this transfer; no duplicate provider request was sent." };
   }
   if (transfer.status !== "QUOTED") {
@@ -138,15 +144,17 @@ export async function createHoneycoinOrderForTransfer({
   // Fail before the provider request if the encryption key is missing or invalid.
   encryptBeneficiaryDetails({});
   const externalReference = `stablex-${transferId}`;
-  const inserted = await insertProviderOrder({
-    orderId: randomUUID(),
-    transferId,
-    customerId,
-    provider: "Honeycoin",
-    externalReference,
-    paymentMethod: method,
-    recipientAddress,
-  });
+  const inserted = retryKnownLocalReferenceError
+    ? { created: true, order: existing }
+    : await insertProviderOrder({
+        orderId: randomUUID(),
+        transferId,
+        customerId,
+        provider: "Honeycoin",
+        externalReference,
+        paymentMethod: method,
+        recipientAddress,
+      });
   if (!inserted.created) {
     if (!inserted.order) throw fail("Unable to reserve a unique provider order for this transfer.", 409);
     return { created: false, order: publicOrder(inserted.order), message: "An order already exists; no duplicate provider request was sent." };
