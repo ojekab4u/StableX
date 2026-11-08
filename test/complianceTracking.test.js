@@ -13,7 +13,7 @@ test("VOVE completed verification enters internal review, not automatic approval
 
 test("explicit VOVE verified outcome satisfies the verification gate", () => {
   assert.deepEqual(
-    normalizeVoveOutcome({ data: {} }, { data: { status: "VERIFIED" } }),
+    normalizeVoveOutcome({ data: {} }, { refId: "stablex_kyc_test_ref", data: { status: "VERIFIED" } }),
     { providerStatus: "VERIFIED", status: "APPROVED" }
   );
 });
