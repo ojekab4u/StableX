@@ -4,6 +4,7 @@ import { getPaytrieQuote } from "./paytrieService.js";
 import { getHoneycoinRate } from "./providers/honeycoinService.js";
 import { getPaycrestRate } from "./providers/paycrestService.js";
 import { getBridgeRate } from "./providers/bridgeService.js";
+import { getAerodromeQuote } from "./providers/aerodromeService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { readTransfer, applyQuoteSelection } from "../repositories/transferRepository.js";
 import { saveRoutingQuote, readRoutingQuote } from "../repositories/routingQuoteRepository.js";
@@ -49,6 +50,7 @@ function pickNumber(source, keys) {
 
 function classify(quoteType) {
   if (quoteType === "LIVE_PROVIDER_QUOTE") return "LIVE";
+  if (quoteType === "LIVE_ONCHAIN_QUOTE") return "ONCHAIN";
   if (quoteType === "SIMULATION") return "SIMULATION";
   return "INDICATIVE";
 }
@@ -106,6 +108,10 @@ function normalizeProviderResult(provider, request, result) {
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
     expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
+    observedAt: result.observedAt || result.timestamp || new Date().toISOString(),
+    network: result.network || null,
+    chainId: result.chainId || null,
+    executionEnabled: result.executionEnabled === true,
     note: result.note || null,
   };
 }
@@ -131,6 +137,9 @@ async function collectSingleHopCandidates(request) {
     getBridgeRate(request)
       .then((result) => normalizeProviderResult("Bridge", request, result))
       .catch((error) => ({ provider: "Bridge", available: false, reason: error.message })),
+    getAerodromeQuote(request)
+      .then((result) => normalizeProviderResult("Aerodrome Slipstream", request, result))
+      .catch((error) => ({ provider: "Aerodrome Slipstream", available: false, reason: error.message })),
   ]);
 
   const released = attempts.map((attempt) => attempt.status === "fulfilled" ? attempt.value : []);
@@ -169,9 +178,11 @@ export async function getRoutingQuotes({ from, to, amount }) {
     application: "StableX",
     quoteType: direct.candidates.length === 0
       ? "NO_PROVIDER"
-      : direct.candidates.some((quote) => quote.providerClass === "LIVE")
-        ? "LIVE_PROVIDER_QUOTES"
-        : "INDICATIVE_PROVIDER_PREVIEWS",
+      : direct.candidates.some((quote) => quote.providerClass === "ONCHAIN")
+        ? "LIVE_ONCHAIN_OR_PROVIDER_QUOTES"
+        : direct.candidates.some((quote) => quote.providerClass === "LIVE")
+          ? "LIVE_PROVIDER_QUOTES"
+          : "INDICATIVE_PROVIDER_PREVIEWS",
     from: request.from,
     to: request.to,
     amount: request.amount,

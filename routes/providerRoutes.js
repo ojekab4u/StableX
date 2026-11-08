@@ -20,8 +20,8 @@ providerRouter.post("/quotes", async (req, res) => {
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
     return res.status(400).json({ error: "Amount must be greater than 0 and at most 1,000,000." });
   }
-  if (!["all", "honeycoin", "paycrest"].includes(provider)) {
-    return res.status(400).json({ error: "Provider must be honeycoin, paycrest, or all." });
+  if (!["all", "honeycoin", "paycrest", "paytrie"].includes(provider)) {
+    return res.status(400).json({ error: "Provider must be honeycoin, paycrest, paytrie, or all." });
   }
 
   try {

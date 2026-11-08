@@ -2,12 +2,13 @@ import { getHoneycoinRate, getHoneycoinReadiness } from "./honeycoinService.js";
 import { getPaycrestRate, getPaycrestReadiness } from "./paycrestService.js";
 import { getPaytrieQuote, getPaytrieReadiness } from "../paytrieService.js";
 import { getPartnerReadiness } from "./partnerCatalog.js";
+import { getAerodromeReadiness } from "./aerodromeService.js";
 
 export function getProviderReadiness() {
   return {
     mode: "PROVIDER_ADAPTER_PREPARATION",
     executionEnabled: false,
-    providers: [getPaytrieReadiness(), getHoneycoinReadiness(), getPaycrestReadiness()],
+    providers: [getPaytrieReadiness(), getHoneycoinReadiness(), getPaycrestReadiness(), getAerodromeReadiness()],
     partners: getPartnerReadiness(),
     note: "Configuration presence is not a successful connection test, provider approval, live liquidity confirmation or permission to move funds.",
   };
