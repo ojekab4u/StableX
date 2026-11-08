@@ -152,8 +152,9 @@ export async function createHoneycoinOrderForTransfer({
     return { created: false, order: publicOrder(inserted.order), message: "An order already exists; no duplicate provider request was sent." };
   }
 
+  let providerOrder;
   try {
-    const providerOrder = await createHoneycoinOnrampOrder({
+    providerOrder = await createHoneycoinOnrampOrder({
       senderAmount: Number(transfer.sourceAmount),
       senderCurrency: "NGN",
       receiverCurrency: "USDC",
@@ -163,36 +164,6 @@ export async function createHoneycoinOrderForTransfer({
       email: customerEmail,
       externalReference,
     });
-    const paymentDetails = encryptBeneficiaryDetails({
-      virtualAccount: providerOrder.virtualAccount || null,
-      redirectUrl: providerOrder.redirectUrl || null,
-      stepRequired: providerOrder.stepRequired || null,
-    });
-    const saved = await updateProviderOrder({
-      orderId: inserted.order.orderId,
-      customerId,
-      providerTransactionId: providerOrder.transactionId,
-      status: providerOrder.redirectUrl ? "ACTION_REQUIRED" : "AWAITING_PAYMENT",
-      providerStatus: normalizeProviderStatus(providerOrder.status),
-      paymentDetails,
-      failureReason: null,
-    });
-    await updateTransferStatus({
-      id: transferId,
-      customerId,
-      status: "AWAITING_FUNDING",
-      actorId: "HONEYCOIN",
-      reason: `Honeycoin on-ramp order created. Provider reference: ${providerOrder.transactionId}`,
-    });
-    return {
-      created: true,
-      order: {
-        ...publicOrder(saved),
-        redirectUrl: providerOrder.redirectUrl,
-        stepRequired: providerOrder.stepRequired,
-        quoteNotice: "The selected Honeycoin rate was indicative only. Honeycoin calculates the order's actual conversion at order creation.",
-      },
-    };
   } catch (error) {
     await updateProviderOrder({
       orderId: inserted.order.orderId,
@@ -202,6 +173,37 @@ export async function createHoneycoinOrderForTransfer({
     });
     throw error;
   }
+
+  // Honeycoin may already have created an external order. Never retry its POST
+  // or mark the provider order failed because a subsequent local write failed.
+  const paymentDetails = encryptBeneficiaryDetails({
+    virtualAccount: providerOrder.virtualAccount || null,
+    redirectUrl: providerOrder.redirectUrl || null,
+    stepRequired: providerOrder.stepRequired || null,
+  });
+  const saved = await updateProviderOrder({
+    orderId: inserted.order.orderId,
+    customerId,
+    providerTransactionId: providerOrder.transactionId,
+    status: providerOrder.redirectUrl ? "ACTION_REQUIRED" : "AWAITING_PAYMENT",
+    providerStatus: normalizeProviderStatus(providerOrder.status),
+    paymentDetails,
+    failureReason: null,
+  });
+  await updateTransferStatus({
+    id: transferId,
+    customerId,
+    status: "AWAITING_FUNDING",
+    actorId: "HONEYCOIN",
+    reason: `Honeycoin on-ramp order created. Provider reference: ${providerOrder.transactionId}`,
+  });
+  return {
+    created: true,
+    order: {
+      ...publicOrder(saved),
+      quoteNotice: "The selected rate was indicative only. Honeycoin calculates the order's actual conversion at order creation.",
+    },
+  };
 }
 
 export async function refreshHoneycoinOrder({ transferId, customerId }) {
