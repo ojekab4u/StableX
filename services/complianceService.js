@@ -29,8 +29,8 @@ export function getComplianceReadiness() {
     realProviderConnected: voveConfigured,
     autoApprove: false,
     checks: [
-      { requirement: "KYC", subject: "INDIVIDUAL", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_HOSTED_SESSION" : "NOT_CONFIGURED" },
-      { requirement: "KYB", subject: "BUSINESS", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_HOSTED_SESSION_REQUIRES_FLOW_VALIDATION" : "NOT_CONFIGURED" },
+      { requirement: "KYC", subject: "INDIVIDUAL", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_KYC_SESSION_AND_RESULT_LOOKUP" : "NOT_CONFIGURED" },
+      { requirement: "KYB", subject: "BUSINESS", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_KYB_CASE_AND_RESULT_LOOKUP" : "NOT_CONFIGURED" },
     ],
     note: voveConfigured
       ? "Hosted VOVE verification sessions are enabled. Case creation is not approval; final status is tracked from VOVE results and authorized review."
