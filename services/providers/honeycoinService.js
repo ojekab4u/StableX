@@ -28,8 +28,9 @@ export function getHoneycoinReadiness() {
       : "AWAITING_PROVIDER_CREDENTIALS",
     environment: process.env.HONEYCOIN_ENVIRONMENT || "Sandbox",
     missingVariables,
-    capabilities: ["READ_ONLY_FX_RATE_PREVIEW"],
+    capabilities: ["READ_ONLY_FX_RATE_PREVIEW", "NGN_USDC_ONRAMP_ORDER_ADAPTER", "TRANSACTION_STATUS_LOOKUP"],
     executionEnabled: false,
+    executionNote: "Order adapter is implemented. Actual execution remains subject to Honeycoin account permissions and a successful sandbox order test.",
   };
 }
 
