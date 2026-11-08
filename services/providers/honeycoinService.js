@@ -100,7 +100,7 @@ export async function getHoneycoinRate({ from, to, amount }) {
 
 function getCryptoBaseUrl() {
   const configured = String(process.env.HONEYCOIN_CRYPTO_BASE_URL || "").trim();
-  if (configured) return configured.replace(/\\/+$/, "");
+  if (configured) return configured.replace(/\/+$/, "");
   const sandbox = String(process.env.HONEYCOIN_ENVIRONMENT || "Sandbox").toLowerCase() !== "production";
   return sandbox
     ? "https://crypto.honeycoin.app/api/sandbox"
