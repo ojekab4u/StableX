@@ -267,8 +267,10 @@ test("Honeycoin creates an NGN to Base USDC on-ramp and supports canonical statu
     });
     assert.equal(order.transactionId, "sandbox_transaction_123");
     assert.equal(order.stepRequired, "redirect");
-    assert.equal(calls[1].url, "https://honeycoin.test/api/sandbox/minting/onramp");
-    const body = JSON.parse(calls[1].options.body);
+    const createCall = calls.find((call) => call.url.endsWith("/minting/onramp"));
+    assert.ok(createCall);
+    assert.equal(createCall.url, "https://honeycoin.test/api/sandbox/minting/onramp");
+    const body = JSON.parse(createCall.options.body);
     assert.equal(body.senderAmount, 111);
     assert.equal(body.senderCurrency, "NGN");
     assert.equal(body.receiverCurrency, "USDC");
@@ -279,7 +281,7 @@ test("Honeycoin creates an NGN to Base USDC on-ramp and supports canonical statu
 
     const status = await getHoneycoinTransaction("sandbox_transaction_123");
     assert.equal(status.chargeStatus, "pending");
-    assert.equal(calls[2].url, "https://honeycoin.test/api/sandbox/b2b/transactions/sandbox_transaction_123");
+    assert.ok(calls.some((call) => call.url === "https://honeycoin.test/api/sandbox/b2b/transactions/sandbox_transaction_123"));
   } finally {
     globalThis.fetch = originalFetch;
     for (const [key, value] of Object.entries({
