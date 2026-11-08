@@ -2,6 +2,11 @@ import { Router } from "express";
 import { createBeneficiary,listBeneficiaries,createTransfer,getTransfer,getTransfers,setTransferStatus } from "../services/transferService.js";
 import { recordProviderEvent } from "../repositories/transferRepository.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
+import {
+  createHoneycoinOrderForTransfer,
+  getHoneycoinOrderForTransfer,
+  refreshHoneycoinOrder,
+} from "../services/providerOrderService.js";
 export const transferRouter=Router();
 const fail=(res,e)=>res.status(e.statusCode||503).json({error:e.message});
 transferRouter.post("/beneficiaries",async(req,res)=>{try{return res.status(201).json({beneficiary:await createBeneficiary(req.body||{})});}catch(e){return fail(res,e);}});
@@ -34,6 +39,47 @@ transferRouter.post("/prepare",async(req,res)=>{try{
   });
   return res.status(201).json({ message: "Transfer prepared for settlement.", transferId: draft.id, status: quoted.status, transfer: quoted });
 }catch(e){return fail(res,e);}});
+
+
+transferRouter.post("/:id/provider-order",async(req,res)=>{
+ try {
+  const result=await createHoneycoinOrderForTransfer({
+   transferId:req.params.id,
+   customerId:String(req.body?.customerId||""),
+   paymentMethod:req.body?.paymentMethod,
+   email:req.body?.email,
+  });
+  return res.status(result.created?201:200).json({
+   message:result.created?"Honeycoin order created. Complete the payment action and refresh status; funds are not considered settled until provider and Base verification succeed.":result.message,
+   ...result,
+  });
+ } catch(error){return fail(res,error);}
+});
+
+transferRouter.get("/:id/provider-order",async(req,res)=>{
+ try {
+  const order=await getHoneycoinOrderForTransfer({
+   transferId:req.params.id,
+   customerId:String(req.query.customerId||""),
+  });
+  return order?res.json({order}):res.status(404).json({error:"No provider order exists for this transfer."});
+ } catch(error){return fail(res,error);}
+});
+
+transferRouter.post("/:id/provider-order/refresh",async(req,res)=>{
+ try {
+  const result=await refreshHoneycoinOrder({
+   transferId:req.params.id,
+   customerId:String(req.body?.customerId||""),
+  });
+  return res.json({
+   message:result.settlementVerified
+    ?"Honeycoin payment and Base USDC settlement verified."
+    :"Provider status refreshed. StableX has not marked the transfer completed without Base USDC verification.",
+   ...result,
+  });
+ } catch(error){return fail(res,error);}
+});
 
 transferRouter.post("/provider-events",async(req,res)=>{
  try {
