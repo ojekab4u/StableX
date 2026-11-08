@@ -34,8 +34,8 @@ export const ASSETS = {
       ETHEREUM: "0x16F93eBC5320C89EfC8701577efe49d14A276a06",
     },
     decimals: 18, settlement: "ONCHAIN",
-    status: "NETWORK_SUPPORT_CONFIRMED_ADDRESS_PENDING",
-    metadataSource: "https://tetradg.com/frequently-asked-questions",
+    status: "PUBLIC_MAINNET_CONTRACT_CONFIGURED",
+    metadataSource: "https://tetradg.com/legal/supported-blockchains",
     solanaAddress: "Az9eyxEaiZD9AX4j5nP19Cm79eyfNriTuddMSQmLNEBm",
   },
   CADC: {
@@ -43,12 +43,12 @@ export const ASSETS = {
     issuer: "CADC Reserve Trust (serviced by Loon Payments)",
     networks: ["BASE"],
     contractAddresses: {
-      BASE: "0x5e63E9C06c3F2c779EF29a8071F94F5a724eB5e4",
+      BASE: "0x043eb4b75d0805c43d7c834902e335621983cf03",
     },
-    decimals: null, settlement: "ONCHAIN",
+    decimals: 18, settlement: "ONCHAIN",
     status: "PUBLIC_MAINNET_CONTRACT_CONFIGURED",
-    metadataSource: "https://loon.finance/cadc/",
-    metadataNote: "Use upgraded Base contract; Loon states legacy CADC contracts are being migrated.",
+    metadataSource: "https://loon.finance/support-centre/",
+    metadataNote: "Base contract address and 18 decimals verified against Loon's Base token reference and BaseScan.",
   },
   QCAD: {
     code: "QCAD", name: "QCAD", type: "STABLECOIN", issuer: "To be verified",
@@ -78,7 +78,7 @@ export const ASSETS = {
   TZS: { code: "TZS", name: "Tanzanian Shilling", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
   UGX: { code: "UGX", name: "Ugandan Shilling", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
   GHS: { code: "GHS", name: "Ghanaian Cedi", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
-  ZAR: { code: "ZAR", name: "South African Rand", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED" },
+  ZAR: { code: "ZAR", name: "South African Rand", type: "FIAT", settlement: "FIAT_RAIL", status: "REGISTERED", region: "GLOBAL" },
 };
 
 export const getAsset = (code) => ASSETS[String(code).toUpperCase()] ?? null;
@@ -106,7 +106,7 @@ export const getAssetPairs = () => [
   { from: "CADD", to: "USDC", category: "STABLECOIN_TO_STABLECOIN" },
   { from: "USDC", to: "CADD", category: "STABLECOIN_TO_STABLECOIN" },
   { from: "CADC", to: "USDC", category: "STABLECOIN_TO_STABLECOIN" },
-  { from: "QCAD", to: "USDC", category: "STABLECOIN_TO_STABLECOIN" },
+  { from: "USDC", to: "CADC", category: "STABLECOIN_TO_STABLECOIN" },
   { from: "NGN", to: "USDC", category: "FIAT_TO_STABLECOIN" },
   { from: "USDC", to: "NGN", category: "STABLECOIN_TO_FIAT" },
 ];
