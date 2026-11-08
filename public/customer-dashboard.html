@@ -146,13 +146,16 @@
   .conn-dot.connected { background: #10b981; box-shadow: 0 0 0 2px rgba(16, 185, 120, 0.2); }
   .conn-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2); }
 </style>
+<link rel="stylesheet" href="/console.css">
+<link rel="stylesheet" href="/customer-dashboard.css">
 </head>
 <body>
-<div class="container">
+<div class="dashboard-header-shell">
 
   <!-- Header -->
   <div class="header">
-    <h1>StableX Customer Dashboard</h1>
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav class="dashboard-nav"><a href="/console.html">Customer &amp; routing console</a><a href="/send.html">Send &amp; settle</a><a href="/providers.html">Providers</a></nav>
     <div class="wallet-bar">
       <span class="conn-indicator">
         <span class="conn-dot disconnected" id="connDot"></span>
@@ -719,16 +722,20 @@
       complianceProvider.textContent = d.realProviderConnected ? "VOVE ID (real)" : "None";
       complianceAutoApprove.textContent = d.autoApprove ? "Enabled" : "Disabled";
 
-      const kyc = d.checks.find(c => c.requirement === "KYC");
-      const kyb = d.checks.find(c => c.requirement === "KYB");
-      const aml = d.checks.find(c => c.requirement === "AML");
+      const checks = Array.isArray(d.checks) ? d.checks : [];
+      const kyc = checks.find(c => c.requirement === "KYC");
+      const kyb = checks.find(c => c.requirement === "KYB");
+      const aml = checks.find(c => c.requirement === "AML");
 
-      kycStatus.textContent = kyc.providerConfigured ? "VOVE ID configured" : "Not configured";
-      kycStatus.className = kyc.providerConfigured ? "status-approved" : "status-pending";
-      kybStatus.textContent = kyb.providerConfigured ? "VOVE ID configured" : "Not configured";
-      kybStatus.className = kyb.providerConfigured ? "status-approved" : "status-pending";
-      amlStatus.textContent = aml.providerConfigured ? "VOVE ID configured" : "Not configured";
-      amlStatus.className = aml.providerConfigured ? "status-approved" : "status-pending";
+      // VOVE currently supplies the KYC/KYB identity checks. AML screening
+      // is a separate capability and must not be implied by VOVE being configured.
+      kycStatus.textContent = kyc?.providerConfigured ? "VOVE ID configured" : "Not configured";
+      kycStatus.className = kyc?.providerConfigured ? "status-approved" : "status-pending";
+      kybStatus.textContent = kyb?.providerConfigured ? "VOVE ID configured" : "Not configured";
+      kybStatus.className = kyb?.providerConfigured ? "status-approved" : "status-pending";
+      amlStatus.textContent = aml?.providerConfigured ? "Configured — screening not run" : "Not screened";
+      amlStatus.className = "status-pending";
+      complianceError.style.display = "none";
     } catch (e) {
       complianceError.textContent = e.message;
       complianceError.style.display = "block";
@@ -737,7 +744,7 @@
 
   async function loadComplianceCases() {
     try {
-      const d = await api("/api/compliance/cases");
+      const d = await api(`/api/compliance/cases?customerId=${encodeURIComponent(customerId)}`);
       const cases = d.cases || [];
       const body = document.getElementById("complianceCasesBody");
       body.innerHTML = "";
@@ -749,12 +756,12 @@
         const statusClass = c.status === "APPROVED" ? "status-approved" : c.status === "REJECTED" ? "status-rejected" : "status-pending";
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${c.id || c.refId || "—"}</td>
+          <td>${c.caseId || c.id || c.refId || "—"}</td>
           <td>${c.customerId || "—"}</td>
           <td>${c.subjectType || "—"}</td>
           <td><span class="${c.status === "APPROVED" ? "status-approved" : c.status === "REJECTED" ? "status-rejected" : "status-pending"}">${c.status || "PENDING"}</span></td>
           <td>${c.createdAt ? new Date(c.createdAt).toLocaleString() : "—"}</td>
-          <td>${c.refId ? `<a href="${c.verificationUrl}" target="_blank" rel="noopener">${c.refId.slice(0, 8)}...</a>` : "—"}</td>
+          <td>${(c.providerReference || c.screening?.voveRefId) ? `<span>${(c.providerReference || c.screening?.voveRefId).slice(0, 8)}...</span>` : "—"}</td>
         `;
         body.appendChild(tr);
       }
