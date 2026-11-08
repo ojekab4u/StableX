@@ -8,7 +8,7 @@ import {
   isAddress,
   parseUnits,
 } from "viem";
-import { getAsset } from "../config/assets.js";
+import { getAsset } from "../../config/assets.js";
 
 const MIXED_QUOTER = "0x0A5aA5D3a4d28014f967Bf0f29EAA3FF9807D5c6";
 const QUOTER_ABI = [{
