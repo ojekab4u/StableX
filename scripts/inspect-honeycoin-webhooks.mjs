@@ -1,4 +1,7 @@
-import { getHoneycoinWebhookDeliveries } from "../services/providers/honeycoinService.js";
+import {
+  getHoneycoinWebhookDeliveries,
+  getHoneycoinWebhookDelivery,
+} from "../services/providers/honeycoinService.js";
 
 const reference = String(process.argv[2] || "").trim();
 if (!reference) {
@@ -11,13 +14,21 @@ if (!reference) {
       ? result
       : result?.webhooks || result?.events || result?.deliveries || result?.data || [];
     const entries = Array.isArray(candidates) ? candidates : [];
-    const events = entries.map((entry) => {
-      const body = entry?.payload || entry?.body || entry?.eventPayload || entry;
+
+    const safeEvent = (entry, detail = null) => {
+      const body = detail?.payload || detail?.body || detail?.eventPayload
+        || entry?.payload || entry?.body || entry?.eventPayload || detail || entry;
       const data = body?.data || body;
       const txId = data?.txId || data?.transactionHash || null;
       return {
-        event: body?.event || entry?.event || null,
-        deliveryStatus: entry?.status || entry?.deliveryStatus || null,
+        webhookId: entry?.id || entry?.webhookId || detail?.id || null,
+        event: body?.event || entry?.event || detail?.event || null,
+        deliveryStatus: detail?.status || detail?.deliveryStatus
+          || entry?.status || entry?.deliveryStatus || null,
+        lastAttemptStatus: detail?.lastAttempt?.status || detail?.lastAttempt?.responseStatus || null,
+        lastAttemptHttpCode: detail?.lastAttempt?.httpStatus
+          || detail?.lastAttempt?.statusCode || detail?.lastAttempt?.code || null,
+        attemptCount: Array.isArray(detail?.attempts) ? detail.attempts.length : null,
         transactionId: data?.transactionId || null,
         externalReference: data?.externalReference || null,
         transactionType: data?.type || null,
@@ -28,14 +39,33 @@ if (!reference) {
         cryptoAmount: data?.cryptoAmount || data?.receiverAmount || null,
         receiverAddress: data?.receiverAddress || null,
         txId: txId && /^0x[a-fA-F0-9]{64}$/.test(String(txId)) ? txId : null,
-        timestamp: body?.timestamp || entry?.timestamp || null,
+        timestamp: body?.timestamp || entry?.timestamp || detail?.timestamp || null,
+        detailKeys: detail && typeof detail === "object" ? Object.keys(detail).sort() : [],
+        payloadKeys: body && typeof body === "object" ? Object.keys(body).sort() : [],
+        dataKeys: data && typeof data === "object" ? Object.keys(data).sort() : [],
       };
-    });
+    };
+
+    const inspected = await Promise.all(entries.map(async (entry) => {
+      const id = entry?.id || entry?.webhookId;
+      if (!id) return safeEvent(entry);
+      try {
+        const detail = await getHoneycoinWebhookDelivery(String(id));
+        return safeEvent(entry, detail);
+      } catch (error) {
+        return {
+          ...safeEvent(entry),
+          detailLookupError: error.message,
+          detailLookupStatus: error.statusCode || null,
+        };
+      }
+    }));
+
     console.log(JSON.stringify({
       reference,
       responseKeys: Object.keys(result || {}).sort(),
-      eventsFound: events.length,
-      events,
+      eventsFound: entries.length,
+      events: inspected,
     }, null, 2));
   } catch (error) {
     console.error(JSON.stringify({
