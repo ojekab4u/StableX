@@ -299,3 +299,8 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
   });
   return { order: publicOrder(updated), providerStatus, refreshed: true };
 }
+
+export async function getHoneycoinOrderForTransfer({ transferId, customerId }) {
+  const order = await readProviderOrderByTransfer(transferId, customerId);
+  return order ? publicOrder(order) : null;
+}
