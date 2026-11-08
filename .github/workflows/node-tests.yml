@@ -24,4 +24,6 @@ jobs:
       - run: node --check repositories/providerOrderRepository.js
       - run: node --check routes/transferRoutes.js
       - run: node --check db/initialize.js
+      - name: Check Honeycoin frontend script syntax
+        run: node --input-type=module -e "import fs from 'node:fs'; const html = fs.readFileSync('public/honeycoin-onramp.html', 'utf8'); const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)?.[1]; if (!script) throw new Error('Frontend script not found'); new Function(script);"
       - run: npm test
