@@ -33,6 +33,16 @@ export async function readProviderOrderByTransfer(transferId, customerId) {
   return result.rows[0] || null;
 }
 
+export async function readProviderOrderByReference(reference) {
+  const result = await getPool().query(
+    `${SELECT} WHERE provider='Honeycoin'
+      AND (external_reference=$1 OR provider_transaction_id=$1)
+      ORDER BY created_at DESC LIMIT 1`,
+    [reference]
+  );
+  return result.rows[0] || null;
+}
+
 export async function readProviderOrderById(orderId, customerId) {
   const result = await getPool().query(
     `${SELECT} WHERE order_id=$1 AND customer_id=$2`,
