@@ -27,11 +27,14 @@ function fail(message, statusCode = 400) {
 }
 
 function publicOrder(order) {
+  const details = order.paymentDetails
+    ? decryptBeneficiaryDetails(order.paymentDetails)
+    : {};
   return {
     ...order,
-    paymentDetails: order.paymentDetails
-      ? decryptBeneficiaryDetails(order.paymentDetails)
-      : null,
+    paymentDetails: details.virtualAccount || null,
+    redirectUrl: details.redirectUrl || null,
+    stepRequired: details.stepRequired || null,
   };
 }
 
@@ -132,7 +135,8 @@ export async function createHoneycoinOrderForTransfer({
   }
 
   // Validate encryption configuration before making the external provider request.
-  const encryptedEmpty = encryptBeneficiaryDetails({});
+  // Fail before the provider request if the encryption key is missing or invalid.
+  encryptBeneficiaryDetails({});
   const externalReference = `stablex-${transferId}`;
   const inserted = await insertProviderOrder({
     orderId: randomUUID(),
@@ -159,9 +163,11 @@ export async function createHoneycoinOrderForTransfer({
       email: customerEmail,
       externalReference,
     });
-    const paymentDetails = providerOrder.virtualAccount
-      ? encryptBeneficiaryDetails(providerOrder.virtualAccount)
-      : encryptedEmpty;
+    const paymentDetails = encryptBeneficiaryDetails({
+      virtualAccount: providerOrder.virtualAccount || null,
+      redirectUrl: providerOrder.redirectUrl || null,
+      stepRequired: providerOrder.stepRequired || null,
+    });
     const saved = await updateProviderOrder({
       orderId: inserted.order.orderId,
       customerId,
