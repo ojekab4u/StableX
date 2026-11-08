@@ -216,3 +216,81 @@ test("placeholder credentials are reported as missing", () => {
     }
   }
 });
+
+
+test("Honeycoin creates an NGN to Base USDC on-ramp and supports canonical status lookup", async () => {
+  const originalFetch = globalThis.fetch;
+  const originals = {
+    key: process.env.HONEYCOIN_API_KEY,
+    publicKey: process.env.HONEYCOIN_PUBLIC_KEY,
+    b2bBase: process.env.HONEYCOIN_B2B_BASE_URL,
+    cryptoBase: process.env.HONEYCOIN_CRYPTO_BASE_URL,
+    environment: process.env.HONEYCOIN_ENVIRONMENT,
+  };
+  process.env.HONEYCOIN_API_KEY = "unit-test-api-key";
+  process.env.HONEYCOIN_PUBLIC_KEY = "unit-test-public-key";
+  process.env.HONEYCOIN_B2B_BASE_URL = "https://honeycoin.test/api/sandbox/b2b";
+  process.env.HONEYCOIN_CRYPTO_BASE_URL = "https://honeycoin.test/api/sandbox";
+  process.env.HONEYCOIN_ENVIRONMENT = "Sandbox";
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).endsWith("/auth/generate-bearer-token")) {
+      return { ok: true, json: async () => ({ token: "unit-test-bearer", expiresAt: Math.floor(Date.now() / 1000) + 3600 }) };
+    }
+    if (String(url).endsWith("/minting/onramp")) {
+      return { ok: true, json: async () => ({
+        success: true,
+        data: { transactionId: "sandbox_transaction_123", stepRequired: "redirect", redirectUrl: "https://checkout.example.test/continue" },
+      }) };
+    }
+    if (String(url).endsWith("/transactions/sandbox_transaction_123")) {
+      return { ok: true, json: async () => ({
+        success: true,
+        data: { transactionId: "sandbox_transaction_123", status: "PENDING", chargeStatus: "pending", externalReference: "stablex-transfer" },
+      }) };
+    }
+    throw new Error("Unexpected Honeycoin URL: " + String(url));
+  };
+
+  try {
+    const { createHoneycoinOnrampOrder, getHoneycoinTransaction } = await import("../services/providers/honeycoinService.js");
+    const order = await createHoneycoinOnrampOrder({
+      senderAmount: 111,
+      senderCurrency: "NGN",
+      receiverCurrency: "USDC",
+      chain: "BASE",
+      receiverAddress: "0x0000000000000000000000000000000000000001",
+      method: "opay",
+      email: "customer@example.test",
+      externalReference: "stablex-transfer",
+    });
+    assert.equal(order.transactionId, "sandbox_transaction_123");
+    assert.equal(order.stepRequired, "redirect");
+    assert.equal(calls[1].url, "https://honeycoin.test/api/sandbox/minting/onramp");
+    const body = JSON.parse(calls[1].options.body);
+    assert.equal(body.senderAmount, 111);
+    assert.equal(body.senderCurrency, "NGN");
+    assert.equal(body.receiverCurrency, "USDC");
+    assert.equal(body.chain, "BASE");
+    assert.equal(body.method, "opay");
+    assert.equal(body.chargeDetails.email, "customer@example.test");
+    assert.equal(body.externalReference, "stablex-transfer");
+
+    const status = await getHoneycoinTransaction("sandbox_transaction_123");
+    assert.equal(status.chargeStatus, "pending");
+    assert.equal(calls[2].url, "https://honeycoin.test/api/sandbox/b2b/transactions/sandbox_transaction_123");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries({
+      HONEYCOIN_API_KEY: originals.key,
+      HONEYCOIN_PUBLIC_KEY: originals.publicKey,
+      HONEYCOIN_B2B_BASE_URL: originals.b2bBase,
+      HONEYCOIN_CRYPTO_BASE_URL: originals.cryptoBase,
+      HONEYCOIN_ENVIRONMENT: originals.environment,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
