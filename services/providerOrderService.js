@@ -302,7 +302,7 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
   }
 
   const updated = await updateProviderOrder({
-    orderId: order.orderId, customerId,
+    orderId: order.orderId, customerId, providerTransactionId,
     status: provider.stepRequired === "redirect" ? "ACTION_REQUIRED" : "AWAITING_PAYMENT",
     providerStatus, failureReason: null,
   });
