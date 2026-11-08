@@ -53,9 +53,14 @@ async function verifyBaseUsdcTransfer({ transactionHash, recipientAddress, crypt
     return { verified: false, reason: "The Base transaction did not succeed." };
   }
 
-  const expectedAmount = cryptoAmount !== undefined && cryptoAmount !== null
-    ? parseUnits(String(cryptoAmount), 6)
-    : null;
+  let expectedAmount = null;
+  if (cryptoAmount !== undefined && cryptoAmount !== null) {
+    try {
+      expectedAmount = parseUnits(String(cryptoAmount), 6);
+    } catch {
+      return { verified: false, reason: "Honeycoin's reported USDC amount has invalid precision for the Base USDC contract." };
+    }
+  }
   const matchingTransfer = receipt.logs.some((log) => {
     if (log.address.toLowerCase() !== USDC_BASE.toLowerCase()) return false;
     try {
