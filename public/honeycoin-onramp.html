@@ -128,7 +128,8 @@
     }
     $("transfer").add(new Option("Choose a transfer…", ""));
     for (const t of eligible) {
-      const label = t.transferId + " · " + Number(t.sourceAmount) + " NGN · " + (t.quote?.destinationAmount ?? "indicative") + " USDC";
+      const quote = selectedQuote(t);
+      const label = t.transferId + " · " + Number(t.sourceAmount) + " NGN · " + (quote?.destinationAmount ?? "indicative") + " USDC";
       $("transfer").add(new Option(label, t.transferId));
     }
     selectedTransfer = eligible;
