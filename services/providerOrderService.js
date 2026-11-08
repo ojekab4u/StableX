@@ -209,21 +209,21 @@ export async function createHoneycoinOrderForTransfer({
 export async function refreshHoneycoinOrder({ transferId, customerId }) {
   const order = await readProviderOrderByTransfer(transferId, customerId);
   if (!order) throw fail("No Honeycoin order exists for this transfer.", 404);
-  if (!order.providerTransactionId) {
-    throw fail("The provider order has no transaction ID and requires operator review; it will not be resubmitted automatically.", 409);
-  }
   if (["COMPLETED", "FAILED"].includes(order.status)) {
     return { order: publicOrder(order), refreshed: false };
   }
 
-  const provider = await getHoneycoinTransaction(order.providerTransactionId);
+  // Honeycoin supports status lookup by either transactionId or our unique externalReference.
+  // This recovers ambiguous create timeouts without sending a duplicate POST.
+  const provider = await getHoneycoinTransaction(order.providerTransactionId || order.externalReference);
+  const providerTransactionId = String(provider.transactionId || order.providerTransactionId || "");
   const providerStatus = normalizeProviderStatus(provider.status);
   const chargeStatus = String(provider.chargeStatus || "").toLowerCase();
   const txHash = provider.txId || provider.transactionHash || null;
 
   if (providerStatus === "FAILED" || chargeStatus === "failed") {
     const updated = await updateProviderOrder({
-      orderId: order.orderId, customerId, status: "FAILED",
+      orderId: order.orderId, customerId, providerTransactionId, status: "FAILED",
       providerStatus, failureReason: provider.failureReason || "Honeycoin reports the on-ramp failed.",
     });
     const transfer = await readTransfer(transferId, customerId);
@@ -250,7 +250,7 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
       const expectedAmount = provider.cryptoAmount;
       if (chain !== "base" || receiver !== order.recipientAddress.toLowerCase()) {
         const updated = await updateProviderOrder({
-          orderId: order.orderId, customerId, status: "REVIEW_REQUIRED",
+          orderId: order.orderId, customerId, providerTransactionId, status: "REVIEW_REQUIRED",
           providerStatus, transactionHash: txHash,
           failureReason: "Provider settlement metadata does not match the saved Base beneficiary.",
         });
@@ -276,13 +276,13 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
           });
         }
         const updated = await updateProviderOrder({
-          orderId: order.orderId, customerId, status: "COMPLETED",
+          orderId: order.orderId, customerId, providerTransactionId, status: "COMPLETED",
           providerStatus, transactionHash: txHash, failureReason: null,
         });
         return { order: publicOrder(updated), providerStatus, settlementVerified: true, verification, refreshed: true };
       }
       const updated = await updateProviderOrder({
-        orderId: order.orderId, customerId, status: "SETTLEMENT_PENDING",
+        orderId: order.orderId, customerId, providerTransactionId, status: "SETTLEMENT_PENDING",
         providerStatus, transactionHash: txHash, failureReason: verification.reason,
       });
       const current = await readTransfer(transferId, customerId);
@@ -295,7 +295,7 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
       return { order: publicOrder(updated), providerStatus, settlementVerified: false, verification, refreshed: true };
     }
     const updated = await updateProviderOrder({
-      orderId: order.orderId, customerId, status: "FUNDED",
+      orderId: order.orderId, customerId, providerTransactionId, status: "FUNDED",
       providerStatus, failureReason: null,
     });
     return { order: publicOrder(updated), providerStatus, settlementVerified: false, refreshed: true };
