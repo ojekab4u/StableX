@@ -21,7 +21,10 @@ if (!reference) {
       const data = body?.data || body;
       const txId = data?.txId || data?.transactionHash || null;
       return {
-        webhookId: entry?.id || entry?.webhookId || detail?.id || null,
+        webhookId: detail?.id || body?.id || body?.webhookLogId || entry?.webhookLogId || entry?.webhookId || entry?.id || null,
+        webhookIdSource: detail?.id ? "detail.id" : body?.id ? "payload.id" : body?.webhookLogId ? "payload.webhookLogId" : entry?.webhookLogId ? "entry.webhookLogId" : entry?.webhookId ? "entry.webhookId" : "entry.id",
+        webhookLogId: body?.webhookLogId || entry?.webhookLogId || null,
+        createdAt: body?.createdAt || entry?.createdAt || null,
         event: body?.event || entry?.event || detail?.event || null,
         deliveryStatus: detail?.status || detail?.deliveryStatus
           || entry?.status || entry?.deliveryStatus || null,
@@ -47,7 +50,8 @@ if (!reference) {
     };
 
     const inspected = await Promise.all(entries.map(async (entry) => {
-      const id = entry?.id || entry?.webhookId;
+      const eventBody = entry?.payload || entry?.body || entry?.eventPayload || entry;
+      const id = eventBody?.id || eventBody?.webhookLogId || entry?.webhookLogId || entry?.webhookId || entry?.id;
       if (!id) return safeEvent(entry);
       try {
         const detail = await getHoneycoinWebhookDelivery(String(id));
