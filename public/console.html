@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX — Customer & Routing Console</title>
+  <link rel="stylesheet" href="/console.css">
+  <script src="/console.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav><a href="/customer-dashboard.html">Customer dashboard</a><a href="/send.html">Send & settle</a><a href="/providers.html">Providers</a></nav>
+    <span class="network-label">Provider orchestration</span>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">STABLEX / CUSTOMER WORKSPACE</p>
+      <h1>Customer, quotes<br>and transfer lifecycle.</h1>
+      <p>Use the durable StableX APIs to check compliance, compare provider quotes and attach a selected quote to a transfer.</p>
+      <p class="notice">Sandbox / preview workspace. Quote selection does not create a provider order, collect funds or settle a transaction.</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><p class="eyebrow">01 / CUSTOMER</p><h2>Customer status</h2></div><button id="refresh-customer" class="secondary" type="button">Refresh</button></div>
+      <div class="inline-form"><label for="customer-id">StableX customer ID</label><input id="customer-id" value="customer-001" autocomplete="off"><button id="load-customer" type="button">Load customer</button></div>
+      <div class="status-grid">
+        <article><span class="muted">VOVE compliance gate</span><strong id="gate-status">Loading…</strong></article>
+        <article><span class="muted">Compliance cases</span><strong id="case-count">—</strong></article>
+        <article><span class="muted">Bridge readiness</span><strong id="bridge-status">Checking…</strong></article>
+      </div>
+      <p id="customer-message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">02 / BENEFICIARY</p><h2>Choose a recipient</h2>
+      <div class="field"><label for="beneficiary-select">Saved beneficiaries</label><select id="beneficiary-select"><option value="">Loading beneficiaries…</option></select></div>
+      <details>
+        <summary>Add a beneficiary</summary>
+        <div class="form-grid">
+          <div class="field"><label for="beneficiary-name">Recipient name</label><input id="beneficiary-name" placeholder="Recipient or wallet owner"></div>
+          <div class="field"><label for="beneficiary-country">Country (ISO-2)</label><input id="beneficiary-country" value="NG" maxlength="2"></div>
+          <div class="field"><label for="beneficiary-currency">Destination currency</label><select id="beneficiary-currency"><option>USDC</option></select></div>
+          <div class="field"><label for="beneficiary-network">Network (wallet only)</label><input id="beneficiary-network" value="BASE" placeholder="BASE"></div>
+          <div class="field full"><label for="beneficiary-wallet">Wallet address</label><input id="beneficiary-wallet" placeholder="0x…"></div>
+          <div class="field"><label for="beneficiary-bank">Bank name (payout recipient)</label><input id="beneficiary-bank" placeholder="Optional"></div>
+          <div class="field"><label for="beneficiary-account">Account number / IBAN</label><input id="beneficiary-account" placeholder="Optional"></div>
+        </div>
+        <button id="create-beneficiary" type="button">Save beneficiary</button>
+      </details>
+      <p id="beneficiary-message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">03 / PROVIDER MARKETPLACE</p><h2>Compare provider quotes</h2>
+      <div class="form-grid">
+        <div class="field"><label for="amount">Amount</label><input id="amount" type="number" min="0.000001" max="1000000" step="any" value="100"></div>
+        <div class="field"><label for="from">Pay with</label><select id="from"></select></div>
+        <div class="field"><label for="to">Recipient receives</label><select id="to"></select></div>
+      </div>
+      <button id="get-quotes" type="button">Get provider quotes</button>
+      <p id="quote-message" class="message" aria-live="polite"></p>
+      <div id="quotes" class="quotes"><p class="muted">Request quotes to see live provider responses and indicative previews.</p></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><p class="eyebrow">04 / DURABLE TRANSFERS</p><h2>Transfer history</h2></div><button id="refresh-transfers" class="secondary" type="button">Refresh</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Transfer</th><th>Route</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody id="transfers"><tr><td colspan="5" class="muted">Loading transfers…</td></tr></tbody></table></div>
+      <p class="muted small">A selected quote is recorded against a DRAFT transfer and advances it to QUOTED. Provider execution remains separately gated.</p>
+    </section>
+    <footer>StableX · Provider orchestration prototype · No funds are moved by this console</footer>
+  </main>
+</body>
+</html>
