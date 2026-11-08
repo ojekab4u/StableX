@@ -94,6 +94,10 @@ export async function createHoneycoinOrderForTransfer({
 
   const transfer = await readTransfer(transferId, customerId);
   if (!transfer) throw fail("Transfer not found for this customer.", 404);
+  const existing = await readProviderOrderByTransfer(transferId, customerId);
+  if (existing) {
+    return { created: false, order: publicOrder(existing), message: "An order already exists for this transfer; no duplicate provider request was sent." };
+  }
   if (transfer.status !== "QUOTED") {
     throw fail(`Only a QUOTED transfer can create a provider order. Current status: ${transfer.status}.`, 409);
   }
@@ -120,14 +124,6 @@ export async function createHoneycoinOrderForTransfer({
   const customerEmail = String(email || details.email || "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
     throw fail("A valid customer email is required for Honeycoin OPay/bank payment instructions.");
-  }
-
-  const existing = await readProviderOrderByTransfer(transferId, customerId);
-  if (existing) {
-    if (existing.status === "CREATING") {
-      throw fail("A provider order request is already being processed. Refresh the order before retrying.", 409);
-    }
-    return { created: false, order: publicOrder(existing), message: "An order already exists for this transfer; no duplicate provider request was sent." };
   }
 
   // Validate encryption configuration before making the external provider request.
