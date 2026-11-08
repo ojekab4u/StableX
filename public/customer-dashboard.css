@@ -1,0 +1,68 @@
+/* StableX customer dashboard — shared console visual system */
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
+html{min-width:320px}
+body{margin:0;background:#f5f7fb;color:#172033}
+.header{min-height:64px;margin:0 auto 22px;padding:14px max(22px,calc((100% - 1120px)/2));display:flex;align-items:center;gap:20px;flex-wrap:wrap;background:#10152a;color:#fff}
+.header .brand{font-size:1.35rem;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap}
+.header .brand span{color:#7da7ff}
+.dashboard-nav{display:flex;align-items:center;gap:16px;flex:1;flex-wrap:wrap}
+.dashboard-nav a{color:#dce5ff;text-decoration:none;font-size:.88rem}
+.dashboard-nav a:hover{color:#fff;text-decoration:underline}
+.wallet-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;padding:0;border:0;background:transparent;color:#fff}
+.wallet-bar input,.wallet-bar select{width:auto;min-width:120px;max-width:190px;padding:9px 10px;border:1px solid #46516e;border-radius:7px;background:#1b2440;color:#fff;font:inherit}
+.wallet-bar button,.wallet-bar button:hover{background:#245bd6;color:#fff;border:0;border-radius:7px;padding:10px 13px;font:inherit;font-weight:650}
+.wallet-bar .conn-indicator{color:#dce5ff}
+.container{max-width:1120px;margin:0 auto;padding:0 22px}
+.card{width:100%;max-width:100%;margin:0 0 18px;padding:22px;background:#fff;border:1px solid #e1e7f0;border-radius:12px;box-shadow:0 3px 14px #1b2a4608}
+.card h2{font-size:1.25rem;color:#172033;margin:0 0 16px;font-weight:700}
+.compliance-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.compliance-item{min-width:0;background:#f6f8fc;border:1px solid #e7ecf4;border-radius:8px;padding:14px}
+.compliance-item h3{font-size:.78rem;letter-spacing:.02em;color:#687790}
+.compliance-item .value{font-size:1rem;line-height:1.4;overflow-wrap:anywhere}
+.status-approved{background:#e8f6ee;color:#16804a;padding:5px 9px;border-radius:20px}
+.status-pending{background:#fff5df;color:#8a6418;padding:5px 9px;border-radius:20px}
+.status-rejected{background:#fcebea;color:#b42318;padding:5px 9px;border-radius:20px}
+button,.btn-submit,.create-btn,.action-btn,.wallet-bar button{border:0;border-radius:7px;background:#245bd6;color:#fff;padding:11px 16px;font:inherit;font-weight:650;cursor:pointer}
+button:disabled,.btn-submit:disabled,.create-btn:disabled,.action-btn:disabled{opacity:.45;cursor:not-allowed}
+input,select{max-width:100%;min-width:0;border:1px solid #ccd5e3;border-radius:7px;padding:11px 12px;background:#fff;color:#172033;font:inherit}
+.form-row,.kyc-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.form-group label,.card label{display:block;margin:0 0 6px;font-size:.84rem;font-weight:650;color:#43516a}
+.form-group input,.form-group select,.card input,.card select{width:100%;box-sizing:border-box}
+.wallet-grid,.token-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px}
+.wallet-option,.token-card,.va-card,.va-field{min-width:0;border:1px solid #e1e7f0;border-radius:9px;background:#f6f8fc;padding:14px}
+.wallet-option.selected{border-color:#245bd6;background:#edf3ff;color:#1b4eb7}
+.wallet-option.disabled{opacity:.5}
+.wallet-item{gap:12px;flex-wrap:wrap;border:1px solid #e7ecf4;border-radius:8px;background:#f6f8fc}
+.wallet-item-info{min-width:0;flex-wrap:wrap}
+.wallet-item-balance,.va-field-value{overflow-wrap:anywhere}
+.actions{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 auto 18px}
+.action-btn{background:#245bd6;min-width:0}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 auto 16px;border-bottom:1px solid #e1e7f0}
+.tab-btn{background:transparent;color:#586780;border-radius:7px 7px 0 0;padding:10px 14px}
+.tab-btn.active{color:#245bd6;border-bottom:2px solid #245bd6}
+.tab-panel{max-width:100%;padding:22px;margin:0 0 18px;background:#fff;border:1px solid #e1e7f0;border-radius:12px}
+.table-container{width:100%;overflow-x:auto}
+.table-container .table{width:100%;min-width:650px;border-collapse:collapse;table-layout:auto}
+.table th,.table td{padding:11px 10px;border-bottom:1px solid #e8edf4;overflow-wrap:anywhere;word-break:normal}
+.table th{color:#687790;white-space:nowrap}
+.hint,.empty{color:#748198}
+.error{color:#b42318}
+.success{color:#16804a}
+footer{color:#8590a4;text-align:center;padding:20px 0 30px}
+@media(max-width:760px){
+ .header{padding:14px;gap:12px}
+ .dashboard-nav{order:3;flex-basis:100%;gap:12px}
+ .wallet-bar{width:100%}
+ .wallet-bar input{flex:1;min-width:130px;max-width:none}
+ .container{padding:0 14px}
+ .card,.tab-panel{padding:16px}
+ .compliance-grid{grid-template-columns:1fr}
+ .form-row,.kyc-grid{grid-template-columns:1fr}
+ .actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:420px){
+ .wallet-bar>*{width:100%;max-width:none}
+ .actions{grid-template-columns:1fr 1fr}
+ .tabs{gap:2px}
+ .tab-btn{padding:9px 8px;font-size:.78rem}
+}
