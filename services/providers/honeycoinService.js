@@ -1,9 +1,9 @@
-const API_KEY = () => String(process.env.HONEYCOIN_API_KEY || "").trim();
+﻿const API_KEY = () => String(process.env.HONEYCOIN_API_KEY || "").trim();
 const PUBLIC_KEY = () => String(process.env.HONEYCOIN_PUBLIC_KEY || "").trim();
 const isUsableCredential = (value) => Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(value.trim());
 
 function getBaseUrl() {
-  const configured = String(process.env.HONEYCOIN_API_BASE_URL || "").trim();
+  const configured = String(process.env.HONEYCOIN_B2B_BASE_URL || process.env.HONEYCOIN_API_BASE_URL || "").trim();
   if (configured) return configured.replace(/\/+$/, "");
   const sandbox = String(process.env.HONEYCOIN_ENVIRONMENT || "Sandbox").toLowerCase() !== "production";
   return sandbox
@@ -93,3 +93,4 @@ export async function getHoneycoinRate({ from, to, amount }) {
     note: "Read-only FX preview. This is not a reserved quote and does not initiate a payment or crypto settlement.",
   };
 }
+
