@@ -95,3 +95,82 @@ export async function getHoneycoinRate({ from, to, amount }) {
     note: "Read-only FX preview. This is not a reserved quote and does not initiate a payment or crypto settlement.",
   };
 }
+
+
+function getCryptoBaseUrl() {
+  const configured = String(process.env.HONEYCOIN_CRYPTO_BASE_URL || "").trim();
+  if (configured) return configured.replace(/\\/+$/, "");
+  const sandbox = String(process.env.HONEYCOIN_ENVIRONMENT || "Sandbox").toLowerCase() !== "production";
+  return sandbox
+    ? "https://crypto.honeycoin.app/api/sandbox"
+    : "https://crypto.honeycoin.app/api";
+}
+
+async function honeycoinJson(url, options = {}) {
+  const token = await getBearerToken();
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    const error = new Error(payload.message || `Honeycoin request failed with HTTP ${response.status}.`);
+    error.statusCode = response.status === 400 ? 400 : response.status === 401 || response.status === 403 ? 502 : 503;
+    throw error;
+  }
+  return payload;
+}
+
+// Creates an actual Honeycoin on-ramp order. This is an external provider action.
+export async function createHoneycoinOnrampOrder({
+  senderAmount, senderCurrency, receiverCurrency, chain, receiverAddress,
+  method, email, externalReference,
+}) {
+  const body = {
+    senderAmount: Number(senderAmount),
+    senderCurrency,
+    receiverCurrency,
+    chain,
+    receiverAddress,
+    method,
+    chargeDetails: { email },
+    externalReference,
+  };
+  const payload = await honeycoinJson(`${getCryptoBaseUrl()}/minting/onramp`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!payload.data?.transactionId) {
+    const error = new Error("Honeycoin accepted no identifiable transaction ID; the order cannot be safely reconciled.");
+    error.statusCode = 502;
+    throw error;
+  }
+  return {
+    transactionId: String(payload.data.transactionId),
+    stepRequired: payload.data.stepRequired || null,
+    redirectUrl: payload.data.redirectUrl || payload.data.paymentSdkLink || null,
+    status: payload.data.status || "PENDING",
+    chargeStatus: payload.data.chargeStatus || "pending",
+    virtualAccount: payload.data.virtualAccount || null,
+    providerData: payload.data,
+  };
+}
+
+// Reads the provider's canonical transaction record; never trusts browser-supplied status.
+export async function getHoneycoinTransaction(transactionId) {
+  if (typeof transactionId !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(transactionId)) {
+    const error = new Error("Invalid Honeycoin transaction ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const payload = await honeycoinJson(`${getBaseUrl()}/transactions/${encodeURIComponent(transactionId)}`, {
+    method: "GET",
+  });
+  return payload.data ?? payload;
+}
