@@ -259,6 +259,8 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
             id: transferId, customerId, status: "SETTLEMENT_PENDING", actorId: "BASE_MAINNET",
             reason: "Honeycoin Base USDC transfer located and matched to the saved beneficiary.",
           });
+        }
+        if (current?.status === "FUNDED" || current?.status === "SETTLEMENT_PENDING") {
           await updateTransferStatus({
             id: transferId, customerId, status: "COMPLETED", actorId: "BASE_MAINNET",
             reason: `Base USDC transfer confirmed in block ${verification.blockNumber}. Tx: ${txHash}`,
