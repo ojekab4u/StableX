@@ -176,6 +176,20 @@ export async function getHoneycoinWebhookDeliveries(reference) {
   return payload.data ?? payload;
 }
 
+// Fetches one webhook delivery so diagnostics can distinguish queued from delivered events.
+export async function getHoneycoinWebhookDelivery(webhookId) {
+  if (typeof webhookId !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(webhookId)) {
+    const error = new Error("Invalid Honeycoin webhook ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const payload = await honeycoinJson(
+    `${getBaseUrl()}/webhook/${encodeURIComponent(webhookId)}`,
+    { method: "GET" },
+  );
+  return payload.data ?? payload;
+}
+
 export async function getHoneycoinTransaction(transactionId) {
   if (typeof transactionId !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(transactionId)) {
     const error = new Error("Invalid Honeycoin transaction ID.");
