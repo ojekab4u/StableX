@@ -159,7 +159,7 @@ export async function createHoneycoinOrderForTransfer({
       senderCurrency: "NGN",
       receiverCurrency: "USDC",
       chain: "BASE",
-      receiverAddress,
+      receiverAddress: recipientAddress,
       method,
       email: customerEmail,
       externalReference,
