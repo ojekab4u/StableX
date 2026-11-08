@@ -111,7 +111,7 @@ function catalogReadiness(entry) {
 export function getPartnerReadiness() {
   return {
     module: "PARTNER_CONNECTOR_SKELETONS",
-    connectorsBuilt: PARTNER_CATALOG.length,
+    connectorsBuilt: 0,
     note: "These partner entries are not executable adapters. Implemented provider adapters are reported separately.",
     friendly: PARTNER_CATALOG.map(catalogReadiness),
   };
