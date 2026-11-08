@@ -44,7 +44,6 @@
     </div>
     <button id="load">Load customer transfers</button>
     <button id="create" disabled>Create Honeycoin order</button>
-    <p class="muted">Creating an order sends a real API request to the configured Honeycoin environment. It does not send money. For the documented OPay sandbox success fixture, use NGN 111 and complete the returned redirect.</p>
   </section>
   <section class="panel">
     <h2>Order and payment status</h2>
@@ -69,7 +68,31 @@
     return data;
   }
   function show(value) {
-    $("order").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    if (typeof value === "string") {
+      $("order").textContent = value;
+      return;
+    }
+    const order = value?.order || value;
+    if (!order || typeof order !== "object") {
+      $("order").textContent = "No order information available.";
+      return;
+    }
+    const lines = [];
+    if (value.message) lines.push(value.message);
+    if (order.status) lines.push("Order status: " + order.status);
+    if (order.providerStatus) lines.push("Honeycoin status: " + order.providerStatus);
+    if (order.providerTransactionId) lines.push("Provider reference: " + order.providerTransactionId);
+    if (order.paymentMethod) lines.push("Payment method: " + order.paymentMethod);
+    if (order.paymentDetails) lines.push("Payment instructions: " + JSON.stringify(order.paymentDetails, null, 2));
+    if (order.failureReason) lines.push("Issue: " + order.failureReason);
+    if (value.verification?.reason) lines.push("Base verification: " + value.verification.reason);
+    if (value.settlementVerified === true) lines.push("Base USDC settlement: verified");
+    if (value.settlementVerified === false) lines.push("Base USDC settlement: not yet verified");
+    $("order").textContent = lines.join("\n") || "Order information loaded.";
+  }
+  function selectedQuote(transfer) {
+    const quote = transfer?.quote;
+    return quote?.quote && typeof quote.quote === "object" ? quote.quote : quote;
   }
   async function loadBeneficiaries() {
     const customerId = $("customerId").value.trim();
@@ -89,15 +112,16 @@
     const customerId = $("customerId").value.trim();
     if (!customerId) throw new Error("Enter a customer ID.");
     const data = await api("/api/transfers?customerId=" + encodeURIComponent(customerId));
-    const eligible = (data.transfers || []).filter((t) =>
-      ["QUOTED", "AWAITING_FUNDING", "FUNDED", "SETTLEMENT_PENDING"].includes(t.status) &&
-      t.sourceCurrency === "NGN" &&
-      t.destinationCurrency === "USDC" &&
-      t.quote?.provider === "Honeycoin"
-    );
+    const eligible = (data.transfers || []).filter((t) => {
+      const quote = selectedQuote(t);
+      return ["QUOTED", "AWAITING_FUNDING", "FUNDED", "SETTLEMENT_PENDING"].includes(t.status) &&
+        String(t.sourceCurrency || "").toUpperCase() === "NGN" &&
+        String(t.destinationCurrency || "").toUpperCase() === "USDC" &&
+        String(quote?.provider || "").toLowerCase() === "honeycoin";
+    });
     $("transfer").innerHTML = "";
     if (!eligible.length) {
-      $("transfer").add(new Option("No eligible Honeycoin-quoted transfers found", ""));
+      $("transfer").add(new Option("No existing Honeycoin transfer — create one below", ""));
       selectedTransfer = null;
       $("create").disabled = true;
       return;
@@ -108,7 +132,7 @@
       $("transfer").add(new Option(label, t.transferId));
     }
     selectedTransfer = eligible;
-    $("create").disabled = false;
+    $("create").disabled = true;
   }
   $("load").addEventListener("click", async () => {
     try { await loadBeneficiaries(); await loadTransfers(); show("Loaded beneficiaries and eligible transfers."); }
@@ -146,15 +170,12 @@
       });
       await loadTransfers();
       $("transfer").value = transferId;
+      selectedTransfer = (await api("/api/transfers?customerId=" + encodeURIComponent(customerId)))
+        .transfers?.find((item) => item.transferId === transferId) || null;
       currentOrder = null;
       $("refresh").disabled = true;
       $("create").disabled = false;
-      show({
-        message: "Transfer created and Honeycoin indicative quote selected. This is not an executable/locked rate and no payment has been initiated.",
-        transferId,
-        quote: selected.quote || selected.selection || honeycoinQuote,
-        nextStep: "Choose OPay or bank, enter the customer email, then click Create Honeycoin order.",
-      });
+      show("Transfer " + transferId + " is ready. Choose a payment method, enter the customer's email, then create the Honeycoin order.");
     } catch (e) {
       show(e.message);
     } finally {
