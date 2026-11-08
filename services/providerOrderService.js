@@ -214,7 +214,7 @@ export async function createHoneycoinOrderForTransfer({
   };
 }
 
-export async function refreshHoneycoinOrder({ transferId, customerId }) {
+export async function refreshHoneycoinOrder({ transferId, customerId, providerPayload = null }) {
   const order = await readProviderOrderByTransfer(transferId, customerId);
   if (!order) throw fail("No Honeycoin order exists for this transfer.", 404);
   if (["COMPLETED", "FAILED"].includes(order.status)) {
@@ -223,7 +223,9 @@ export async function refreshHoneycoinOrder({ transferId, customerId }) {
 
   // Honeycoin supports status lookup by either transactionId or our unique externalReference.
   // This recovers ambiguous create timeouts without sending a duplicate POST.
-  const provider = await getHoneycoinTransaction(order.providerTransactionId || order.externalReference);
+  const provider = providerPayload && typeof providerPayload === "object"
+    ? providerPayload
+    : await getHoneycoinTransaction(order.providerTransactionId || order.externalReference);
   const providerTransactionId = String(provider.transactionId || order.providerTransactionId || "");
   const providerStatus = normalizeProviderStatus(provider.status);
   const chargeStatus = String(provider.chargeStatus || "").toLowerCase();
