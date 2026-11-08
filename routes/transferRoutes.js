@@ -2,6 +2,7 @@ import { Router } from "express";
 import { createBeneficiary,listBeneficiaries,createTransfer,getTransfer,getTransfers,setTransferStatus } from "../services/transferService.js";
 import { recordProviderEvent } from "../repositories/transferRepository.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
+import { createPaytrieProviderOrder, getPaytrieProviderOrder, refreshPaytrieProviderOrder } from "../services/providerOrderService.js";
 export const transferRouter=Router();
 const fail=(res,e)=>res.status(e.statusCode||503).json({error:e.message});
 transferRouter.post("/beneficiaries",async(req,res)=>{try{return res.status(201).json({beneficiary:await createBeneficiary(req.body||{})});}catch(e){return fail(res,e);}});
@@ -34,6 +35,64 @@ transferRouter.post("/prepare",async(req,res)=>{try{
   });
   return res.status(201).json({ message: "Transfer prepared for settlement.", transferId: draft.id, status: quoted.status, transfer: quoted });
 }catch(e){return fail(res,e);}});
+
+
+// Paytrie order actions are operator-gated in this local prototype.
+// The customer's short-lived Paytrie JWT is forwarded only to the provider adapter.
+function requireOperator(req, res) {
+  const token = process.env.STABLEX_OPERATOR_TOKEN;
+  if (!token || req.get("Authorization") !== `Bearer ${token}`) {
+    res.status(401).json({ error: "Unauthorized operator action." });
+    return false;
+  }
+  return true;
+}
+
+transferRouter.post("/:id/provider-order", async (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    const result = await createPaytrieProviderOrder({
+      transferId: req.params.id,
+      customerId: String(req.body?.customerId || ""),
+      idempotencyKey: req.get("Idempotency-Key"),
+      userJwt: req.get("X-Paytrie-User-Token"),
+      confirm: req.body?.confirm,
+    });
+    const status = result.attempt?.status === "ACCEPTED" ? (result.replayed ? 200 : 201)
+      : ["UNKNOWN", "SUBMITTING"].includes(result.attempt?.status) ? 202
+      : result.attempt?.status === "REJECTED" ? 422 : 200;
+    return res.status(status).json(result);
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+transferRouter.get("/:id/provider-order", async (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    const attempt = await getPaytrieProviderOrder({
+      transferId: req.params.id,
+      customerId: String(req.query.customerId || ""),
+    });
+    return attempt ? res.json({ attempt }) : res.status(404).json({ error: "No provider order attempt exists for this transfer." });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+transferRouter.post("/:id/provider-order/refresh", async (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    const result = await refreshPaytrieProviderOrder({
+      transferId: req.params.id,
+      customerId: String(req.body?.customerId || ""),
+      userJwt: req.get("X-Paytrie-User-Token"),
+    });
+    return res.json(result);
+  } catch (error) {
+    return fail(res, error);
+  }
+});
 
 transferRouter.post("/provider-events",async(req,res)=>{
  try {

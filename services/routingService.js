@@ -257,6 +257,9 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
     customerId,
     quote: {
       quoteId: quote.quoteId,
+      providerQuoteId: quote.provider === "Paytrie" ? (quote.raw?.quoteId ?? null) : null,
+      providerLeftSideLabel: quote.provider === "Paytrie" ? (quote.raw?.leftSideLabel ?? null) : null,
+      providerRightSideLabel: quote.provider === "Paytrie" ? (quote.raw?.rightSideLabel ?? null) : null,
       provider: quote.provider,
       providerClass: quote.providerClass,
       quoteType: quote.quoteType,

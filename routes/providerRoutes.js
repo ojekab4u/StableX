@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getProviderReadiness, getProviderRatePreviews } from "../services/providers/providerService.js";
+import { requestPaytrieLoginCode, verifyPaytrieLoginCode } from "../services/paytrieService.js";
 
 export const providerRouter = Router();
 
@@ -28,6 +29,47 @@ providerRouter.post("/quotes", async (req, res) => {
     const result = await getProviderRatePreviews({ from, to, amount, network, provider });
     return res.json({
       message: "Provider rate preview completed. No order, payment, transfer or settlement was initiated.",
+      ...result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 502).json({ error: error.message });
+  }
+});
+
+
+// Local operator-assisted Paytrie customer authentication.
+// Paytrie requires the customer to be onboarded and verified before login.
+function requireOperator(req, res) {
+  const token = process.env.STABLEX_OPERATOR_TOKEN;
+  if (!token || req.get("Authorization") !== `Bearer ${token}`) {
+    res.status(401).json({ error: "Unauthorized operator action." });
+    return false;
+  }
+  return true;
+}
+
+providerRouter.post("/paytrie/auth/login-code", async (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    const result = await requestPaytrieLoginCode(req.body?.email);
+    return res.status(202).json({
+      message: "Paytrie login code requested. The customer must provide the code sent to their registered email.",
+      result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 502).json({ error: error.message });
+  }
+});
+
+providerRouter.post("/paytrie/auth/verify", async (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    const result = await verifyPaytrieLoginCode({
+      email: req.body?.email,
+      code: req.body?.code,
+    });
+    return res.json({
+      message: "Paytrie customer authenticated. The JWT expires after the provider-defined lifetime; do not store it in StableX logs or source control.",
       ...result,
     });
   } catch (error) {
