@@ -1,10 +1,14 @@
 import { Router } from "express";
+import { getCustomerGateStatus } from "../services/complianceService.js";
+import { randomUUID } from "node:crypto";
+import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding } from "../repositories/providerCustomerRepository.js";
 import {
   getBridgeReadiness,
   getBridgeRate,
   listBridgeCustomers,
   getBridgeCustomer,
   createBridgeOnRampOrder,
+  requestBridgeTosLink,
 } from "../services/providers/bridgeService.js";
 
 export const bridgeRouter = Router();
@@ -92,6 +96,78 @@ bridgeRouter.get("/customers/lookup", async (req, res) => {
       pagesScanned,
       lookupComplete: false,
       lookupIsReadOnly: true,
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+
+// Durable Bridge onboarding status for a StableX customer.
+bridgeRouter.get("/customers/onboarding", async (req, res) => {
+  try {
+    const customerId = String(req.query.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+    return res.json({
+      provider: "Bridge",
+      customerId,
+      onboarding: await getBridgeOnboarding(customerId),
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+// Create a hosted Bridge ToS acceptance link only after StableX compliance approval.
+bridgeRouter.post("/customers/tos-link", async (req, res) => {
+  try {
+    const customerId = String(req.body?.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+    const gate = await getCustomerGateStatus(customerId);
+    if (!gate.gate.approved) {
+      return res.status(409).json({
+        error: "StableX compliance approval is required before Bridge onboarding.",
+        gate: gate.gate,
+      });
+    }
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey) {
+      return res.status(400).json({ error: "Provide an Idempotency-Key header and reuse it for retries." });
+    }
+    const redirectUri = process.env.BRIDGE_TOS_REDIRECT_URI || undefined;
+    const result = await requestBridgeTosLink({ idempotencyKey, redirectUri });
+    if (!result.url) {
+      return res.status(502).json({ error: "Bridge did not return a hosted ToS URL." });
+    }
+    const onboarding = await saveBridgeTosLink({ customerId, url: result.url });
+    return res.status(201).json({
+      provider: "Bridge",
+      customerId,
+      onboarding,
+      tosUrl: result.url,
+      nextStep: "Customer must open the hosted URL and accept Bridge Terms of Service. Customer creation is not performed by this endpoint.",
+      tosLinkCreated: true,
+      customerCreated: false,
+      fundsMoved: false,
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+// Bridge redirects here with signed_agreement_id when BRIDGE_TOS_REDIRECT_URI is configured.
+bridgeRouter.get("/customers/tos-callback", async (req, res) => {
+  try {
+    const customerId = String(req.query.customerId || "").trim();
+    const signedAgreementId = String(req.query.signed_agreement_id || "").trim();
+    if (!customerId || customerId.length > 128 || !signedAgreementId || signedAgreementId.length > 255) {
+      return res.status(400).json({ error: "customerId and signed_agreement_id are required." });
+    }
+    const onboarding = await saveBridgeSignedAgreement({ customerId, signedAgreementId });
+    return res.json({
+      provider: "Bridge",
+      onboarding,
+      nextStep: "Terms acceptance recorded. Customer profile completeness must be checked before Bridge customer creation.",
+      customerCreated: false,
+      fundsMoved: false,
     });
   } catch (e) { return fail(res, e); }
 });
