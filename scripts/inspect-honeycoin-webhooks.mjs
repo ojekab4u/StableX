@@ -1,6 +1,6 @@
 import {
   getHoneycoinWebhookDeliveries,
-  getHoneycoinWebhookDelivery,
+  getHoneycoinTransaction,
 } from "../services/providers/honeycoinService.js";
 
 const reference = String(process.argv[2] || "").trim();
@@ -49,27 +49,42 @@ if (!reference) {
       };
     };
 
-    const inspected = await Promise.all(entries.map(async (entry) => {
-      const eventBody = entry?.payload || entry?.body || entry?.eventPayload || entry;
-      const id = eventBody?.id || eventBody?.webhookLogId || entry?.webhookLogId || entry?.webhookId || entry?.id;
-      if (!id) return safeEvent(entry);
+    const inspected = entries.map((entry) => safeEvent(entry));
+    const transactionId = inspected.find((event) => event.transactionId)?.transactionId || null;
+    let transaction = null;
+    let transactionLookupError = null;
+    if (transactionId) {
       try {
-        const detail = await getHoneycoinWebhookDelivery(String(id));
-        return safeEvent(entry, detail);
+        const result = await getHoneycoinTransaction(String(transactionId));
+        const provider = result?.data && typeof result.data === "object" ? result.data : result;
+        const txId = provider?.txId || provider?.transactionHash || null;
+        transaction = {
+          transactionId: provider?.transactionId || transactionId,
+          status: provider?.status ?? null,
+          chargeStatus: provider?.chargeStatus ?? null,
+          chain: provider?.chain ?? null,
+          receiverCurrency: provider?.receiverCurrency ?? null,
+          cryptoAmount: provider?.cryptoAmount ?? provider?.receiverAmount ?? null,
+          receiverAddressPresent: Boolean(provider?.receiverAddress),
+          txIdPresent: Boolean(txId),
+          txId: txId && /^0x[a-fA-F0-9]{64}$/.test(String(txId)) ? txId : null,
+          transactionKeys: Object.keys(provider || {}).sort(),
+        };
       } catch (error) {
-        return {
-          ...safeEvent(entry),
-          detailLookupError: error.message,
-          detailLookupStatus: error.statusCode || null,
+        transactionLookupError = {
+          message: error.message,
+          statusCode: error.statusCode || null,
         };
       }
-    }));
+    }
 
     console.log(JSON.stringify({
       reference,
       responseKeys: Object.keys(result || {}).sort(),
       eventsFound: entries.length,
       events: inspected,
+      transaction,
+      transactionLookupError,
     }, null, 2));
   } catch (error) {
     console.error(JSON.stringify({
