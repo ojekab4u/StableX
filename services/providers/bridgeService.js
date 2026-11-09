@@ -112,6 +112,22 @@ export async function createBridgeCustomer(customer, { idempotencyKey } = {}) {
   return bridgeRequest("/customers", { method: "POST", body: customer, idempotencyKey });
 }
 
+export async function getBridgeKycLink(customerId, { endorsement = "base" } = {}) {
+  if (typeof customerId !== "string" || !customerId.trim()) {
+    const error = new Error("A Bridge customer ID is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const requestedEndorsement = String(endorsement || "base").trim().toLowerCase();
+  if (!["base", "sepa"].includes(requestedEndorsement)) {
+    const error = new Error("Bridge KYC endorsement must be base or sepa.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const query = requestedEndorsement === "sepa" ? "?endorsement=sepa" : "";
+  return bridgeRequest(`/customers/${encodeURIComponent(customerId.trim())}/kyc_link${query}`);
+}
+
 export async function getBridgeCustomer(customerId) {
   if (typeof customerId !== "string" || !customerId.trim()) {
     const error = new Error("A Bridge customer ID is required.");
