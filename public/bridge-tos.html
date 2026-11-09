@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StableX — Bridge Terms Acceptance</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10152a; color: #eef2ff; }
+    body { margin: 0; padding: 32px 18px; }
+    main { max-width: 900px; margin: 0 auto; }
+    .panel { background: #1a2240; border: 1px solid #344064; border-radius: 14px; padding: 24px; }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    p { color: #c5cde2; line-height: 1.55; }
+    iframe { display: block; width: 100%; min-height: 680px; border: 1px solid #465477; border-radius: 10px; background: white; }
+    code { overflow-wrap: anywhere; }
+    #result { display: none; margin-top: 18px; padding: 16px; border-radius: 10px; background: #102f2a; border: 1px solid #2c806b; }
+    #agreement { user-select: all; font-weight: 700; overflow-wrap: anywhere; }
+    .error { color: #ffb4b4; }
+  </style>
+</head>
+<body>
+<main>
+  <section class="panel">
+    <h1>Bridge Terms of Service</h1>
+    <p>Complete Bridge's hosted acceptance flow below. StableX listens only for messages from Bridge's Sandbox compliance origin and displays the signed agreement ID returned by Bridge.</p>
+    <div id="status" role="status">Loading Bridge acceptance page…</div>
+    <p id="error" class="error"></p>
+    <iframe id="bridge-frame" title="Bridge Terms of Service acceptance" allow="clipboard-read; clipboard-write"></iframe>
+    <div id="result" role="status">
+      <strong>Bridge returned a signed agreement ID</strong>
+      <p id="agreement"></p>
+      <p>Copy this ID and record it through the authenticated StableX operator endpoint. Do not use a test or placeholder ID.</p>
+    </div>
+  </section>
+</main>
+<script>
+(() => {
+  const allowedOrigins = new Set(["https://compliance.sandbox.bridge.xyz"]);
+  const params = new URLSearchParams(window.location.search);
+  const rawUrl = params.get("url");
+  const frame = document.getElementById("bridge-frame");
+  const status = document.getElementById("status");
+  const error = document.getElementById("error");
+  const result = document.getElementById("result");
+  const agreement = document.getElementById("agreement");
+
+  if (!rawUrl) {
+    status.textContent = "No Bridge ToS URL provided.";
+    error.textContent = "Open this page with ?url= followed by the URL returned by StableX.";
+    return;
+  }
+
+  let bridgeUrl;
+  try {
+    bridgeUrl = new URL(rawUrl);
+    if (bridgeUrl.protocol !== "https:" || !allowedOrigins.has(bridgeUrl.origin) ||
+        bridgeUrl.pathname !== "/accept-terms-of-service") {
+      throw new Error("Unexpected Bridge URL.");
+    }
+  } catch {
+    status.textContent = "Bridge URL rejected.";
+    error.textContent = "The supplied URL is not a recognized Bridge Sandbox Terms URL.";
+    return;
+  }
+
+  function findAgreementId(value, depth = 0) {
+    if (depth > 4 || value == null) return null;
+    if (typeof value === "string") {
+      try { return findAgreementId(JSON.parse(value), depth + 1); } catch { return null; }
+    }
+    if (typeof value !== "object") return null;
+    for (const key of ["signedAgreementId", "signed_agreement_id"]) {
+      if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+    }
+    for (const child of Object.values(value)) {
+      const found = findAgreementId(child, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  window.addEventListener("message", (event) => {
+    if (!allowedOrigins.has(event.origin) || event.source !== frame.contentWindow) return;
+    const id = findAgreementId(event.data);
+    if (!id) return;
+    agreement.textContent = id;
+    result.style.display = "block";
+    status.textContent = "Terms acceptance response received from Bridge.";
+  });
+
+  frame.addEventListener("load", () => {
+    status.textContent = "Bridge acceptance page loaded. Complete the steps inside the frame.";
+  });
+  frame.src = bridgeUrl.toString();
+})();
+</script>
+</body>
+</html>
