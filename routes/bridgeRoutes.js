@@ -10,6 +10,8 @@ import {
   createBridgeCustomer,
   createBridgeOnRampOrder,
   requestBridgeTosLink,
+  createBridgeVirtualAccount,
+  listBridgeVirtualAccounts,
 } from "../services/providers/bridgeService.js";
 
 export const bridgeRouter = Router();
@@ -384,6 +386,60 @@ bridgeRouter.post("/customers/kyc-link", async (req, res) => {
       nextStep: "Open the hosted Bridge KYC URL and complete all requested steps. Then refresh the Bridge customer status endpoint.",
       customerCreated: true,
       fundsMoved: false,
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+
+
+// Sandbox virtual accounts return dummy deposit instructions. This is an
+// operator-only test action; it does not create a real bank account or move funds.
+bridgeRouter.get("/virtual-accounts", async (req, res) => {
+  try {
+    const customerId = String(req.query.customerId || "").trim();
+    if (!customerId || customerId.length > 128) return res.status(400).json({ error: "A valid StableX customerId is required." });
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) return res.status(409).json({ error: "No Bridge customer is linked to this StableX customer." });
+    const result = await listBridgeVirtualAccounts(onboarding.providerCustomerId);
+    return res.json({ provider: "Bridge", environment: getBridgeReadiness().environment, customerId, bridgeCustomerId: onboarding.providerCustomerId, virtualAccounts: result.data || result, sandboxOnly: getBridgeReadiness().environment === "Sandbox", fundsMoved: false });
+  } catch (e) { return fail(res, e); }
+});
+
+bridgeRouter.post("/virtual-accounts", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const customerId = String(req.body?.customerId || "").trim();
+    const currency = String(req.body?.currency || "").trim().toUpperCase();
+    const destinationAddress = String(req.body?.destinationAddress || "").trim();
+    if (!customerId || customerId.length > 128) return res.status(400).json({ error: "A valid StableX customerId is required." });
+    const readiness = getBridgeReadiness();
+    if (readiness.environment !== "Sandbox") {
+      return res.status(409).json({ error: "This test workspace is restricted to Bridge Sandbox. Use the separately approved production wallet/funding workflow for live accounts.", environment: readiness.environment });
+    }
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) return res.status(409).json({ error: "No Bridge customer is linked. Create or link the Bridge customer first." });
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey) return res.status(400).json({ error: "Provide an Idempotency-Key header." });
+    const result = await createBridgeVirtualAccount({
+      bridgeCustomerId: onboarding.providerCustomerId,
+      currency,
+      destinationAddress,
+      idempotencyKey,
+    });
+    const account = result.data || result;
+    return res.status(201).json({
+      provider: "Bridge",
+      environment: readiness.environment,
+      customerId,
+      bridgeCustomerId: onboarding.providerCustomerId,
+      virtualAccount: account,
+      sandboxOnly: true,
+      dummyDepositInstructions: true,
+      fundsMoved: false,
+      nextStep: "Use the returned source_deposit_instructions to display the simulated funding details. Sandbox does not fire payment webhooks or move real money.",
     });
   } catch (e) { return fail(res, e); }
 });
