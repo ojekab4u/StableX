@@ -34,7 +34,7 @@ export async function saveComplianceCase({ id, customerId, subjectType, requirem
 }
 
 export async function readComplianceCase(caseId) {
-  const result = await getPool().query(`${SELECT} WHERE case_id=$1`, [caseId]);
+  const result = await getPool().query(`${SELECT} WHERE case_id=$1::uuid`, [caseId]);
   return result.rows[0] || null;
 }
 
