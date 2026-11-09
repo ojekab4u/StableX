@@ -85,6 +85,15 @@
     if (order.paymentMethod) lines.push("Payment method: " + order.paymentMethod);
     if (order.paymentDetails) lines.push("Payment instructions: " + JSON.stringify(order.paymentDetails, null, 2));
     if (order.failureReason) lines.push("Issue: " + order.failureReason);
+    if (value.chargeStatus) lines.push("Fiat charge status: " + value.chargeStatus);
+    if (value.settlement) {
+      lines.push("Blockchain settlement state: " + (value.settlement.state || "unknown"));
+      lines.push("Receiver address returned by Honeycoin: " + (value.settlement.receiverAddress || "NOT RETURNED"));
+      lines.push("USDC amount returned by Honeycoin: " + (value.settlement.cryptoAmount ?? "NOT RETURNED"));
+      lines.push("Settlement chain: " + (value.settlement.chain || "NOT RETURNED"));
+      lines.push("Blockchain transaction hash: " + (value.settlement.transactionHash || "NOT RETURNED"));
+      if (value.settlement.reason) lines.push("Settlement explanation: " + value.settlement.reason);
+    }
     if (value.verification?.reason) lines.push("Base verification: " + value.verification.reason);
     if (value.settlementVerified === true) lines.push("Base USDC settlement: verified");
     if (value.settlementVerified === false) lines.push("Base USDC settlement: not yet verified");

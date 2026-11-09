@@ -4,10 +4,10 @@ import { createHmac } from "node:crypto";
 import { normalizeVoveOutcome } from "../services/complianceService.js";
 import { verifyVoveWebhookSignature } from "../services/voveKybService.js";
 
-test("VOVE completed verification enters internal review, not automatic approval", () => {
+test("VOVE completed verification is approved, not internal review", () => {
   assert.deepEqual(
     normalizeVoveOutcome({ type: "kyc.case.completed", data: { status: "COMPLETED" } }, { status: "COMPLETED" }),
-    { providerStatus: "COMPLETED", status: "IN_REVIEW" }
+    { providerStatus: "COMPLETED", status: "APPROVED" }
   );
 });
 

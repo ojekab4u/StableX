@@ -176,7 +176,47 @@ const schemaStatements = [
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (customer_id, chain_id, address)
-  )`
+  )`,
+  `CREATE TABLE IF NOT EXISTS accounts (
+    account_id UUID PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(32),
+    password_hash VARCHAR(255) NOT NULL,
+    account_type VARCHAR(16) NOT NULL CHECK (account_type IN ('PERSONAL','BUSINESS')),
+    full_name VARCHAR(255) NOT NULL,
+    business_name VARCHAR(255),
+    country VARCHAR(2),
+    date_of_birth VARCHAR(10),
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING_VERIFICATION'
+      CHECK (status IN ('PENDING_VERIFICATION','ACTIVE','SUSPENDED','CLOSED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS country VARCHAR(2)`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR(10)`,
+  `CREATE INDEX IF NOT EXISTS accounts_status_idx ON accounts (status)`,
+  `CREATE TABLE IF NOT EXISTS verification_codes (
+    code_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(account_id),
+    channel VARCHAR(8) NOT NULL CHECK (channel IN ('EMAIL','PHONE')),
+    code_hash CHAR(64) NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS verification_codes_account_idx ON verification_codes (account_id, channel)`,
+  `CREATE TABLE IF NOT EXISTS auth_sessions (
+    session_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(account_id),
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS auth_sessions_account_idx ON auth_sessions (account_id)`
 
 ];
 
@@ -189,7 +229,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

@@ -153,13 +153,17 @@ test("Bridge refuses unsupported pairs and never calls the API for them", async 
   }
 });
 
-test("Bridge readiness reports only its implemented indicative-rate capability", () => {
+test("Bridge readiness reports implemented preview and customer onboarding capabilities", () => {
   const originalKey = process.env.BRIDGE_API_KEY;
   process.env.BRIDGE_API_KEY = "";
   try {
     const readiness = getBridgeReadiness();
     assert.equal(readiness.configured, false);
-    assert.deepEqual(readiness.capabilities, ["INDICATIVE_FX_RATE_PREVIEW"]);
+    assert.deepEqual(readiness.capabilities, [
+      "INDICATIVE_FX_RATE_PREVIEW",
+      "CUSTOMER_LOOKUP",
+      "CUSTOMER_CREATION_AFTER_COMPLIANCE_AND_TOS",
+    ]);
     assert.equal(readiness.executionEnabled, false);
   } finally {
     if (originalKey === undefined) delete process.env.BRIDGE_API_KEY;

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StableX · Bridge Sandbox Funding</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+:root{color-scheme:light}body{margin:0;background:#f4f6fa;color:#182230;font:15px/1.5 system-ui,sans-serif}
+main{max-width:1040px;margin:34px auto;padding:0 18px}.eyebrow{color:#667085;font-size:12px;font-weight:700;letter-spacing:.12em}
+h1{font-size:32px;margin:5px 0}.muted{color:#667085}.panel{background:white;border:1px solid #e4e8ef;border-radius:14px;padding:22px;margin:18px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:block;font-weight:650;margin:12px 0 6px}
+input,select{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cfd6e2;border-radius:8px;font:inherit}
+button{background:#2457d6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-weight:700;cursor:pointer;margin:15px 8px 0 0}
+button.secondary{background:#e9eefb;color:#23437e}button:disabled{opacity:.5;cursor:not-allowed}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fc;border:1px solid #e7ebf2;border-radius:9px;padding:15px;min-height:60px}
+.notice{padding:12px;border-radius:9px;background:#fff7e6;color:#80520a}.success{background:#ecfdf3;color:#067647}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.panel{padding:16px}}
+</style></head>
+<body><main>
+<p class="eyebrow">STABLEX · PROVIDER TEST WORKSPACE</p>
+<h1>Bridge Sandbox funding instructions</h1>
+<p class="muted">Create and inspect dummy fiat deposit instructions for a linked Bridge Sandbox customer. No real bank account is issued and no funds move.</p>
+<section class="panel">
+<div class="notice">Sandbox only. Bridge documents virtual accounts and deposit instructions as dummy data in Sandbox. Payment-related webhooks are not fired.</div>
+<div class="grid">
+<div><label for="customer">StableX customer ID</label><input id="customer" value="customer-001"></div>
+<div><label for="operator">StableX operator token</label><input id="operator" type="password" autocomplete="off" placeholder="Enter your local operator token"></div>
+</div>
+<button id="load">Load linked Bridge customer</button>
+<p id="customerStatus" class="muted">Not loaded.</p>
+<div class="grid">
+<div><label for="currency">Deposit currency</label><select id="currency"><option value="USD">USD · US virtual account</option><option value="EUR">EUR · SEPA virtual account</option><option value="GBP">GBP · GBP virtual account (availability subject to account access)</option></select></div>
+<div><label for="address">Base destination wallet address</label><input id="address" placeholder="0x..."></div>
+</div>
+<p class="muted">Bridge's virtual account needs a destination for the converted USDC. Use a Base address you control or an approved test destination. This does not create a Bridge custodial wallet.</p>
+<button id="create" disabled>Create dummy deposit instructions</button>
+<button id="refresh" class="secondary" disabled>Refresh virtual accounts</button>
+</section>
+<section class="panel"><h2>Provider response</h2><pre id="result">No request made.</pre></section>
+<p class="muted"><a href="/console.html">Customer console</a> · <a href="/honeycoin-onramp.html">Honeycoin on-ramp diagnostics</a> · <a href="/">StableX home</a></p>
+</main>
+<script>
+(() => {
+const $=id=>document.getElementById(id);let bridgeCustomerId=null;let currentEnvironment=null;
+async function api(path,options={}){const r=await fetch(path,{...options,headers:{"content-type":"application/json",...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Request failed");return d}
+function show(v){$("result").textContent=JSON.stringify(v,null,2)}
+function headers(key){const token=$("operator").value.trim();if(!token)throw new Error("Enter your StableX operator token.");return {"Authorization":"Bearer "+token,...(key?{"Idempotency-Key":key}:{})}}
+$("load").onclick=async()=>{try{$("load").disabled=true;const id=encodeURIComponent($("customer").value.trim());const data=await api("/api/bridge/customers/onboarding?customerId="+id);bridgeCustomerId=data.onboarding?.providerCustomerId||null;if(!bridgeCustomerId)throw new Error("No Bridge customer is linked to this StableX customer. Complete Bridge onboarding first.");const profile=await api("/api/bridge/customers/"+encodeURIComponent(bridgeCustomerId));currentEnvironment=(await api("/api/bridge/readiness")).environment;$("customerStatus").textContent="Linked Bridge customer: "+bridgeCustomerId+" · Provider status: "+(profile.customer?.status||"unknown")+" · Environment: "+currentEnvironment;$("create").disabled=currentEnvironment!=="Sandbox";$("refresh").disabled=false;show({onboarding:data.onboarding,customer:profile.customer,environment:currentEnvironment});}catch(e){$("customerStatus").textContent=e.message;show({error:e.message});}finally{$("load").disabled=false}};
+$("create").onclick=async()=>{try{if(!bridgeCustomerId)throw new Error("Load the linked Bridge customer first.");const key=crypto.randomUUID();$("create").disabled=true;const data=await api("/api/bridge/virtual-accounts",{method:"POST",headers:headers(key),body:JSON.stringify({customerId:$("customer").value.trim(),currency:$("currency").value,destinationAddress:$("address").value.trim()})});show(data);$("refresh").disabled=false;}catch(e){show({error:e.message});}finally{$("create").disabled=!bridgeCustomerId||currentEnvironment!=="Sandbox"}};
+$("refresh").onclick=async()=>{try{const id=encodeURIComponent($("customer").value.trim());const data=await api("/api/bridge/virtual-accounts?customerId="+id,{headers:headers()});show(data);}catch(e){show({error:e.message});}};
+})();
+</script></body></html>

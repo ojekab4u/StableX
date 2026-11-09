@@ -22,6 +22,7 @@ import { Connection } from "@solana/web3.js";
 import { getQuotes, 
   getDemoSupportedPairs, } from "./providers/demoProviders.js";
 import { sendRouter } from "./routes/sendRoutes.js";
+import { authRouter } from "./routes/authRoutes.js";
 import { kybRouter } from "./routes/kybRoutes.js";
 import { orchestrationRouter } from "./routes/orchestrationRoutes.js";
 import { transferRouter } from "./routes/transferRoutes.js";
@@ -33,6 +34,7 @@ import { customerRouter } from "./routes/customerRoutes.js";
 import { nombaRouter } from "./routes/nombaRoutes.js";
 import { bridgeRouter } from "./routes/bridgeRoutes.js";
 import { honeycoinWebhookRouter } from "./routes/honeycoinWebhookRoutes.js";
+import { paytrieRouter } from "./routes/paytrieRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
 const app = express();
@@ -478,6 +480,7 @@ app.post("/api/base/vault/update", async (req, res) => {
 });
 
 app.use("/api/send", sendRouter);
+app.use("/api/auth", authRouter);
 app.use("/api/kyb", kybRouter);
 app.use("/api/orchestration", orchestrationRouter);
 app.use("/api/transfers", transferRouter);
@@ -489,6 +492,7 @@ app.use("/api/customer", customerRouter);
 app.use("/api/nomba", nombaRouter);
 app.use("/api/bridge", bridgeRouter);
 app.use("/api/webhooks/honeycoin", honeycoinWebhookRouter);
+app.use("/api/paytrie", paytrieRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {

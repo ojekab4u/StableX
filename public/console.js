@@ -24,7 +24,7 @@ async function loadCustomer(){
     $("case-count").textContent=gate.caseCount ?? "—";
     $("bridge-status").textContent=bridge.capabilities?.join(", ") || bridge.status || (bridge.configured?"Configured":"Readiness loaded");
     message("customer-message",gate.gate?.approved?"Compliance approved. Quote selection is enabled for this customer.":`Compliance gate: ${gate.gate?.status||"Unknown"}. Quote selection will be blocked until approved.`);
-    await Promise.all([loadBeneficiaries(),loadTransfers()]);
+    await Promise.all([loadBeneficiaries(),loadTransfers(),refreshBridgeOnboarding()]);
   }catch(e){message("customer-message",e.message,true);$("gate-status").textContent="Unavailable";}
 }
 async function loadAssets(){
@@ -106,12 +106,59 @@ async function selectQuote(quoteId){
 async function loadTransfers(){
   const data=await api(`/api/transfers?customerId=${encodeURIComponent(state.customerId)}`);
   const rows=data.transfers||[],body=$("transfers");body.replaceChildren();
-  if(!rows.length){body.innerHTML='<tr><td colspan="5" class="muted">No durable transfers for this customer yet.</td></tr>';return;}
+  if(!rows.length){body.innerHTML='<tr><td colspan="6" class="muted">No durable transfers for this customer yet.</td></tr>';return;}
   rows.forEach(t=>{
     const tr=document.createElement("tr");
-    const values=[t.id||t.transferId||"—",`${t.sourceCurrency||t.from||"?"} → ${t.destinationCurrency||t.to||"?"}`,money(t.sourceAmount??t.amount,t.sourceCurrency||t.from),t.status||"—",t.createdAt?new Date(t.createdAt).toLocaleString():"—"];
-    values.forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});body.append(tr);
+    const id=t.id||t.transferId||"—";
+    const values=[id,`${t.sourceCurrency||t.from||"?"} → ${t.destinationCurrency||t.to||"?"}`,money(t.sourceAmount??t.amount,t.sourceCurrency||t.from),t.status||"—",t.createdAt?new Date(t.createdAt).toLocaleString():"—"];
+    values.forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});
+    const actions=document.createElement("td");
+    if(t.status==="QUOTED" && t.sourceCurrency==="NGN" && t.destinationCurrency==="USDC" && t.quote?.provider==="Honeycoin"){
+      const create=document.createElement("button");create.type="button";create.textContent="Create Honeycoin order";create.addEventListener("click",()=>createHoneycoinOrder(id));actions.append(create);
+    }
+    const refresh=document.createElement("button");refresh.type="button";refresh.className="secondary";refresh.textContent="Refresh provider";refresh.addEventListener("click",()=>refreshProviderOrder(id));actions.append(refresh);
+    tr.append(actions);body.append(tr);
   });
+}
+async function showProviderOrderResult(result){
+  const host=$("provider-order-result");host.replaceChildren();
+  const order=result.order||{};
+  const rows=[
+    ["Provider order",order.orderId||"—"],
+    ["Provider transaction",order.providerTransactionId||"—"],
+    ["Order status",order.status||"—"],
+    ["Provider status",order.providerStatus||"—"],
+    ["Payment method",order.paymentMethod||"—"],
+    ["Settlement verified",result.settlementVerified===true?"Yes": "Not yet"],
+    ["Transaction hash",order.transactionHash||"Not supplied by provider"],
+  ];
+  rows.forEach(([label,value])=>{const line=document.createElement("p");line.textContent=`${label}: ${value}`;host.append(line);});
+  if(order.redirectUrl){const link=document.createElement("a");link.href=order.redirectUrl;link.target="_blank";link.rel="noopener noreferrer";link.textContent="Continue to Honeycoin payment";host.append(link);}
+  if(order.paymentDetails){const line=document.createElement("p");line.textContent=`Payment details: ${JSON.stringify(order.paymentDetails)}`;host.append(line);}
+  const note=document.createElement("p");note.className="muted";note.textContent=result.settlementVerified?"Base USDC settlement was verified.": "Do not treat provider payment success as completed until Base settlement is independently verified.";host.append(note);
+}
+async function createHoneycoinOrder(transferId){
+  try{
+    $("provider-order-message").textContent="Creating Honeycoin payment order…";
+    const result=await api(`/api/transfers/${encodeURIComponent(transferId)}/provider-order`,{
+      method:"POST",
+      body:JSON.stringify({customerId:state.customerId,paymentMethod:$("honeycoin-method").value,email:$("honeycoin-email").value.trim()}),
+    });
+    await showProviderOrderResult(result);
+    $("provider-order-message").textContent=result.message||"Honeycoin order response received.";
+    await loadTransfers();
+  }catch(e){$("provider-order-message").textContent=e.message;}
+}
+async function refreshProviderOrder(transferId){
+  try{
+    $("provider-order-message").textContent="Refreshing provider status and checking Base settlement…";
+    const result=await api(`/api/transfers/${encodeURIComponent(transferId)}/provider-order/refresh`,{
+      method:"POST",body:JSON.stringify({customerId:state.customerId}),
+    });
+    await showProviderOrderResult(result);
+    $("provider-order-message").textContent=result.message||"Provider status refreshed.";
+    await loadTransfers();
+  }catch(e){$("provider-order-message").textContent=e.message;}
 }
 $("load-customer").addEventListener("click",loadCustomer);
 $("refresh-customer").addEventListener("click",loadCustomer);
@@ -121,3 +168,144 @@ $("get-quotes").addEventListener("click",getQuotes);
 $("quotes").addEventListener("click",e=>{const btn=e.target.closest("[data-quote]");if(btn&&!btn.disabled)selectQuote(btn.dataset.quote);});
 $("to").addEventListener("change",()=>{$("beneficiary-currency").value=$("to").value;});
 (async()=>{try{await loadAssets();await loadCustomer();}catch(e){message("customer-message",e.message,true);}})();
+
+
+// Bridge hosted onboarding: secrets remain in this page's memory only.
+let bridgeCustomerCreateKey = null;
+let bridgeTosKey = null;
+let bridgeOnboarding = null;
+const bridgeMessage = (text, error=false) => {
+  const node = $("bridge-onboarding-status");
+  node.textContent = text;
+  node.classList.toggle("error", error);
+};
+const bridgeToken = () => $("bridge-operator-token").value.trim();
+const bridgeHeaders = (idempotencyKey) => ({
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${bridgeToken()}`,
+  ...(idempotencyKey ? {"Idempotency-Key": idempotencyKey} : {}),
+});
+async function refreshBridgeOnboarding() {
+  const id = customerId();
+  if (!id) return;
+  bridgeMessage("Loading Bridge onboarding…");
+  try {
+    const data = await api(`/api/bridge/customers/onboarding?customerId=${encodeURIComponent(id)}`);
+    bridgeOnboarding = data.onboarding || null;
+    const providerId = bridgeOnboarding?.providerCustomerId;
+    let statusLine = [
+      `StableX customer: ${id}`,
+      `Bridge customer: ${providerId || "Not created"}`,
+      `ToS accepted: ${bridgeOnboarding?.signedAgreementId ? "Yes" : "No"}`,
+      `Onboarding: ${bridgeOnboarding?.onboardingStatus || "Not started"}`,
+    ].join(" · ");
+    if (providerId) {
+      const profile = await api(`/api/bridge/customers/${encodeURIComponent(providerId)}`);
+      const c = profile.customer || {};
+      statusLine += ` · Bridge status: ${c.status || "Unknown"} · Endorsements: ${(c.endorsements || []).map(x => typeof x === "string" ? x : (x.name || x.status || JSON.stringify(x))).join(", ") || "Not returned"}`;
+    }
+    bridgeMessage(statusLine);
+    $("bridge-signed-agreement").value = bridgeOnboarding?.signedAgreementId || $("bridge-signed-agreement").value;
+  } catch (e) {
+    bridgeMessage(e.message, true);
+  }
+}
+$("bridge-create-tos").addEventListener("click", async () => {
+  try {
+    $("bridge-create-tos").disabled = true;
+    bridgeTosKey ||= crypto.randomUUID();
+    const data = await api("/api/bridge/customers/tos-link", {
+      method: "POST",
+      headers: {"Idempotency-Key": bridgeTosKey},
+      body: JSON.stringify({customerId: customerId()}),
+    });
+    const host = $("bridge-tos-result");
+    host.replaceChildren();
+    const link = document.createElement("a");
+    link.href = data.tosUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open Bridge Terms of Service";
+    host.append(link);
+    bridgeMessage("Bridge Terms link created. Open it, accept the terms, then paste the signed agreement ID returned by the callback.");
+  } catch(e) { bridgeMessage(e.message, true); }
+  finally { $("bridge-create-tos").disabled = false; }
+});
+$("bridge-record-tos").addEventListener("click", async () => {
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const signedAgreementId = $("bridge-signed-agreement").value.trim();
+    if (!signedAgreementId) throw new Error("Paste the signed agreement ID returned by Bridge.");
+    await api("/api/bridge/customers/tos-acceptance", {
+      method: "POST",
+      headers: bridgeHeaders(),
+      body: JSON.stringify({customerId: customerId(), signedAgreementId}),
+    });
+    bridgeMessage("Bridge Terms acceptance recorded. You can now submit the individual profile.");
+    await refreshBridgeOnboarding();
+  } catch(e) { bridgeMessage(e.message, true); }
+});
+$("bridge-create-customer").addEventListener("click", async () => {
+  const button = $("bridge-create-customer");
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const file = $("bridge-passport-image").files[0];
+    if (!file) throw new Error("Select a passport JPEG or PNG image.");
+    if (file.size > 7_000_000) throw new Error("Choose a compressed passport image smaller than 7 MB.");
+    const passportImageFrontDataUri = await new Promise((resolve,reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Could not read the passport image."));
+      reader.readAsDataURL(file);
+    });
+    const profile = {
+      firstName: $("bridge-first-name").value.trim(),
+      middleName: $("bridge-middle-name").value.trim(),
+      lastName: $("bridge-last-name").value.trim(),
+      email: $("bridge-email").value.trim(),
+      phone: $("bridge-phone").value.trim(),
+      birthDate: $("bridge-dob").value,
+      passportNumber: $("bridge-passport-number").value.trim(),
+      passportImageFrontDataUri,
+      residentialAddress: {
+        streetLine1: $("bridge-street").value.trim(),
+        city: $("bridge-city").value.trim(),
+        subdivision: $("bridge-subdivision").value.trim(),
+        country: $("bridge-country").value.trim().toUpperCase(),
+      },
+    };
+    button.disabled = true;
+    bridgeCustomerCreateKey ||= crypto.randomUUID();
+    const data = await api("/api/bridge/customers/create", {
+      method: "POST",
+      headers: bridgeHeaders(bridgeCustomerCreateKey),
+      body: JSON.stringify({customerId: customerId(), profile}),
+    });
+    bridgeCustomerCreateKey = null;
+    $("bridge-passport-number").value = "";
+    $("bridge-passport-image").value = "";
+    bridgeMessage(`Bridge customer created and linked (${data.bridgeCustomerId}). Profile PII was not persisted by StableX. Continue with hosted KYC.`);
+    await refreshBridgeOnboarding();
+  } catch(e) { bridgeMessage(e.message, true); }
+  finally { button.disabled = false; }
+});
+$("bridge-kyc-link").addEventListener("click", async () => {
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const data = await api("/api/bridge/customers/kyc-link", {
+      method: "POST",
+      headers: bridgeHeaders(),
+      body: JSON.stringify({customerId: customerId(), endorsement: $("bridge-endorsement").value}),
+    });
+    const host = $("bridge-tos-result");
+    host.replaceChildren();
+    const link = document.createElement("a");
+    link.href = data.kycUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = `Open Bridge hosted ${data.endorsement.toUpperCase()} KYC`;
+    host.append(link);
+    bridgeMessage("Hosted KYC link created. Complete the Bridge flow, then refresh Bridge status.");
+  } catch(e) { bridgeMessage(e.message, true); }
+});
+$("bridge-refresh").addEventListener("click", refreshBridgeOnboarding);
