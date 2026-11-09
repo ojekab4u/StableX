@@ -115,6 +115,10 @@ function normalizeProviderResult(provider, request, result) {
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
     expiresAt: result.expiresAt || new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
+    providerData: provider === "Paytrie" ? raw : null,
+    providerQuoteId: provider === "Paytrie" ? (raw?.quoteId ?? null) : null,
+    providerLeftSideLabel: provider === "Paytrie" ? (raw?.leftSideLabel ?? null) : null,
+    providerRightSideLabel: provider === "Paytrie" ? (raw?.rightSideLabel ?? null) : null,
     observedAt: result.observedAt || result.timestamp || raw?.updated_at || new Date().toISOString(),
     network: result.network || null,
     chainId: result.chainId || null,
@@ -287,6 +291,10 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
       feeCurrency: quote.feeCurrency,
       expiresAt: quote.expiresAt,
       selectedAt: new Date().toISOString(),
+      providerQuoteId: quote.providerQuoteId,
+      providerLeftSideLabel: quote.providerLeftSideLabel,
+      providerRightSideLabel: quote.providerRightSideLabel,
+      providerData: quote.providerData,
     },
   });
   return selection;
