@@ -54,6 +54,31 @@ async function voveRequest(path, { method = "GET", body } = {}) {
   return payload;
 }
 
+async function voveRequestRoot(path, { method = "GET", body } = {}) {
+  const settings = config();
+  const response = await fetch(`${settings.rootBaseUrl}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "x-api-key": settings.apiKey,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(15000),
+  });
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { payload = { message: raw.slice(0, 500) }; }
+  if (!response.ok) {
+    const error = new Error(payload.message || payload.error || `VOVE request failed (${response.status})`);
+    error.statusCode = response.status === 401 || response.status === 403 ? 502 : response.status >= 500 ? 502 : 400;
+    error.providerStatus = response.status;
+    throw error;
+  }
+  return payload;
+}
+
 function buildKycLink(token, settings) {
   const url = new URL(settings.hostedBaseUrl + "/");
   url.searchParams.set("authToken", token);
@@ -146,8 +171,9 @@ export async function getVoveKycResult(refId) {
 }
 
 export async function getVoveKybResult(refId) {
+  const settings = config();
   const query = new URLSearchParams({ search: refId, limit: "1" });
-  const payload = await voveRequest(`/kyb/case?${query.toString()}`);
+  const payload = await voveRequestRoot(`/kyb/case?${query.toString()}`);
   const records = Array.isArray(payload.data) ? payload.data : [];
   const record = records.find((item) => item.refId === refId) ||
     (payload.kybCase?.refId === refId ? payload.kybCase : null) ||

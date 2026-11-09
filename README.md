@@ -445,3 +445,42 @@ Example registration:
 - There is no email/SMS provider integration yet, no rate limiting on register/login beyond the code attempt lock, and no password reset flow.
 - Existing endpoints still accept a caller-supplied `customerId`; pass the authenticated `accountId` as the `customerId` and scope all reads to the session owner via the `requireAuth` middleware before exposing these routes publicly.
 - Account records live in PostgreSQL and are subject to the same prototype boundaries as the rest of the project: no money movement is enabled by any account action.
+
+## Identity verification: KYC/KYB linked from registration data (prototype)
+
+Step 2 of the customer flow starts from the signed-in account. Registration data prefills verification so the customer never retypes their email, country, phone or date of birth. Bridge onboarding (hosted ToS → customer → hosted KYC) can only start after StableX compliance is approved.
+
+### How verification is chosen
+
+`GET /api/auth/session` returns:
+
+- `complianceSubjectType` — `INDIVIDUAL` for PERSONAL accounts (KYC), `BUSINESS` for BUSINESS accounts (KYB)
+- `compliancePrefill` — subject fields built from stored registration data
+- `providerPrefill.vove` / `providerPrefill.bridge` — what VOVE KYC/KYB and Bridge customer creation can draw from the account
+- `complianceOptions.mode` — `VOVE_HOSTED` (real hosted sessions, when `VOVE_API_KEY`/`VOVE_PUBLIC_KEY` are configured), `LOCAL_SIMULATOR` (labeled simulator, when `COMPLIANCE_SIM_AUTO_APPROVE=true`), or `NOT_AVAILABLE`
+- `complianceGate` — `APPROVED`, `PENDING`, `REJECTED` or `NOT_SUBMITTED`; transfers are blocked until approved
+
+### API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/compliance/cases/self` | Signed-in account starts its KYC/KYB case; subject prefilled from registration data |
+
+The endpoint issues a real VOVE hosted verification session when credentials are configured; otherwise it creates a clearly labeled simulated case for local testing. Completing the hosted flow does not by itself approve the account — final approval comes from VOVE results and/or an authorized StableX decision.
+
+### VOVE integration notes (fixed in this milestone)
+
+- **KYB calls use the unversioned root** (`POST {root}/kyb/case`, accepting only `refId` + optional `flow`, per VOVE's docs), while KYC keeps `{base}/v2/sessions`. The previous code called KYB under `/v2/kyb/case`, which VOVE rejects as 404.
+- **Hosted links use the Sandbox host** (`web.voveid.net` with `environment=Sandbox`), matching VOVE's hosted-link convention; production links use `web.voveid.com`.
+- You do not need to touch either integration to run the flow locally — with `COMPLIANCE_SIM_AUTO_APPROVE=true` (already in `.env.example`) the simulator hands you an approved gate and the account becomes active immediately.
+- Case statuses are refreshed via `/api/compliance/cases/:caseId/refresh` and signed VOVE webhooks at `/api/kyb/webhook`.
+
+## Frontend screens
+
+- `/auth.html` + `/auth.js` — sign up / sign in / verify email-phone / KYC-KYB case / done, with demo verification codes shown on screen while `ACCOUNTS_DEMO_CODE_DELIVERY=true`.
+
+## Important limitations
+
+- This is a prototype layer: real provider verification is exercised through hosted sessions only; StableX does not collect or persist identity documents.
+- KYC auto-approval in the simulator (`VERIFIED` status) is explicitly labeled as simulated and not a real compliance decision.
+- Bridge customer creation additionally requires an operator token, ToS acceptance, passport number and passport image at the operator endpoint; registration data only pre-fills it.
