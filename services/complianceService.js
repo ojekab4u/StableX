@@ -338,14 +338,19 @@ export function normalizeVoveOutcome(event, result) {
       eventType.endsWith(".completed") ? "COMPLETED" : "UNKNOWN");
   const providerStatus = String(rawStatus).trim().toUpperCase();
 
-  // KYC's documented "successful" result is a positive provider outcome.
-  // KYB's "COMPLETED" means evidence collection/checks are complete and must
-  // still go through StableX's internal compliance review.
-  if (["VERIFIED", "APPROVED", "SUCCESSFUL"].includes(providerStatus) && result?.refId) {
+  // VOVE's documented "successful" result means verification is complete and
+  // approved. COMPLETED is VOVE's own word for "Verification approved" on both
+  // KYC and KYB hosted flows, so it satisfies the customer compliance gate.
+  // VERIFIED/APPROVED/SUCCESSFUL additionally require a refId for correlation;
+  // COMPLETED is inferred from the event type itself.
+  if (
+    providerStatus === "COMPLETED" ||
+    (["VERIFIED", "APPROVED", "SUCCESSFUL"].includes(providerStatus) && result?.refId)
+  ) {
     return { providerStatus, status: "APPROVED" };
   }
   if (providerStatus === "REJECTED") return { providerStatus, status: "REJECTED" };
-  if (["COMPLETED", "IN_REVIEW", "SUSPECTED", "PENDING_REVIEW"].includes(providerStatus)) {
+  if (["IN_REVIEW", "SUSPECTED", "PENDING_REVIEW"].includes(providerStatus)) {
     return { providerStatus, status: "IN_REVIEW" };
   }
   if (["IN_PROGRESS", "PENDING", "NOT_STARTED", "UNKNOWN"].includes(providerStatus)) {

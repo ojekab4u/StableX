@@ -375,9 +375,9 @@ function startPolling() {
         stopPolling();
         showMessage("Verification was rejected. Please contact support.", "error");
       }
-      // otherwise keep polling
+      // otherwise keep polling; gate is still PENDING or IN_REVIEW
     } catch (error) {
-      // Best-effort polling; VOVE webhooks also update the gate. Stop on hard errors.
+      console.error("[StableX compliance poll failed]", error.status, error.message);
       if (error.status === 404 || error.status === 401) stopPolling();
     }
   }, 1000);

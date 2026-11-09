@@ -56,9 +56,10 @@ export async function readAllComplianceCases() {
   return result.rows;
 }
 
-// Provider updates are not operator decisions. VOVE's COMPLETED state is
-// recorded as IN_REVIEW; only an explicit verified/approved result or an
-// authorized operator decision can satisfy the customer compliance gate.
+// Provider updates are not operator decisions. VOVE's COMPLETED state means
+// verification is approved per VOVE's docs and satisfies the customer gate;
+// only an explicit rejected result or an authorized operator decision can
+// change the gate away from an approved provider outcome.
 export async function updateComplianceProviderStatus({ caseId, providerStatus, status, eventType }) {
   const client = await getPool().connect();
   try {
