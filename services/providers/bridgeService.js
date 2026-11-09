@@ -86,6 +86,27 @@ export async function listBridgeCustomers({ startingAfter, limit = 100 } = {}) {
   return bridgeRequest(`/customers?${params.toString()}`);
 }
 
+export async function requestBridgeTosLink({ idempotencyKey, redirectUri } = {}) {
+  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 128) {
+    const error = new Error("A stable Idempotency-Key is required for Bridge ToS link creation.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const path = redirectUri
+    ? `/customers/tos_links?redirect_uri=${encodeURIComponent(redirectUri)}`
+    : "/customers/tos_links";
+  return bridgeRequest(path, { method: "POST", idempotencyKey });
+}
+
+export async function createBridgeCustomer(customer, { idempotencyKey } = {}) {
+  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 128) {
+    const error = new Error("A stable Idempotency-Key is required for Bridge customer creation.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return bridgeRequest("/customers", { method: "POST", body: customer, idempotencyKey });
+}
+
 export async function getBridgeCustomer(customerId) {
   if (typeof customerId !== "string" || !customerId.trim()) {
     const error = new Error("A Bridge customer ID is required.");
