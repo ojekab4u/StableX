@@ -41,6 +41,8 @@ async function bridgeRequest(path, { method = "GET", body, idempotencyKey } = {}
   if (!response.ok) {
     const error = new Error(payload.message || payload.error || `Bridge returned HTTP ${response.status}`);
     error.statusCode = response.status >= 500 ? 502 : response.status;
+    error.providerStatus = response.status;
+    error.providerResponse = payload;
     throw error;
   }
   return payload;
