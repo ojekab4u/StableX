@@ -1,17 +1,25 @@
 import { Router } from "express";
 import { getCustomerGateStatus } from "../services/complianceService.js";
-import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding } from "../repositories/providerCustomerRepository.js";
+import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding, saveBridgeCustomerId } from "../repositories/providerCustomerRepository.js";
 import {
   getBridgeReadiness,
   getBridgeRate,
   listBridgeCustomers,
   getBridgeCustomer,
+  createBridgeCustomer,
   createBridgeOnRampOrder,
   requestBridgeTosLink,
 } from "../services/providers/bridgeService.js";
 
 export const bridgeRouter = Router();
-const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
+const fail = (res, e) => res.status(e.statusCode || 503).json({
+  error: e.message,
+  ...(e.providerStatus ? { provider: "Bridge", providerStatus: e.providerStatus } : {}),
+  ...(e.providerResponse ? {
+    providerDetails: e.providerResponse.errors || e.providerResponse.validation_errors || e.providerResponse.message || e.providerResponse.error || null,
+    providerRequestId: e.providerResponse.request_id || e.providerResponse.requestId || null,
+  } : {}),
+});
 
 bridgeRouter.get("/readiness", (_req, res) => res.json(getBridgeReadiness()));
 
@@ -193,6 +201,146 @@ bridgeRouter.post("/customers/tos-acceptance", async (req, res) => {
       nextStep: "Terms acceptance recorded. Check customer profile completeness before Bridge customer creation.",
       customerCreated: false,
       fundsMoved: false,
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+
+// Create a Bridge individual only after compliance approval and recorded ToS acceptance.
+// Profile PII is passed directly to Bridge and is not persisted by StableX.
+bridgeRouter.post("/customers/create", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+
+    const customerId = String(req.body?.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+
+    const gate = await getCustomerGateStatus(customerId);
+    if (!gate.gate.approved) {
+      return res.status(409).json({ error: "StableX compliance approval is required before Bridge customer creation.", gate: gate.gate });
+    }
+
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.signedAgreementId) {
+      return res.status(409).json({ error: "Bridge ToS acceptance must be recorded before customer creation." });
+    }
+    if (onboarding.providerCustomerId) {
+      return res.status(409).json({
+        error: "A Bridge customer is already linked to this StableX customer.",
+        providerCustomerId: onboarding.providerCustomerId,
+        onboardingStatus: onboarding.onboardingStatus,
+      });
+    }
+
+    const profile = req.body?.profile || {};
+    const required = ["firstName", "lastName", "email", "phone", "birthDate", "passportNumber", "passportImageFrontDataUri"];
+    const missing = required.filter((key) => typeof profile[key] !== "string" || !profile[key].trim());
+    const address = profile.residentialAddress || {};
+    for (const key of ["streetLine1", "city", "country"]) {
+      if (typeof address[key] !== "string" || !address[key].trim()) missing.push(`residentialAddress.${key}`);
+    }
+    if (missing.length) {
+      return res.status(400).json({ error: "Bridge customer profile is incomplete.", missingFields: missing });
+    }
+
+    const email = profile.email.trim();
+    const phone = profile.phone.trim();
+    const birthDate = profile.birthDate.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "A valid email address is required." });
+    }
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
+      return res.status(400).json({ error: "Phone must be in E.164 format, e.g. +2348012345678." });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || Number.isNaN(Date.parse(birthDate)) ||
+        new Date(birthDate).toISOString().slice(0, 10) !== birthDate) {
+      return res.status(400).json({ error: "birthDate must be a valid YYYY-MM-DD date." });
+    }
+    const dob = new Date(`${birthDate}T00:00:00.000Z`);
+    const adultCutoff = new Date();
+    adultCutoff.setUTCFullYear(adultCutoff.getUTCFullYear() - 18);
+    if (dob > adultCutoff) {
+      return res.status(400).json({ error: "Bridge individual customers must be at least 18 years old." });
+    }
+
+    const clean = (value) => typeof value === "string" ? value.trim() : "";
+    const country = clean(address.country).toUpperCase();
+    if (!/^[A-Z]{3}$/.test(country)) {
+      return res.status(400).json({ error: "residentialAddress.country must be an ISO 3166-1 alpha-3 code (e.g. NGA)." });
+    }
+    const passportNumber = clean(profile.passportNumber);
+    const passportImageFrontDataUri = clean(profile.passportImageFrontDataUri);
+    if (passportImageFrontDataUri && !/^data:image\/(jpeg|jpg|png);base64,[A-Za-z0-9+/=]+$/i.test(passportImageFrontDataUri)) {
+      return res.status(400).json({ error: "passportImageFrontDataUri must be a JPEG or PNG base64 data URI." });
+    }
+    if (passportImageFrontDataUri.length > 10_000_000) {
+      return res.status(413).json({ error: "Passport image is too large; compress it before submission." });
+    }
+    const rawSubdivision = clean(address.subdivision);
+    const subdivision = country === "NGA" && /^ogun(?: state)?$/i.test(rawSubdivision) ? "OG" : rawSubdivision.toUpperCase();
+    const customer = {
+      type: "individual",
+      first_name: clean(profile.firstName),
+      last_name: clean(profile.lastName),
+      email,
+      phone,
+      birth_date: birthDate,
+      signed_agreement_id: onboarding.signedAgreementId,
+      client_reference_id: customerId,
+      residential_address: {
+        street_line_1: clean(address.streetLine1),
+        city: clean(address.city),
+        country,
+        ...(subdivision ? { subdivision } : {}),
+        ...(clean(address.postalCode) ? { postal_code: clean(address.postalCode) } : {}),
+      },
+      identifying_information: [{
+        type: "passport",
+        issuing_country: "nga",
+        number: passportNumber,
+        image_front: passportImageFrontDataUri,
+      }],
+    };
+    if (profile.middleName) customer.middle_name = clean(profile.middleName);
+
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+      return res.status(400).json({ error: "Provide a stable Idempotency-Key header (maximum 128 characters)." });
+    }
+
+    const created = await createBridgeCustomer(customer, { idempotencyKey });
+    const item = created.data || created;
+    const bridgeCustomerId = item.id || item.customer_id || item.customerId;
+    if (!bridgeCustomerId) {
+      return res.status(502).json({
+        error: "Bridge accepted the request but returned no recognizable customer ID. Reconcile using the read-only customer lookup before retrying.",
+        providerResponseKeys: Object.keys(item || {}),
+        customerCreated: true,
+        fundsMoved: false,
+      });
+    }
+
+    const saved = await saveBridgeCustomerId({
+      customerId,
+      providerCustomerId: bridgeCustomerId,
+      status: "CUSTOMER_CREATED",
+    });
+    return res.status(201).json({
+      provider: "Bridge",
+      customerId,
+      bridgeCustomerId,
+      onboarding: saved,
+      bridgeStatus: item.status || null,
+      endorsements: item.endorsements || [],
+      nextStep: "Review Bridge KYC status and endorsement requirements. Customer creation is not approval for transactions.",
+      customerCreated: true,
+      fundsMoved: false,
+      profilePiiPersistedByStableX: false,
     });
   } catch (e) { return fail(res, e); }
 });
