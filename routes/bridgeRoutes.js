@@ -275,7 +275,7 @@ bridgeRouter.post("/customers/create", async (req, res) => {
     }
     const passportNumber = clean(profile.passportNumber);
     const passportImageFrontDataUri = clean(profile.passportImageFrontDataUri);
-    if (passportImageFrontDataUri && !/^data:image\\/(jpeg|jpg|png);base64,[A-Za-z0-9+/=]+$/i.test(passportImageFrontDataUri)) {
+    if (passportImageFrontDataUri && !/^data:image\/(jpeg|jpg|png);base64,[A-Za-z0-9+/=]+$/i.test(passportImageFrontDataUri)) {
       return res.status(400).json({ error: "passportImageFrontDataUri must be a JPEG or PNG base64 data URI." });
     }
     if (passportImageFrontDataUri.length > 10_000_000) {
