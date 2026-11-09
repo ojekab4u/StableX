@@ -24,7 +24,7 @@ async function loadCustomer(){
     $("case-count").textContent=gate.caseCount ?? "—";
     $("bridge-status").textContent=bridge.capabilities?.join(", ") || bridge.status || (bridge.configured?"Configured":"Readiness loaded");
     message("customer-message",gate.gate?.approved?"Compliance approved. Quote selection is enabled for this customer.":`Compliance gate: ${gate.gate?.status||"Unknown"}. Quote selection will be blocked until approved.`);
-    await Promise.all([loadBeneficiaries(),loadTransfers(),refreshBridgeOnboarding()]);
+    await Promise.all([loadBeneficiaries(),loadTransfers(),refreshBridgeOnboarding(),refreshBaseWallets()]);
   }catch(e){message("customer-message",e.message,true);$("gate-status").textContent="Unavailable";}
 }
 async function loadAssets(){
@@ -160,9 +160,62 @@ async function refreshProviderOrder(transferId){
     await loadTransfers();
   }catch(e){$("provider-order-message").textContent=e.message;}
 }
+
+async function refreshBaseWallets(){
+  const host=$("base-wallet-status");
+  if(!host) return;
+  try{
+    const data=await api(`/api/customer/external-wallets/${encodeURIComponent(customerId())}`);
+    const wallets=data.wallets||[];
+    const base=wallets.filter(w=>Number(w.chainId)===8453);
+    host.textContent=base.length
+      ? base.map(w=>`Verified Base wallet: ${w.address} · ${w.walletProvider} · ${w.status}`).join(" | ")
+      : "No verified Base Mainnet wallet is registered for this customer.";
+  }catch(e){host.textContent=e.message;}
+}
+async function connectBaseWallet(){
+  const button=$("connect-base-wallet");
+  try{
+    const provider=window.ethereum;
+    if(!provider) throw new Error("MetaMask was not detected. Install or unlock the MetaMask browser extension, then reload this page.");
+    const id=customerId();
+    if(!id) throw new Error("Enter the StableX customer ID first.");
+    const selected=$("beneficiary-select").value;
+    const beneficiary=state.beneficiaries.find(b=>b.beneficiaryId===selected);
+    const expected=beneficiary?.details?.walletAddress;
+    if(!expected) throw new Error("Select the saved USDC wallet beneficiary first. The connected wallet must match its saved address.");
+    button.disabled=true;
+    message("base-wallet-status","Requesting MetaMask account access…");
+    const accounts=await provider.request({method:"eth_requestAccounts"});
+    const address=accounts?.[0];
+    if(!address) throw new Error("MetaMask did not return an account.");
+    if(address.toLowerCase()!==expected.toLowerCase()) throw new Error("The active MetaMask account does not match the wallet address saved in the selected beneficiary. Switch MetaMask to the saved beneficiary address and try again.");
+    let chainId=Number(BigInt(await provider.request({method:"eth_chainId"})));
+    if(chainId!==8453){
+      try{await provider.request({method:"wallet_switchEthereumChain",params:[{chainId:"0x2105"}]});}
+      catch(error){
+        if(error.code!==4902) throw error;
+        await provider.request({method:"wallet_addEthereumChain",params:[{chainId:"0x2105",chainName:"Base",nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},rpcUrls:["https://mainnet.base.org"],blockExplorerUrls:["https://basescan.org"]}]});
+      }
+      chainId=Number(BigInt(await provider.request({method:"eth_chainId"})));
+    }
+    if(chainId!==8453) throw new Error("MetaMask is not connected to Base Mainnet (chain ID 8453).");
+    const messageText=`StableX wallet connection\nCustomer: ${id}\nAddress: ${address.toLowerCase()}\nChain ID: 8453`;
+    message("base-wallet-status","Confirm the ownership-signature request in MetaMask. It is a message signature, not a blockchain transaction.");
+    const signature=await provider.request({method:"personal_sign",params:[`0x${Array.from(new TextEncoder().encode(messageText)).map(b=>b.toString(16).padStart(2,"0")).join("")}`,address]});
+    const result=await api("/api/customer/external-wallets",{method:"POST",body:JSON.stringify({customerId:id,address,chainId:8453,walletProvider:"METAMASK",signature,message:messageText})});
+    const wallet=result.wallet||{};
+    message("base-wallet-status",`Wallet ownership verified and registered: ${wallet.address||address} · Base Mainnet (8453) · ${wallet.status||"ACTIVE"}.`);
+    await refreshBaseWallets();
+  }catch(e){message("base-wallet-status",e.message,true);}
+  finally{button.disabled=false;}
+}
+
 $("load-customer").addEventListener("click",loadCustomer);
 $("refresh-customer").addEventListener("click",loadCustomer);
 $("refresh-transfers").addEventListener("click",()=>loadTransfers().catch(e=>message("customer-message",e.message,true)));
+$("connect-base-wallet").addEventListener("click",connectBaseWallet);
+$("refresh-base-wallets").addEventListener("click",refreshBaseWallets);
 $("create-beneficiary").addEventListener("click",createBeneficiary);
 $("get-quotes").addEventListener("click",getQuotes);
 $("quotes").addEventListener("click",e=>{const btn=e.target.closest("[data-quote]");if(btn&&!btn.disabled)selectQuote(btn.dataset.quote);});
