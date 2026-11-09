@@ -396,6 +396,10 @@ bridgeRouter.post("/customers/kyc-link", async (req, res) => {
 // operator-only test action; it does not create a real bank account or move funds.
 bridgeRouter.get("/virtual-accounts", async (req, res) => {
   try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
     const customerId = String(req.query.customerId || "").trim();
     if (!customerId || customerId.length > 128) return res.status(400).json({ error: "A valid StableX customerId is required." });
     const onboarding = await getBridgeOnboarding(customerId);
