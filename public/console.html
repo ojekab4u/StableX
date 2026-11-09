@@ -92,8 +92,19 @@
       <p id="beneficiary-message" class="message" aria-live="polite"></p>
     </section>
 
+    <section class="panel" id="base-wallet-connection">
+      <p class="eyebrow">04 / CUSTOMER BASE WALLET</p>
+      <h2>Connect MetaMask — Base Mainnet</h2>
+      <p class="muted">Connect the same address saved as this customer's USDC beneficiary. StableX asks MetaMask to switch to Base (chain ID 8453), signs a customer-specific ownership message, and verifies that signature on the server. No transaction or token approval is requested.</p>
+      <div class="button-row">
+        <button id="connect-base-wallet" type="button">Connect &amp; verify MetaMask</button>
+        <button id="refresh-base-wallets" type="button" class="secondary">Refresh connected wallets</button>
+      </div>
+      <div id="base-wallet-status" class="route-status" aria-live="polite">No wallet connection checked yet.</div>
+    </section>
+
     <section class="panel">
-      <p class="eyebrow">04 / PROVIDER MARKETPLACE</p><h2>Compare provider quotes</h2>
+      <p class="eyebrow">05 / PROVIDER MARKETPLACE</p><h2>Compare provider quotes</h2>
       <div class="form-grid">
         <div class="field"><label for="amount">Amount</label><input id="amount" type="number" min="0.000001" max="1000000" step="any" value="100"></div>
         <div class="field"><label for="from">Pay with</label><select id="from"></select></div>
@@ -105,7 +116,7 @@
     </section>
 
     <section class="panel">
-      <p class="eyebrow">05 / PROVIDER PAYMENT</p>
+      <p class="eyebrow">06 / PROVIDER PAYMENT</p>
       <h2>Complete Honeycoin NGN payment</h2>
       <p class="muted">Available only for a QUOTED NGN → USDC transfer with a selected Honeycoin quote and a saved Base wallet beneficiary.</p>
       <div class="form-grid">
