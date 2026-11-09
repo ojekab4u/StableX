@@ -305,9 +305,16 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
       return { order: publicOrder(updated), providerStatus, settlementVerified: false, verification, refreshed: true };
     }
     const updated = await updateProviderOrder({
-      orderId: order.orderId, customerId, providerTransactionId, status: "FUNDED",
-      providerStatus, failureReason: null,
+      orderId: order.orderId, customerId, providerTransactionId, status: "SETTLEMENT_PENDING",
+      providerStatus, failureReason: "Fiat payment confirmed, but Honeycoin has not supplied a blockchain transaction hash yet.",
     });
+    const current = await readTransfer(transferId, customerId);
+    if (current?.status === "FUNDED") {
+      await updateTransferStatus({
+        id: transferId, customerId, status: "SETTLEMENT_PENDING", actorId: "HONEYCOIN",
+        reason: "OPay/fiat collection is confirmed; waiting for verifiable USDC delivery on Base.",
+      });
+    }
     return {
       order: publicOrder(updated),
       providerStatus,
