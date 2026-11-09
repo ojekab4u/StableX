@@ -315,7 +315,7 @@ function evaluateGate(cases) {
   return {
     approved: false,
     status: rejected ? "REJECTED" : cases.length ? "PENDING" : "NOT_SUBMITTED",
-    caseId: rejected ? rejected.caseId : null,
+    caseId: rejected ? rejected.caseId : (cases.length ? cases[0].caseId : null),
   };
 }
 

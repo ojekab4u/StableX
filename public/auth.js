@@ -8,6 +8,8 @@ const views = ["view-auth", "view-verify", "view-compliance", "view-done"];
 
 let registeredCodes = {};   // demo codes returned by registration, keyed by channel
 let pendingAccountId = null; // used before sign-in when verification is required
+let complianceCaseId = null; // KYC/KYB case id for polling refresh
+let pollingInterval = null;  // auto-refresh timer
 
 function show(viewId) {
   views.forEach((id) => $(id).classList.toggle("hidden", id !== viewId));
@@ -230,7 +232,7 @@ function renderComplianceView(session) {
   const modeBox = $("compliance-mode");
   modeBox.className = `msg show ${mode === "VOVE_HOSTED" ? "info" : mode === "LOCAL_SIMULATOR" ? "warn" : "error"}`;
   modeBox.textContent = {
-    VOVE_HOSTED: "VOVE is configured: submitting opens a hosted VOVE verification session.",
+    VOVE_HOSTED: "VOVE is configured: open the hosted VOVE verification session below, complete it, then StableX polls for approval.",
     LOCAL_SIMULATOR: "Simulator mode: no identity provider is configured, so a clearly labeled simulated case is created. Set VOVE credentials to switch to real hosted verification.",
     NOT_AVAILABLE: "No verification provider is available. Configure VOVE credentials or set COMPLIANCE_SIM_AUTO_APPROVE=true on the server.",
   }[mode];
@@ -271,6 +273,17 @@ function renderComplianceView(session) {
   }
   $("compliance-submit").disabled = mode === "NOT_AVAILABLE";
   $("compliance-result").replaceChildren();
+
+  complianceCaseId = complianceGate?.caseId || null;
+
+  if (complianceGate?.approved) {
+    stopPolling();
+    show("view-done");
+  } else if (complianceCaseId && mode === "VOVE_HOSTED") {
+    startPolling();
+  } else {
+    stopPolling();
+  }
 }
 
 $("form-compliance").addEventListener("submit", async (event) => {
@@ -296,6 +309,14 @@ $("form-compliance").addEventListener("submit", async (event) => {
       card.textContent = result.gateMessage;
     }
     box.append(card);
+
+    // Remember the case id so we can poll VOVE for approval (caseId comes back
+    // in complianceGate.caseId on the session endpoint).
+    complianceCaseId = result.case?.caseId || null;
+    if (complianceCaseId) {
+      showMessage("Verification case created. Opening hosted session… StableX will poll for approval every second.", "info");
+      await routeBySession(); // refresh session to load caseId into complianceGate, then poll
+    }
   } catch (error) {
     showMessage(error.message, "error");
   } finally {
@@ -303,17 +324,40 @@ $("form-compliance").addEventListener("submit", async (event) => {
   }
 });
 
-$("compliance-refresh").addEventListener("click", async () => {
-  const session = await routeBySession();
-  if (session?.complianceGate?.caseId) {
-    try {
-      await api(`/api/compliance/cases/${session.complianceGate.caseId}/refresh`, { method: "POST" });
-      await routeBySession();
-    } catch (error) {
-      // Refresh is best-effort; VOVE results also arrive via webhook.
+// Poll VOVE via StableX every second until the compliance gate flips to APPROVED
+// or REJECTED. Case id is captured from /api/auth/session (complianceGate.caseId)
+// after the case is created.
+function startPolling() {
+  stopPolling();
+  pollingInterval = setInterval(async () => {
+    if (!complianceCaseId) {
+      stopPolling();
+      return;
     }
+    try {
+      await api(`/api/compliance/cases/${complianceCaseId}/refresh`, { method: "POST" });
+      const session = await api("/api/auth/session");
+      if (session.complianceGate?.approved) {
+        stopPolling();
+        show("view-done");
+      } else if (session.complianceGate?.status === "REJECTED") {
+        stopPolling();
+        showMessage("Verification was rejected. Please contact support.", "error");
+      }
+      // otherwise keep polling
+    } catch (error) {
+      // Best-effort polling; VOVE webhooks also update the gate. Stop on hard errors.
+      if (error.status === 404 || error.status === 401) stopPolling();
+    }
+  }, 1000);
+}
+
+function stopPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
   }
-});
+}
 
 // ---------- view 4: done ----------
 
@@ -321,6 +365,8 @@ $("logout").addEventListener("click", doLogout);
 $("logout-done").addEventListener("click", doLogout);
 
 async function doLogout() {
+  stopPolling();
+  complianceCaseId = null;
   try {
     await api("/api/auth/logout", { method: "POST" });
   } catch { /* session may already be gone */ }
