@@ -121,3 +121,144 @@ $("get-quotes").addEventListener("click",getQuotes);
 $("quotes").addEventListener("click",e=>{const btn=e.target.closest("[data-quote]");if(btn&&!btn.disabled)selectQuote(btn.dataset.quote);});
 $("to").addEventListener("change",()=>{$("beneficiary-currency").value=$("to").value;});
 (async()=>{try{await loadAssets();await loadCustomer();}catch(e){message("customer-message",e.message,true);}})();
+
+
+// Bridge hosted onboarding: secrets remain in this page's memory only.
+let bridgeCustomerCreateKey = null;
+let bridgeTosKey = null;
+let bridgeOnboarding = null;
+const bridgeMessage = (text, error=false) => {
+  const node = $("bridge-status");
+  node.textContent = text;
+  node.classList.toggle("error", error);
+};
+const bridgeToken = () => $("bridge-operator-token").value.trim();
+const bridgeHeaders = (idempotencyKey) => ({
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${bridgeToken()}`,
+  ...(idempotencyKey ? {"Idempotency-Key": idempotencyKey} : {}),
+});
+async function refreshBridgeOnboarding() {
+  const id = customerId();
+  if (!id) return;
+  bridgeMessage("Loading Bridge onboarding…");
+  try {
+    const data = await api(`/api/bridge/customers/onboarding?customerId=${encodeURIComponent(id)}`);
+    bridgeOnboarding = data.onboarding || null;
+    const providerId = bridgeOnboarding?.providerCustomerId;
+    let statusLine = [
+      `StableX customer: ${id}`,
+      `Bridge customer: ${providerId || "Not created"}`,
+      `ToS accepted: ${bridgeOnboarding?.signedAgreementId ? "Yes" : "No"}`,
+      `Onboarding: ${bridgeOnboarding?.onboardingStatus || "Not started"}`,
+    ].join(" · ");
+    if (providerId) {
+      const profile = await api(`/api/bridge/customers/${encodeURIComponent(providerId)}`);
+      const c = profile.customer || {};
+      statusLine += ` · Bridge status: ${c.status || "Unknown"} · Endorsements: ${(c.endorsements || []).map(x => typeof x === "string" ? x : (x.name || x.status || JSON.stringify(x))).join(", ") || "Not returned"}`;
+    }
+    bridgeMessage(statusLine);
+    $("bridge-signed-agreement").value = bridgeOnboarding?.signedAgreementId || $("bridge-signed-agreement").value;
+  } catch (e) {
+    bridgeMessage(e.message, true);
+  }
+}
+$("bridge-create-tos").addEventListener("click", async () => {
+  try {
+    $("bridge-create-tos").disabled = true;
+    bridgeTosKey ||= crypto.randomUUID();
+    const data = await api("/api/bridge/customers/tos-link", {
+      method: "POST",
+      headers: {"Idempotency-Key": bridgeTosKey},
+      body: JSON.stringify({customerId: customerId()}),
+    });
+    const host = $("bridge-tos-result");
+    host.replaceChildren();
+    const link = document.createElement("a");
+    link.href = data.tosUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open Bridge Terms of Service";
+    host.append(link);
+    bridgeMessage("Bridge Terms link created. Open it, accept the terms, then paste the signed agreement ID returned by the callback.");
+  } catch(e) { bridgeMessage(e.message, true); }
+  finally { $("bridge-create-tos").disabled = false; }
+});
+$("bridge-record-tos").addEventListener("click", async () => {
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const signedAgreementId = $("bridge-signed-agreement").value.trim();
+    if (!signedAgreementId) throw new Error("Paste the signed agreement ID returned by Bridge.");
+    await api("/api/bridge/customers/tos-acceptance", {
+      method: "POST",
+      headers: bridgeHeaders(),
+      body: JSON.stringify({customerId: customerId(), signedAgreementId}),
+    });
+    bridgeMessage("Bridge Terms acceptance recorded. You can now submit the individual profile.");
+    await refreshBridgeOnboarding();
+  } catch(e) { bridgeMessage(e.message, true); }
+});
+$("bridge-create-customer").addEventListener("click", async () => {
+  const button = $("bridge-create-customer");
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const file = $("bridge-passport-image").files[0];
+    if (!file) throw new Error("Select a passport JPEG or PNG image.");
+    if (file.size > 7_000_000) throw new Error("Choose a compressed passport image smaller than 7 MB.");
+    const passportImageFrontDataUri = await new Promise((resolve,reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Could not read the passport image."));
+      reader.readAsDataURL(file);
+    });
+    const profile = {
+      firstName: $("bridge-first-name").value.trim(),
+      middleName: $("bridge-middle-name").value.trim(),
+      lastName: $("bridge-last-name").value.trim(),
+      email: $("bridge-email").value.trim(),
+      phone: $("bridge-phone").value.trim(),
+      birthDate: $("bridge-dob").value,
+      passportNumber: $("bridge-passport-number").value.trim(),
+      passportImageFrontDataUri,
+      residentialAddress: {
+        streetLine1: $("bridge-street").value.trim(),
+        city: $("bridge-city").value.trim(),
+        subdivision: $("bridge-subdivision").value.trim(),
+        country: $("bridge-country").value.trim().toUpperCase(),
+      },
+    };
+    button.disabled = true;
+    bridgeCustomerCreateKey ||= crypto.randomUUID();
+    const data = await api("/api/bridge/customers/create", {
+      method: "POST",
+      headers: bridgeHeaders(bridgeCustomerCreateKey),
+      body: JSON.stringify({customerId: customerId(), profile}),
+    });
+    bridgeCustomerCreateKey = null;
+    $("bridge-passport-number").value = "";
+    $("bridge-passport-image").value = "";
+    bridgeMessage(`Bridge customer created and linked (${data.bridgeCustomerId}). Profile PII was not persisted by StableX. Continue with hosted KYC.`);
+    await refreshBridgeOnboarding();
+  } catch(e) { bridgeMessage(e.message, true); }
+  finally { button.disabled = false; }
+});
+$("bridge-kyc-link").addEventListener("click", async () => {
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const data = await api("/api/bridge/customers/kyc-link", {
+      method: "POST",
+      headers: bridgeHeaders(),
+      body: JSON.stringify({customerId: customerId(), endorsement: $("bridge-endorsement").value}),
+    });
+    const host = $("bridge-tos-result");
+    host.replaceChildren();
+    const link = document.createElement("a");
+    link.href = data.kycUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = `Open Bridge hosted ${data.endorsement.toUpperCase()} KYC`;
+    host.append(link);
+    bridgeMessage("Hosted KYC link created. Complete the Bridge flow, then refresh Bridge status.");
+  } catch(e) { bridgeMessage(e.message, true); }
+});
+$("bridge-refresh").addEventListener("click", refreshBridgeOnboarding);
