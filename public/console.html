@@ -33,8 +33,48 @@
       <p id="customer-message" class="message" aria-live="polite"></p>
     </section>
 
+    <section class="panel" id="bridge-onboarding">
+      <p class="eyebrow">02 / BRIDGE CUSTOMER ONBOARDING</p>
+      <h2>Complete Bridge verification</h2>
+      <p class="muted">Start or resume Bridge onboarding for this StableX customer. Identity details are sent to Bridge and are not stored by StableX. Use the operator token only in this trusted demo workspace; it is kept in this page's memory and is not saved.</p>
+      <div class="form-grid">
+        <div class="field"><label for="bridge-operator-token">StableX operator token</label><input id="bridge-operator-token" type="password" autocomplete="off" placeholder="Required for protected Bridge actions"></div>
+        <div class="field"><label for="bridge-endorsement">Required endorsement</label><select id="bridge-endorsement"><option value="base">Base</option><option value="sepa">SEPA</option></select></div>
+        <div class="field"><label for="bridge-signed-agreement">Signed agreement ID</label><input id="bridge-signed-agreement" autocomplete="off" placeholder="Paste ID returned by Bridge callback"></div>
+      </div>
+      <div class="button-row">
+        <button id="bridge-create-tos" type="button">Get Bridge Terms link</button>
+        <button id="bridge-record-tos" type="button" class="secondary">Record accepted Terms</button>
+        <button id="bridge-refresh" type="button" class="secondary">Refresh Bridge status</button>
+      </div>
+      <div id="bridge-tos-result" class="message" aria-live="polite"></div>
+      <details>
+        <summary>Bridge individual profile and identity document</summary>
+        <p class="notice">Sensitive information is submitted directly to Bridge. Do not use this form on a public/shared computer. The passport image is transmitted as a data URI and is not saved by StableX.</p>
+        <div class="form-grid">
+          <div class="field"><label for="bridge-first-name">First name</label><input id="bridge-first-name" autocomplete="given-name"></div>
+          <div class="field"><label for="bridge-middle-name">Middle name (optional)</label><input id="bridge-middle-name"></div>
+          <div class="field"><label for="bridge-last-name">Last name</label><input id="bridge-last-name" autocomplete="family-name"></div>
+          <div class="field"><label for="bridge-email">Email</label><input id="bridge-email" type="email" autocomplete="email"></div>
+          <div class="field"><label for="bridge-phone">Phone (E.164)</label><input id="bridge-phone" placeholder="+234…"></div>
+          <div class="field"><label for="bridge-dob">Date of birth</label><input id="bridge-dob" type="date"></div>
+          <div class="field"><label for="bridge-street">Residential street</label><input id="bridge-street" autocomplete="street-address"></div>
+          <div class="field"><label for="bridge-city">City</label><input id="bridge-city" autocomplete="address-level2"></div>
+          <div class="field"><label for="bridge-subdivision">State / subdivision</label><input id="bridge-subdivision" autocomplete="address-level1"></div>
+          <div class="field"><label for="bridge-country">Country (ISO-3)</label><input id="bridge-country" value="NGA" maxlength="3"></div>
+          <div class="field"><label for="bridge-passport-number">Passport number</label><input id="bridge-passport-number" autocomplete="off"></div>
+          <div class="field"><label for="bridge-passport-image">Passport image (JPEG/PNG)</label><input id="bridge-passport-image" type="file" accept="image/jpeg,image/png"></div>
+        </div>
+        <button id="bridge-create-customer" type="button">Submit profile to Bridge</button>
+      </details>
+      <div class="button-row">
+        <button id="bridge-kyc-link" type="button">Open hosted Bridge KYC</button>
+      </div>
+      <div id="bridge-status" class="route-status" aria-live="polite">Bridge onboarding status has not been loaded.</div>
+    </section>
+
     <section class="panel">
-      <p class="eyebrow">02 / BENEFICIARY</p><h2>Choose a recipient</h2>
+      <p class="eyebrow">03 / BENEFICIARY</p><h2>Choose a recipient</h2>
       <div class="field"><label for="beneficiary-select">Saved beneficiaries</label><select id="beneficiary-select"><option value="">Loading beneficiaries…</option></select></div>
       <details>
         <summary>Add a beneficiary</summary>
@@ -53,7 +93,7 @@
     </section>
 
     <section class="panel">
-      <p class="eyebrow">03 / PROVIDER MARKETPLACE</p><h2>Compare provider quotes</h2>
+      <p class="eyebrow">04 / PROVIDER MARKETPLACE</p><h2>Compare provider quotes</h2>
       <div class="form-grid">
         <div class="field"><label for="amount">Amount</label><input id="amount" type="number" min="0.000001" max="1000000" step="any" value="100"></div>
         <div class="field"><label for="from">Pay with</label><select id="from"></select></div>
@@ -65,7 +105,7 @@
     </section>
 
     <section class="panel">
-      <div class="section-heading"><div><p class="eyebrow">04 / DURABLE TRANSFERS</p><h2>Transfer history</h2></div><button id="refresh-transfers" class="secondary" type="button">Refresh</button></div>
+      <div class="section-heading"><div><p class="eyebrow">05 / DURABLE TRANSFERS</p><h2>Transfer history</h2></div><button id="refresh-transfers" class="secondary" type="button">Refresh</button></div>
       <div class="table-wrap"><table><thead><tr><th>Transfer</th><th>Route</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody id="transfers"><tr><td colspan="5" class="muted">Loading transfers…</td></tr></tbody></table></div>
       <p class="muted small">A selected quote is recorded against a DRAFT transfer and advances it to QUOTED. Provider execution remains separately gated.</p>
     </section>
