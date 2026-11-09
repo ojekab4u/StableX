@@ -6,6 +6,7 @@ import {
   getBridgeRate,
   listBridgeCustomers,
   getBridgeCustomer,
+  getBridgeKycLink,
   createBridgeCustomer,
   createBridgeOnRampOrder,
   requestBridgeTosLink,
@@ -341,6 +342,48 @@ bridgeRouter.post("/customers/create", async (req, res) => {
       customerCreated: true,
       fundsMoved: false,
       profilePiiPersistedByStableX: false,
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+// Generate a hosted KYC link for an already-created Bridge customer.
+// Bridge hosts the remaining verification/questionnaire flow; StableX does not
+// collect or persist the additional identity/source-of-funds responses.
+bridgeRouter.post("/customers/kyc-link", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const customerId = String(req.body?.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "Create and link the Bridge customer before requesting hosted KYC." });
+    }
+    const endorsement = String(req.body?.endorsement || "base").trim().toLowerCase();
+    if (!["base", "sepa"].includes(endorsement)) {
+      return res.status(400).json({ error: "endorsement must be base or sepa." });
+    }
+    const result = await getBridgeKycLink(onboarding.providerCustomerId, { endorsement });
+    const url = result.url || result.data?.url;
+    if (!url || typeof url !== "string" || !/^https:\/\//i.test(url)) {
+      return res.status(502).json({
+        error: "Bridge did not return a valid hosted KYC URL.",
+        providerResponseKeys: Object.keys(result || {}),
+      });
+    }
+    return res.json({
+      provider: "Bridge",
+      customerId,
+      bridgeCustomerId: onboarding.providerCustomerId,
+      endorsement,
+      kycUrl: url,
+      nextStep: "Open the hosted Bridge KYC URL and complete all requested steps. Then refresh the Bridge customer status endpoint.",
+      customerCreated: true,
+      fundsMoved: false,
     });
   } catch (e) { return fail(res, e); }
 });
