@@ -92,10 +92,13 @@ export async function requestBridgeTosLink({ idempotencyKey, redirectUri } = {})
     error.statusCode = 400;
     throw error;
   }
-  const path = redirectUri
-    ? `/customers/tos_links?redirect_uri=${encodeURIComponent(redirectUri)}`
-    : "/customers/tos_links";
-  return bridgeRequest(path, { method: "POST", idempotencyKey });
+  const payload = await bridgeRequest("/customers/tos_links", { method: "POST", idempotencyKey });
+  if (redirectUri && payload.url) {
+    const hostedUrl = new URL(payload.url);
+    hostedUrl.searchParams.set("redirect_uri", redirectUri);
+    payload.url = hostedUrl.toString();
+  }
+  return payload;
 }
 
 export async function createBridgeCustomer(customer, { idempotencyKey } = {}) {
