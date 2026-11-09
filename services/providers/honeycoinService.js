@@ -178,21 +178,28 @@ export async function getHoneycoinWebhookDeliveries(reference) {
 
 // Fetches one webhook delivery so diagnostics can distinguish queued from delivered events.
 export async function getHoneycoinWebhookDelivery(webhookId) {
-  // Honeycoin's webhook list returns a composite delivery ID containing spaces
-  // and a timestamp (for example: "<id> - transaction_updated - <timestamp>").
-  // Preserve that provider-issued identifier and URL-encode it for the path.
+  // The webhook list currently exposes a composite display value:
+  // "<webhook-id> - <event> - <created-at>". The detail endpoint expects
+  // the actual ID, which is the first segment.
+  if (typeof webhookId !== "string") {
+    const error = new Error("Invalid Honeycoin webhook ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedId = webhookId.split(" - ")[0].trim();
   if (
-    typeof webhookId !== "string"
-    || webhookId.trim().length < 6
-    || webhookId.length > 512
-    || /[\\u0000-\\u001f\\u007f]/.test(webhookId)
+    normalizedId.length < 6
+    || normalizedId.length > 128
+    || !/^[A-Za-z0-9_-]+$/.test(normalizedId)
   ) {
     const error = new Error("Invalid Honeycoin webhook ID.");
     error.statusCode = 400;
     throw error;
   }
+
   const payload = await honeycoinJson(
-    `${getBaseUrl()}/webhook/${encodeURIComponent(webhookId)}`,
+    `${getBaseUrl()}/webhook/${encodeURIComponent(normalizedId)}`,
     { method: "GET" },
   );
   return payload.data ?? payload;
