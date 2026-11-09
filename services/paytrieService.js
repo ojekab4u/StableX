@@ -16,8 +16,12 @@ export function getPaytrieReadiness() {
     status: hasUsableKey ? "CREDENTIAL_PRESENT_CONNECTION_NOT_TESTED" : "PUBLIC_QUOTES_NO_KEY_REQUIRED",
     supportedStablecoinPairs: ["CAD/USDC-BASE", "CAD/CADC-BASE", "USDC-BASE/CAD", "CADC-BASE/CAD"],
     quoteEndpoint: API_BASE + "/quotes",
-    transactionCreationEnabled: false,
-    note: "Paytrie v2 quote endpoint is public (verified live against api.paytrie.com without credentials). Transaction creation requires an authenticated Paytrie user JWT and is intentionally not enabled in this prototype.",
+    transactionCreationEnabled: hasUsableKey,
+    authenticationRequired: "PAYTRIE_USER_JWT_PER_CUSTOMER",
+    transactionEndpoint: API_BASE + "/transactions",
+    note: hasUsableKey
+      ? "Integrator API key is configured; a verified Paytrie customer JWT is still required for transaction creation. Account permissions have not yet been verified."
+      : "Live quotes may be available without a key; transaction creation requires PAYTRIE_API_KEY and a verified Paytrie customer JWT.",
   };
 }
 
