@@ -11,7 +11,7 @@ function baseUrl() {
   const fallback = environment === "production"
     ? "https://api.bridge.xyz"
     : "https://api.sandbox.bridge.xyz";
-  const value = (configured || fallback).replace(/\\/+$/, "");
+  const value = (configured || fallback).replace(/\/+$/, "");
   return value.endsWith("/v0") ? value : `${value}/v0`;
 }
 
