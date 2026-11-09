@@ -133,7 +133,12 @@ bridgeRouter.post("/customers/tos-link", async (req, res) => {
     if (!idempotencyKey) {
       return res.status(400).json({ error: "Provide an Idempotency-Key header and reuse it for retries." });
     }
-    const redirectUri = process.env.BRIDGE_TOS_REDIRECT_URI || undefined;
+    let redirectUri;
+    if (process.env.BRIDGE_TOS_REDIRECT_URI) {
+      const callback = new URL(process.env.BRIDGE_TOS_REDIRECT_URI);
+      callback.searchParams.set("customerId", customerId);
+      redirectUri = callback.toString();
+    }
     const result = await requestBridgeTosLink({ idempotencyKey, redirectUri });
     if (!result.url) {
       return res.status(502).json({ error: "Bridge did not return a hosted ToS URL." });
