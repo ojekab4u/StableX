@@ -9,6 +9,7 @@ const views = ["view-auth", "view-verify", "view-compliance", "view-done"];
 let registeredCodes = {};   // demo codes returned by registration, keyed by channel
 let pendingAccountId = null; // used before sign-in when verification is required
 let complianceCaseId = null; // KYC/KYB case id for polling refresh
+let complianceVerificationUrl = null; // hosted VOVE session URL for the user to open
 let pollingInterval = null;  // auto-refresh timer
 
 function show(viewId) {
@@ -275,12 +276,34 @@ function renderComplianceView(session) {
   $("compliance-result").replaceChildren();
 
   complianceCaseId = complianceGate?.caseId || null;
+  complianceVerificationUrl = session?.verificationUrl || null;
 
-  if (complianceGate?.approved) {
+  // Always show the hosted VOVE link when there is a pending case, so the user
+  // can open it themselves (browsers block auto-popups). It persists across
+  // polls and page refreshes.
+  if (complianceCaseId && mode === "VOVE_HOSTED") {
+    const box = $("compliance-result");
+    box.replaceChildren();
+    const card = document.createElement("div");
+    card.className = "msg show info";
+    const label = document.createElement("p");
+    label.textContent = "1. Open the hosted VOVE verification session and complete identity checks:";
+    const link = document.createElement("a");
+    link.href = complianceVerificationUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open VOVE verification session";
+    link.className = "auth-btn";
+    link.style.cssText = "display:inline-block;margin-top:8px;padding:12px 24px;font-size:1rem";
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "2. StableX polls VOVE every second. When approved, you proceed to the dashboard.";
+    card.append(label, link, hint);
+    box.append(card);
+    startPolling();
+  } else if (complianceGate?.approved) {
     stopPolling();
     show("view-done");
-  } else if (complianceCaseId && mode === "VOVE_HOSTED") {
-    startPolling();
   } else {
     stopPolling();
   }
@@ -294,28 +317,36 @@ $("form-compliance").addEventListener("submit", async (event) => {
   try {
     const values = Object.fromEntries(new FormData(event.target).entries());
     const result = await api("/api/compliance/cases/self", { method: "POST", body: JSON.stringify(values) });
+
+    // Store the hosted URL and case id so the link persists across polls.
+    complianceCaseId = result.case?.caseId || null;
+    complianceVerificationUrl = result.verificationUrl || null;
+
     const box = $("compliance-result");
     box.replaceChildren();
-    const card = document.createElement("div");
-    card.className = "msg show " + (result.simulated ? "warn" : "info");
     if (result.verificationUrl) {
+      const card = document.createElement("div");
+      card.className = "msg show info";
+      card.textContent = result.gateMessage;
       const link = document.createElement("a");
       link.href = result.verificationUrl;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = "Open hosted VOVE verification session";
-      card.append(document.createTextNode(result.gateMessage + " "), link);
+      link.className = "auth-btn";
+      link.style.cssText = "display:block;margin-top:10px;padding:12px 24px;font-size:1rem;max-width:420px";
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = "Browsers block auto-popups, so please click the link above to open VOVE in a new tab. StableX will poll for approval every second once you return.";
+      card.append(link, hint);
+      box.append(card);
     } else {
-      card.textContent = result.gateMessage;
+      box.textContent = result.gateMessage;
     }
-    box.append(card);
 
-    // Remember the case id so we can poll VOVE for approval (caseId comes back
-    // in complianceGate.caseId on the session endpoint).
-    complianceCaseId = result.case?.caseId || null;
+    // Start polling immediately; the session refresh happens inside polling.
     if (complianceCaseId) {
-      showMessage("Verification case created. Opening hosted session… StableX will poll for approval every second.", "info");
-      await routeBySession(); // refresh session to load caseId into complianceGate, then poll
+      startPolling();
     }
   } catch (error) {
     showMessage(error.message, "error");
