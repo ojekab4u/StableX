@@ -177,3 +177,37 @@ export async function createBridgeOnRampOrder() {
   error.statusCode = 501;
   throw error;
 }
+
+
+// Sandbox virtual-account provisioning. Bridge returns dummy deposit instructions
+// in Sandbox; this endpoint never moves funds.
+export async function createBridgeVirtualAccount({ bridgeCustomerId, currency, destinationAddress, idempotencyKey }) {
+  const customerId = String(bridgeCustomerId || "").trim();
+  const sourceCurrency = String(currency || "").trim().toLowerCase();
+  const address = String(destinationAddress || "").trim();
+  if (!customerId) throw Object.assign(new Error("A linked Bridge customer is required."), { statusCode: 400 });
+  if (!["usd", "eur", "gbp"].includes(sourceCurrency)) {
+    throw Object.assign(new Error("Sandbox virtual-account testing currently supports USD, EUR or GBP source currencies in this workspace."), { statusCode: 400 });
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    throw Object.assign(new Error("Enter a valid EVM destination address on Base."), { statusCode: 400 });
+  }
+  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 128) {
+    throw Object.assign(new Error("A stable Idempotency-Key is required."), { statusCode: 400 });
+  }
+  return bridgeRequest(`/customers/${encodeURIComponent(customerId)}/virtual_accounts`, {
+    method: "POST",
+    idempotencyKey,
+    body: {
+      source: { currency: sourceCurrency },
+      destination: { payment_rail: "base", currency: "usdc", address },
+      developer_fee_percent: "0.0",
+    },
+  });
+}
+
+export async function listBridgeVirtualAccounts(bridgeCustomerId) {
+  const customerId = String(bridgeCustomerId || "").trim();
+  if (!customerId) throw Object.assign(new Error("A linked Bridge customer is required."), { statusCode: 400 });
+  return bridgeRequest(`/customers/${encodeURIComponent(customerId)}/virtual_accounts`);
+}
