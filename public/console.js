@@ -175,7 +175,7 @@ let bridgeCustomerCreateKey = null;
 let bridgeTosKey = null;
 let bridgeOnboarding = null;
 const bridgeMessage = (text, error=false) => {
-  const node = $("bridge-status");
+  const node = $("bridge-onboarding-status");
   node.textContent = text;
   node.classList.toggle("error", error);
 };
