@@ -231,7 +231,7 @@ bridgeRouter.post("/customers/create", async (req, res) => {
     }
 
     const profile = req.body?.profile || {};
-    const required = ["firstName", "lastName", "email", "phone", "birthDate"];
+    const required = ["firstName", "lastName", "email", "phone", "birthDate", "passportNumber", "passportImageFrontDataUri"];
     const missing = required.filter((key) => typeof profile[key] !== "string" || !profile[key].trim());
     const address = profile.residentialAddress || {};
     for (const key of ["streetLine1", "city", "country"]) {
@@ -266,6 +266,16 @@ bridgeRouter.post("/customers/create", async (req, res) => {
     if (!/^[A-Z]{3}$/.test(country)) {
       return res.status(400).json({ error: "residentialAddress.country must be an ISO 3166-1 alpha-3 code (e.g. NGA)." });
     }
+    const passportNumber = clean(profile.passportNumber);
+    const passportImageFrontDataUri = clean(profile.passportImageFrontDataUri);
+    if (passportImageFrontDataUri && !/^data:image\\/(jpeg|jpg|png);base64,[A-Za-z0-9+/=]+$/i.test(passportImageFrontDataUri)) {
+      return res.status(400).json({ error: "passportImageFrontDataUri must be a JPEG or PNG base64 data URI." });
+    }
+    if (passportImageFrontDataUri.length > 10_000_000) {
+      return res.status(413).json({ error: "Passport image is too large; compress it before submission." });
+    }
+    const rawSubdivision = clean(address.subdivision);
+    const subdivision = country === "NGA" && /^ogun(?: state)?$/i.test(rawSubdivision) ? "OG" : rawSubdivision.toUpperCase();
     const customer = {
       type: "individual",
       first_name: clean(profile.firstName),
@@ -279,9 +289,15 @@ bridgeRouter.post("/customers/create", async (req, res) => {
         street_line_1: clean(address.streetLine1),
         city: clean(address.city),
         country,
-        ...(clean(address.subdivision) ? { subdivision: clean(address.subdivision) } : {}),
+        ...(subdivision ? { subdivision } : {}),
         ...(clean(address.postalCode) ? { postal_code: clean(address.postalCode) } : {}),
       },
+      identifying_information: [{
+        type: "passport",
+        issuing_country: "nga",
+        number: passportNumber,
+        image_front: passportImageFrontDataUri,
+      }],
     };
     if (profile.middleName) customer.middle_name = clean(profile.middleName);
 
