@@ -178,7 +178,15 @@ export async function getHoneycoinWebhookDeliveries(reference) {
 
 // Fetches one webhook delivery so diagnostics can distinguish queued from delivered events.
 export async function getHoneycoinWebhookDelivery(webhookId) {
-  if (typeof webhookId !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(webhookId)) {
+  // Honeycoin's webhook list returns a composite delivery ID containing spaces
+  // and a timestamp (for example: "<id> - transaction_updated - <timestamp>").
+  // Preserve that provider-issued identifier and URL-encode it for the path.
+  if (
+    typeof webhookId !== "string"
+    || webhookId.trim().length < 6
+    || webhookId.length > 512
+    || /[\\u0000-\\u001f\\u007f]/.test(webhookId)
+  ) {
     const error = new Error("Invalid Honeycoin webhook ID.");
     error.statusCode = 400;
     throw error;
