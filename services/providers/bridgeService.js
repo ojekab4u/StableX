@@ -73,8 +73,8 @@ export function getBridgeReadiness() {
       ? "CREDENTIALS_PRESENT_CONNECTION_NOT_TESTED"
       : "AWAITING_PROVIDER_CREDENTIALS",
     missingVariables, environment, baseUrl: url,
-    capabilities: ["INDICATIVE_FX_RATE_PREVIEW", "CUSTOMER_LOOKUP"],
-    capabilitiesPlanned: ["CUSTOMER_ONBOARDING_PENDING_TOS", "TRANSFER_EXECUTION_PENDING_PRODUCT_AND_ACCOUNT_VALIDATION"],
+    capabilities: ["INDICATIVE_FX_RATE_PREVIEW", "CUSTOMER_LOOKUP", "CUSTOMER_CREATION_AFTER_COMPLIANCE_AND_TOS"],
+    capabilitiesPlanned: ["TRANSFER_EXECUTION_PENDING_PRODUCT_AND_ACCOUNT_VALIDATION"],
     executionEnabled: false,
     note: "Bridge exchange rates are indicative estimates refreshed roughly every 30 seconds. They are not locked quotes and do not create or fund transfers.",
   };
