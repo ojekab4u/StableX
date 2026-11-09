@@ -154,6 +154,19 @@ const schemaStatements = [
     UNIQUE (provider, provider_reference)
   )`,
   `CREATE INDEX IF NOT EXISTS payment_details_customer_idx ON payment_details (customer_id)`,
+  `CREATE TABLE IF NOT EXISTS provider_customers (
+    id UUID PRIMARY KEY,
+    provider VARCHAR(40) NOT NULL,
+    customer_id VARCHAR(128) NOT NULL,
+    provider_customer_id VARCHAR(255),
+    onboarding_status VARCHAR(40) NOT NULL DEFAULT 'NOT_STARTED',
+    tos_url TEXT,
+    signed_agreement_id VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(provider, customer_id),
+    UNIQUE(provider, provider_customer_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS external_wallets (
     external_wallet_id UUID PRIMARY KEY,
     customer_id VARCHAR(128) NOT NULL,
@@ -176,7 +189,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
