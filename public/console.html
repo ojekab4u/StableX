@@ -105,6 +105,17 @@
     </section>
 
     <section class="panel">
+      <p class="eyebrow">05 / PROVIDER PAYMENT</p>
+      <h2>Complete Honeycoin NGN payment</h2>
+      <p class="muted">Available only for a QUOTED NGN → USDC transfer with a selected Honeycoin quote and a saved Base wallet beneficiary.</p>
+      <div class="form-grid">
+        <div class="field"><label for="honeycoin-email">Customer email for payment instructions</label><input id="honeycoin-email" type="email" placeholder="customer@example.com"></div>
+        <div class="field"><label for="honeycoin-method">NGN payment method</label><select id="honeycoin-method"><option value="opay">OPay</option><option value="bank">Bank transfer</option></select></div>
+      </div>
+      <p id="provider-order-message" class="message" aria-live="polite">Select a Honeycoin quote, then create the provider order from the transfer history below.</p>
+      <div id="provider-order-result" class="route-status" aria-live="polite"></div>
+    </section>
+    <section class="panel">
       <div class="section-heading"><div><p class="eyebrow">05 / DURABLE TRANSFERS</p><h2>Transfer history</h2></div><button id="refresh-transfers" class="secondary" type="button">Refresh</button></div>
       <div class="table-wrap"><table><thead><tr><th>Transfer</th><th>Route</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody id="transfers"><tr><td colspan="5" class="muted">Loading transfers…</td></tr></tbody></table></div>
       <p class="muted small">A selected quote is recorded against a DRAFT transfer and advances it to QUOTED. Provider execution remains separately gated.</p>
