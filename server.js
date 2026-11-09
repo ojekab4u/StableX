@@ -22,6 +22,7 @@ import { Connection } from "@solana/web3.js";
 import { getQuotes, 
   getDemoSupportedPairs, } from "./providers/demoProviders.js";
 import { sendRouter } from "./routes/sendRoutes.js";
+import { authRouter } from "./routes/authRoutes.js";
 import { kybRouter } from "./routes/kybRoutes.js";
 import { orchestrationRouter } from "./routes/orchestrationRoutes.js";
 import { transferRouter } from "./routes/transferRoutes.js";
@@ -478,6 +479,7 @@ app.post("/api/base/vault/update", async (req, res) => {
 });
 
 app.use("/api/send", sendRouter);
+app.use("/api/auth", authRouter);
 app.use("/api/kyb", kybRouter);
 app.use("/api/orchestration", orchestrationRouter);
 app.use("/api/transfers", transferRouter);

@@ -397,3 +397,51 @@ Open `/providers.html` to inspect Honeycoin and Paycrest configuration readiness
 Configure credentials only in the server-side `.env` file. Keep each variable on its own line. Use actual provider-issued sandbox credentials; do not use sample values such as `key`, `your_api_key`, or `your_sandbox_api_key`. The readiness endpoint treats common placeholder values as missing. A credentials-present status is not proof of provider approval or successful API access.
 
 The provider console remains read-only. It does not create provider orders, reserve liquidity, accept customer funds, transfer tokens or initiate payouts.
+
+## Customer accounts and authentication (prototype)
+
+StableX now implements step 1 of the customer flow: real account creation with email/phone verification, personal or business account types, and password sign-in. The authenticated account ID doubles as the `customerId` used by transfers, wallets and compliance.
+
+Configure in the server-side `.env` file:
+
+- `ACCOUNTS_DEMO_CODE_DELIVERY` — when `true` (default), email/phone verification codes are returned in API responses and printed to the server log so the flow works without an email/SMS provider. Set to `false` and wire a real provider before any production use; codes are then only hashed and stored.
+- `SESSION_TTL_HOURS` — lifetime of issued session tokens, default 72.
+
+### API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/auth/register` | Create a PERSONAL or BUSINESS account; issues verification codes |
+| POST | `/api/auth/verify/email` | Confirm the 6-digit email code |
+| POST | `/api/auth/verify/phone` | Confirm the 6-digit phone code (accounts with a phone) |
+| POST | `/api/auth/resend` | Reissue a code; the previous code for that channel is invalidated |
+| POST | `/api/auth/login` | Password sign-in; returns a Bearer session token |
+| GET | `/api/auth/session` | Returns the signed-in account, verification state and compliance gate |
+| POST | `/api/auth/logout` | Revokes the current session |
+
+Example registration:
+
+```json
+{
+  "email": "customer@example.com",
+  "phone": "+2348012345678",
+  "password": "correct-horse-7",
+  "accountType": "PERSONAL",
+  "fullName": "Ada Lovelace"
+}
+```
+
+`BUSINESS` accounts additionally require `businessName`. An account becomes `ACTIVE` when the email is verified and, if a phone was provided, the phone is verified too. Signing in before verification returns HTTP 403 with the pending channels and the account ID.
+
+### How it is secured
+
+- Passwords use `scrypt` with a per-account random salt; hashes are never returned by any endpoint.
+- Verification codes are 6 digits, hashed at rest, expire after 15 minutes, are single-use, lock after 5 failed attempts, and issuing a new code invalidates the old one.
+- Sessions are opaque 32-byte tokens; only a SHA-256 hash is stored. `GET /api/auth/session` resolves the token to the account and includes the compliance gate status linking to step 2 (KYC for PERSONAL, KYB for BUSINESS).
+
+### Important limitations
+
+- With demo delivery enabled the verification code is visible in API responses and logs; that mode is for local testing only.
+- There is no email/SMS provider integration yet, no rate limiting on register/login beyond the code attempt lock, and no password reset flow.
+- Existing endpoints still accept a caller-supplied `customerId`; pass the authenticated `accountId` as the `customerId` and scope all reads to the session owner via the `requireAuth` middleware before exposing these routes publicly.
+- Account records live in PostgreSQL and are subject to the same prototype boundaries as the rest of the project: no money movement is enabled by any account action.

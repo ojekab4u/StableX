@@ -11,12 +11,34 @@ import {
   processVoveWebhook,
 } from "../services/complianceService.js";
 import { verifyVoveWebhookSignature } from "../services/voveKybService.js";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { submitSelfServeComplianceCase } from "../services/complianceService.js";
 
 export const complianceRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
 
 complianceRouter.get("/readiness", (_req, res) => {
   return res.json(getComplianceReadiness());
+});
+
+// Step 2 of the customer flow: the signed-in account starts its own KYC/KYB
+// case. subjectType is derived from the account type and the subject is
+// prefilled from registration data; extras only add fields the account does
+// not store (registrationNumber, city, address).
+complianceRouter.post("/cases/self", requireAuth, async (req, res) => {
+  try {
+    const result = await submitSelfServeComplianceCase({
+      account: req.account,
+      extras: {
+        registrationNumber: req.body?.registrationNumber,
+        city: req.body?.city,
+        address: req.body?.address,
+      },
+    });
+    return res.status(201).json(result);
+  } catch (e) {
+    return fail(res, e);
+  }
 });
 
 complianceRouter.post("/cases", async (req, res) => {

@@ -1,6 +1,8 @@
 import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 
 const SANDBOX_URL = "https://api.voveid.net/v2";
+const HOSTED_SANDBOX_URL = "https://web.voveid.net";
+const HOSTED_PRODUCTION_URL = "https://web.voveid.com";
 
 function config() {
   const apiKey = process.env.VOVE_API_KEY || process.env.VOVE_ID_API_KEY;
@@ -11,10 +13,17 @@ function config() {
     error.statusCode = 503;
     throw error;
   }
+  const baseUrl = process.env.VOVE_ID_API_BASE_URL || SANDBOX_URL;
+  const environment = process.env.VOVE_ID_ENVIRONMENT || "Sandbox";
   return {
     apiKey, publicKey, webhookSecret,
-    baseUrl: process.env.VOVE_ID_API_BASE_URL || SANDBOX_URL,
-    environment: process.env.VOVE_ID_ENVIRONMENT || "Sandbox",
+    baseUrl,
+    // VOVE's API conventions: KYC routes begin with /v2, KYB and AML routes
+    // are unversioned. The configured base URL usually includes /v2, so derive
+    // the versionless root for KYB calls.
+    rootBaseUrl: baseUrl.replace(/\/v2\/?$/, ""),
+    environment,
+    hostedBaseUrl: environment === "Production" ? HOSTED_PRODUCTION_URL : HOSTED_SANDBOX_URL,
     kycFlowId: process.env.VOVE_ID_KYC_FLOW_ID || undefined,
     kybFlowId: process.env.VOVE_ID_KYB_FLOW_ID || undefined,
   };
@@ -46,7 +55,7 @@ async function voveRequest(path, { method = "GET", body } = {}) {
 }
 
 function buildKycLink(token, settings) {
-  const url = new URL("https://web.voveid.com/");
+  const url = new URL(settings.hostedBaseUrl + "/");
   url.searchParams.set("authToken", token);
   url.searchParams.set("publicKey", settings.publicKey);
   url.searchParams.set("environment", settings.environment);
@@ -54,7 +63,7 @@ function buildKycLink(token, settings) {
 }
 
 function buildKybLink(token, settings) {
-  const url = new URL("https://web.voveid.com/kyb/");
+  const url = new URL(settings.hostedBaseUrl + "/kyb");
   url.searchParams.set("authToken", token);
   url.searchParams.set("publicKey", settings.publicKey);
   url.searchParams.set("environment", settings.environment);
@@ -106,18 +115,13 @@ export async function createVoveKycCase({ fullName, country, dateOfBirth, email,
 export async function createVoveKybCase({ businessName, country, registrationNumber, city, address }) {
   const settings = config();
   const refId = `stablex_kyb_${randomUUID()}`;
+  // VOVE's documented create contract accepts only refId and the optional flow;
+  // the applicant supplies business data inside the hosted case journey.
   const payload = {
-    businessName,
     refId,
     ...(settings.kybFlowId ? { flow: settings.kybFlowId } : {}),
-    formData: {
-      ...(registrationNumber ? { registrationNumber } : {}),
-      ...(country ? { country } : {}),
-      ...(city ? { city } : {}),
-      ...(address ? { address } : {}),
-    },
   };
-  const result = await voveRequest("/kyb/case", { method: "POST", body: payload });
+  const result = await voveRequestRoot("/kyb/case", { method: "POST", body: payload });
   const kybCase = result.kybCase || result.data?.kybCase || result.data || {};
   const token = result.token || result.sessionToken;
   const providerRef = kybCase.refId || refId;
