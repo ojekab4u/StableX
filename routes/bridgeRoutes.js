@@ -20,32 +20,77 @@ bridgeRouter.get("/customers/lookup", async (req, res) => {
     if (!customerId || customerId.length > 128) {
       return res.status(400).json({ error: "A valid StableX customerId is required." });
     }
-    const payload = await listBridgeCustomers();
-    const customers = Array.isArray(payload) ? payload
-      : Array.isArray(payload.data) ? payload.data
-      : Array.isArray(payload.customers) ? payload.customers
-      : Array.isArray(payload.results) ? payload.results : null;
-    if (!customers) {
-      return res.status(502).json({
-        error: "Bridge customer-list response did not contain a recognized customer array.",
-        responseKeys: Object.keys(payload || {}),
-      });
+
+    const matches = [];
+    const seenCursors = new Set();
+    let startingAfter;
+    let pagesScanned = 0;
+    const maxPages = 50;
+
+    while (pagesScanned < maxPages) {
+      const payload = await listBridgeCustomers({ startingAfter, limit: 100 });
+      const customers = Array.isArray(payload) ? payload
+        : Array.isArray(payload.data) ? payload.data
+        : Array.isArray(payload.customers) ? payload.customers
+        : Array.isArray(payload.results) ? payload.results : null;
+
+      if (!customers) {
+        return res.status(502).json({
+          error: "Bridge customer-list response did not contain a recognized customer array.",
+          responseKeys: Object.keys(payload || {}),
+          pagesScanned,
+          lookupComplete: false,
+        });
+      }
+
+      pagesScanned += 1;
+      matches.push(...customers.filter((item) =>
+        String(item.client_reference_id || item.clientReferenceId || "") === customerId
+      ));
+
+      const hasMore = payload.has_more === true ||
+        payload.hasMore === true ||
+        payload.pagination?.has_more === true;
+
+      if (!hasMore) {
+        return res.json({
+          provider: "Bridge",
+          environment: getBridgeReadiness().environment,
+          stablexCustomerId: customerId,
+          matchCount: matches.length,
+          matches: matches.map((item) => ({
+            id: item.id || item.customer_id || item.customerId || null,
+            clientReferenceId: item.client_reference_id || item.clientReferenceId || null,
+            type: item.type || null,
+            status: item.status || null,
+            createdAt: item.created_at || item.createdAt || null,
+          })),
+          pagesScanned,
+          lookupComplete: true,
+          lookupIsReadOnly: true,
+        });
+      }
+
+      const lastCustomer = customers[customers.length - 1];
+      const nextCursor = payload.next_cursor || payload.pagination?.next_cursor ||
+        lastCustomer?.id || lastCustomer?.customer_id || lastCustomer?.customerId;
+
+      if (!nextCursor || seenCursors.has(String(nextCursor))) {
+        return res.status(502).json({
+          error: "Bridge indicated more customer pages but did not provide a usable next cursor.",
+          pagesScanned,
+          lookupComplete: false,
+          lookupIsReadOnly: true,
+        });
+      }
+      startingAfter = String(nextCursor);
+      seenCursors.add(startingAfter);
     }
-    const matches = customers.filter((item) =>
-      String(item.client_reference_id || item.clientReferenceId || "") === customerId
-    );
-    return res.json({
-      provider: "Bridge",
-      environment: getBridgeReadiness().environment,
-      stablexCustomerId: customerId,
-      matchCount: matches.length,
-      matches: matches.map((item) => ({
-        id: item.id || item.customer_id || item.customerId || null,
-        clientReferenceId: item.client_reference_id || item.clientReferenceId || null,
-        type: item.type || null,
-        status: item.status || null,
-        createdAt: item.created_at || item.createdAt || null,
-      })),
+
+    return res.status(503).json({
+      error: "Bridge customer lookup reached its 50-page safety limit; no complete result can be claimed.",
+      pagesScanned,
+      lookupComplete: false,
       lookupIsReadOnly: true,
     });
   } catch (e) { return fail(res, e); }
