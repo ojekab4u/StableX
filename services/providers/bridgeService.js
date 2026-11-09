@@ -107,9 +107,6 @@ export async function getBridgeRate({ from, to, amount }) {
     error.statusCode = 400;
     throw error;
   }
-  const url = new URL(`${baseUrl()}/exchange_rates`);
-  url.searchParams.set("from", source.toLowerCase());
-  url.searchParams.set("to", destination.toLowerCase());
   const payload = await bridgeRequest(`/exchange_rates?from=${encodeURIComponent(source.toLowerCase())}&to=${encodeURIComponent(destination.toLowerCase())}`);
   const rate = numeric(payload.sell_rate);
   if (rate === null || rate <= 0) {
