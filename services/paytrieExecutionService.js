@@ -54,11 +54,11 @@ export function getPaytrieExecutionReadiness() {
   };
 }
 export async function requestPaytrieLoginCode(email) {
-  if (typeof email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim())) throw fail("Enter the registered Paytrie customer email.");
+  if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw fail("Enter the registered Paytrie customer email.");
   return request("/auth/login-codes", { method: "POST", body: { email: email.trim().toLowerCase() } });
 }
 export async function verifyPaytrieLoginCode({ email, code }) {
-  if (typeof email !== "string" || typeof code !== "string" || !/^\\d{4}$/.test(code.trim())) throw fail("Enter the registered email and 4-digit Paytrie code.");
+  if (typeof email !== "string" || typeof code !== "string" || !/^\d{4}$/.test(code.trim())) throw fail("Enter the registered email and 4-digit Paytrie code.");
   const result = await request("/auth/login-codes/verify", { method: "POST", body: { email: email.trim().toLowerCase(), code: code.trim() } });
   if (!result.accessToken) throw fail("Paytrie did not return an access token.", 502);
   return { accessToken: result.accessToken, tokenType: result.tokenType || "Bearer", expiresIn: result.expiresIn || 3600 };
