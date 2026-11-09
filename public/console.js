@@ -24,7 +24,7 @@ async function loadCustomer(){
     $("case-count").textContent=gate.caseCount ?? "—";
     $("bridge-status").textContent=bridge.capabilities?.join(", ") || bridge.status || (bridge.configured?"Configured":"Readiness loaded");
     message("customer-message",gate.gate?.approved?"Compliance approved. Quote selection is enabled for this customer.":`Compliance gate: ${gate.gate?.status||"Unknown"}. Quote selection will be blocked until approved.`);
-    await Promise.all([loadBeneficiaries(),loadTransfers()]);
+    await Promise.all([loadBeneficiaries(),loadTransfers(),refreshBridgeOnboarding()]);
   }catch(e){message("customer-message",e.message,true);$("gate-status").textContent="Unavailable";}
 }
 async function loadAssets(){
@@ -106,12 +106,59 @@ async function selectQuote(quoteId){
 async function loadTransfers(){
   const data=await api(`/api/transfers?customerId=${encodeURIComponent(state.customerId)}`);
   const rows=data.transfers||[],body=$("transfers");body.replaceChildren();
-  if(!rows.length){body.innerHTML='<tr><td colspan="5" class="muted">No durable transfers for this customer yet.</td></tr>';return;}
+  if(!rows.length){body.innerHTML='<tr><td colspan="6" class="muted">No durable transfers for this customer yet.</td></tr>';return;}
   rows.forEach(t=>{
     const tr=document.createElement("tr");
-    const values=[t.id||t.transferId||"—",`${t.sourceCurrency||t.from||"?"} → ${t.destinationCurrency||t.to||"?"}`,money(t.sourceAmount??t.amount,t.sourceCurrency||t.from),t.status||"—",t.createdAt?new Date(t.createdAt).toLocaleString():"—"];
-    values.forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});body.append(tr);
+    const id=t.id||t.transferId||"—";
+    const values=[id,`${t.sourceCurrency||t.from||"?"} → ${t.destinationCurrency||t.to||"?"}`,money(t.sourceAmount??t.amount,t.sourceCurrency||t.from),t.status||"—",t.createdAt?new Date(t.createdAt).toLocaleString():"—"];
+    values.forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});
+    const actions=document.createElement("td");
+    if(t.status==="QUOTED" && t.sourceCurrency==="NGN" && t.destinationCurrency==="USDC" && t.quote?.provider==="Honeycoin"){
+      const create=document.createElement("button");create.type="button";create.textContent="Create Honeycoin order";create.addEventListener("click",()=>createHoneycoinOrder(id));actions.append(create);
+    }
+    const refresh=document.createElement("button");refresh.type="button";refresh.className="secondary";refresh.textContent="Refresh provider";refresh.addEventListener("click",()=>refreshProviderOrder(id));actions.append(refresh);
+    tr.append(actions);body.append(tr);
   });
+}
+async function showProviderOrderResult(result){
+  const host=$("provider-order-result");host.replaceChildren();
+  const order=result.order||{};
+  const rows=[
+    ["Provider order",order.orderId||"—"],
+    ["Provider transaction",order.providerTransactionId||"—"],
+    ["Order status",order.status||"—"],
+    ["Provider status",order.providerStatus||"—"],
+    ["Payment method",order.paymentMethod||"—"],
+    ["Settlement verified",result.settlementVerified===true?"Yes": "Not yet"],
+    ["Transaction hash",order.transactionHash||"Not supplied by provider"],
+  ];
+  rows.forEach(([label,value])=>{const line=document.createElement("p");line.textContent=`${label}: ${value}`;host.append(line);});
+  if(order.redirectUrl){const link=document.createElement("a");link.href=order.redirectUrl;link.target="_blank";link.rel="noopener noreferrer";link.textContent="Continue to Honeycoin payment";host.append(link);}
+  if(order.paymentDetails){const line=document.createElement("p");line.textContent=`Payment details: ${JSON.stringify(order.paymentDetails)}`;host.append(line);}
+  const note=document.createElement("p");note.className="muted";note.textContent=result.settlementVerified?"Base USDC settlement was verified.": "Do not treat provider payment success as completed until Base settlement is independently verified.";host.append(note);
+}
+async function createHoneycoinOrder(transferId){
+  try{
+    $("provider-order-message").textContent="Creating Honeycoin payment order…";
+    const result=await api(`/api/transfers/${encodeURIComponent(transferId)}/provider-order`,{
+      method:"POST",
+      body:JSON.stringify({customerId:state.customerId,paymentMethod:$("honeycoin-method").value,email:$("honeycoin-email").value.trim()}),
+    });
+    await showProviderOrderResult(result);
+    $("provider-order-message").textContent=result.message||"Honeycoin order response received.";
+    await loadTransfers();
+  }catch(e){$("provider-order-message").textContent=e.message;}
+}
+async function refreshProviderOrder(transferId){
+  try{
+    $("provider-order-message").textContent="Refreshing provider status and checking Base settlement…";
+    const result=await api(`/api/transfers/${encodeURIComponent(transferId)}/provider-order/refresh`,{
+      method:"POST",body:JSON.stringify({customerId:state.customerId}),
+    });
+    await showProviderOrderResult(result);
+    $("provider-order-message").textContent=result.message||"Provider status refreshed.";
+    await loadTransfers();
+  }catch(e){$("provider-order-message").textContent=e.message;}
 }
 $("load-customer").addEventListener("click",loadCustomer);
 $("refresh-customer").addEventListener("click",loadCustomer);
