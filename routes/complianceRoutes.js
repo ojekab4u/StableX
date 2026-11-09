@@ -74,11 +74,14 @@ complianceRouter.get("/cases/all", async (req, res) => {
   }
 });
 
-complianceRouter.post("/cases/:caseId/refresh", async (req, res) => {
+complianceRouter.post("/cases/:caseId/refresh", requireAuth, async (req, res) => {
   try {
-    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
-    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
-      return res.status(401).json({ error: "Unauthorized operator action." });
+    const caseRecord = await getComplianceCase(req.params.caseId);
+    if (!caseRecord) {
+      return res.status(404).json({ error: "Compliance case not found." });
+    }
+    if (caseRecord.customerId !== req.account.accountId) {
+      return res.status(403).json({ error: "You can only refresh your own compliance case." });
     }
     return res.json(await refreshVoveComplianceCase(req.params.caseId));
   } catch (e) {

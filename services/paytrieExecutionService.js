@@ -50,7 +50,7 @@ export function getPaytrieExecutionReadiness() {
     provider: "Paytrie", apiVersion: "v2", apiKeyPresent: keyPresent,
     customerJwtRequired: true, transactionCreationEnabled: keyPresent,
     supportedExecutionRoute: "CAD -> USDC-BASE",
-    note: "A configured API key is not proof of account permissions. A verified Paytrie customer JWT and eligible account are still required.",
+    
   };
 }
 export async function requestPaytrieLoginCode(email) {
