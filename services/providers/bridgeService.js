@@ -1,6 +1,7 @@
-// Bridge exchange-rate adapter.
-// The exchange-rates endpoint is an indicative feed only; it does not lock a rate
-// or create a transfer. Transfer creation is deliberately not exposed here.
+// Bridge API adapter.
+// Indicative exchange rates do not lock a rate or create a transfer.
+// Customer lookup is read-only; onboarding writes are implemented separately
+// only after the provider's ToS and customer-data requirements are satisfied.
 
 const apiKey = () => String(process.env.BRIDGE_API_KEY || "").trim();
 
@@ -18,12 +19,37 @@ function isUsableCredential(value) {
   return Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder|test)$/i.test(value.trim());
 }
 
-const SUPPORTED_NON_USD = new Set(["BRL", "COP", "EUR", "GBP", "MXN", "USDT"]);
-
-function isSupportedPair(from, to) {
-  return (from === "USD" && SUPPORTED_NON_USD.has(to)) ||
-    (to === "USD" && SUPPORTED_NON_USD.has(from));
+async function bridgeRequest(path, { method = "GET", body, idempotencyKey } = {}) {
+  const key = apiKey();
+  if (!isUsableCredential(key)) {
+    const error = new Error("Bridge API key not configured. Set BRIDGE_API_KEY in .env.");
+    error.statusCode = 503;
+    throw error;
+  }
+  const headers = { Accept: "application/json", "Api-Key": key };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  const response = await fetch(new URL(`${baseUrl()}${path}`), {
+    method, headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { payload = { message: raw.slice(0, 1000) }; }
+  if (!response.ok) {
+    const error = new Error(payload.message || payload.error || `Bridge returned HTTP ${response.status}`);
+    error.statusCode = response.status >= 500 ? 502 : response.status;
+    throw error;
+  }
+  return payload;
 }
+
+const SUPPORTED_NON_USD = new Set(["BRL", "COP", "EUR", "GBP", "MXN", "USDT"]);
+const isSupportedPair = (from, to) =>
+  (from === "USD" && SUPPORTED_NON_USD.has(to)) ||
+  (to === "USD" && SUPPORTED_NON_USD.has(from));
 
 function numeric(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -37,10 +63,7 @@ export function getBridgeReadiness() {
   const url = baseUrl();
   const environment = url.includes("api.sandbox.bridge.xyz")
     ? "Sandbox"
-    : url.includes("api.bridge.xyz")
-      ? "Production"
-      : "Custom";
-
+    : url.includes("api.bridge.xyz") ? "Production" : "Custom";
   return {
     name: "Bridge",
     role: "Indicative USD, EUR, GBP, BRL, COP, MXN and USDT exchange-rate feed",
@@ -49,24 +72,54 @@ export function getBridgeReadiness() {
     status: missingVariables.length === 0
       ? "CREDENTIALS_PRESENT_CONNECTION_NOT_TESTED"
       : "AWAITING_PROVIDER_CREDENTIALS",
-    missingVariables,
-    environment,
-    baseUrl: url,
-    capabilities: ["INDICATIVE_FX_RATE_PREVIEW"],
-    capabilitiesPlanned: ["TRANSFER_EXECUTION_PENDING_PRODUCT_AND_ACCOUNT_VALIDATION"],
+    missingVariables, environment, baseUrl: url,
+    capabilities: ["INDICATIVE_FX_RATE_PREVIEW", "CUSTOMER_LOOKUP"],
+    capabilitiesPlanned: ["CUSTOMER_ONBOARDING_PENDING_TOS", "TRANSFER_EXECUTION_PENDING_PRODUCT_AND_ACCOUNT_VALIDATION"],
     executionEnabled: false,
     note: "Bridge exchange rates are indicative estimates refreshed roughly every 30 seconds. They are not locked quotes and do not create or fund transfers.",
   };
 }
 
-export async function getBridgeRate({ from, to, amount }) {
-  const key = apiKey();
-  if (!isUsableCredential(key)) {
-    const error = new Error("Bridge API key not configured. Set BRIDGE_API_KEY in .env.");
-    error.statusCode = 503;
+export async function listBridgeCustomers({ startingAfter, limit = 100 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (startingAfter) params.set("starting_after", startingAfter);
+  return bridgeRequest(`/customers?${params.toString()}`);
+}
+
+export async function requestBridgeTosLink({ idempotencyKey, redirectUri } = {}) {
+  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 128) {
+    const error = new Error("A stable Idempotency-Key is required for Bridge ToS link creation.");
+    error.statusCode = 400;
     throw error;
   }
+  const payload = await bridgeRequest("/customers/tos_links", { method: "POST", idempotencyKey });
+  if (redirectUri && payload.url) {
+    const hostedUrl = new URL(payload.url);
+    hostedUrl.searchParams.set("redirect_uri", redirectUri);
+    payload.url = hostedUrl.toString();
+  }
+  return payload;
+}
 
+export async function createBridgeCustomer(customer, { idempotencyKey } = {}) {
+  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 128) {
+    const error = new Error("A stable Idempotency-Key is required for Bridge customer creation.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return bridgeRequest("/customers", { method: "POST", body: customer, idempotencyKey });
+}
+
+export async function getBridgeCustomer(customerId) {
+  if (typeof customerId !== "string" || !customerId.trim()) {
+    const error = new Error("A Bridge customer ID is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return bridgeRequest(`/customers/${encodeURIComponent(customerId.trim())}`);
+}
+
+export async function getBridgeRate({ from, to, amount }) {
   const source = String(from || "").trim().toUpperCase();
   const destination = String(to || "").trim().toUpperCase();
   const value = Number(amount);
@@ -80,70 +133,29 @@ export async function getBridgeRate({ from, to, amount }) {
     error.statusCode = 400;
     throw error;
   }
-
-  const url = new URL(`${baseUrl()}/exchange_rates`);
-  url.searchParams.set("from", source.toLowerCase());
-  url.searchParams.set("to", destination.toLowerCase());
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "Api-Key": key,
-    },
-    signal: AbortSignal.timeout(15_000),
-  });
-  const raw = await response.text();
-  let payload;
-  try {
-    payload = raw ? JSON.parse(raw) : {};
-  } catch {
-    payload = { message: raw.slice(0, 1000) };
-  }
-
-  if (!response.ok) {
-    const error = new Error(payload.message || payload.error || `Bridge returned HTTP ${response.status}`);
-    error.statusCode = response.status >= 500 ? 502 : response.status;
-    throw error;
-  }
-
-  // Bridge defines sell_rate as the amount of target currency received per
-  // one unit of source currency. It already includes Bridge's exchange fee.
+  const payload = await bridgeRequest(`/exchange_rates?from=${encodeURIComponent(source.toLowerCase())}&to=${encodeURIComponent(destination.toLowerCase())}`);
   const rate = numeric(payload.sell_rate);
   if (rate === null || rate <= 0) {
     const error = new Error("Bridge returned an invalid or missing sell_rate.");
     error.statusCode = 502;
     throw error;
   }
-
   const observedAt = payload.updated_at || new Date().toISOString();
   const observedMs = Date.parse(observedAt);
-  const expiresAt = new Date(
-    Number.isFinite(observedMs) ? observedMs + 30_000 : Date.now() + 30_000
-  ).toISOString();
-
+  const expiresAt = new Date(Number.isFinite(observedMs) ? observedMs + 30_000 : Date.now() + 30_000).toISOString();
   return {
-    provider: "Bridge",
-    quoteType: "INDICATIVE_RATE_PREVIEW",
-    from: source,
-    to: destination,
-    amount: value,
-    rate,
-    destinationAmount: value * rate,
-    fee: null,
-    feeCurrency: destination,
-    observedAt,
-    expiresAt,
-    providerData: payload,
-    executionEnabled: false,
+    provider: "Bridge", quoteType: "INDICATIVE_RATE_PREVIEW",
+    from: source, to: destination, amount: value, rate,
+    destinationAmount: value * rate, fee: null, feeCurrency: destination,
+    observedAt, expiresAt, providerData: payload, executionEnabled: false,
     note: "Bridge sell_rate is an indicative estimate including Bridge's FX fee. Bridge does not lock this rate; no transfer, funding request or settlement is created.",
   };
 }
 
-// Kept as an explicit guard for any older caller. The previous /v1/orders
-// endpoint was not a verified Bridge API route and must never be called.
+// Deliberately disabled until a verified Bridge transfer product and account
+// permissions are established. Never call an undocumented order endpoint.
 export async function createBridgeOnRampOrder() {
-  const error = new Error("Bridge transfer creation is not implemented. The exchange-rates endpoint is indicative only; no order was created.");
+  const error = new Error("Bridge transfer creation is not implemented. No order was created.");
   error.statusCode = 501;
   throw error;
 }
