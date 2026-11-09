@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { getCustomerGateStatus } from "../services/complianceService.js";
-import { randomUUID } from "node:crypto";
 import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding } from "../repositories/providerCustomerRepository.js";
 import {
   getBridgeReadiness,
@@ -153,19 +152,40 @@ bridgeRouter.post("/customers/tos-link", async (req, res) => {
   } catch (e) { return fail(res, e); }
 });
 
-// Bridge redirects here with signed_agreement_id when BRIDGE_TOS_REDIRECT_URI is configured.
+// Bridge redirects here with signed_agreement_id. Do not trust or persist
+// browser-supplied agreement IDs until an authenticated operator records them.
 bridgeRouter.get("/customers/tos-callback", async (req, res) => {
+  const customerId = String(req.query.customerId || "").trim();
+  const signedAgreementId = String(req.query.signed_agreement_id || "").trim();
+  if (!customerId || customerId.length > 128 || !signedAgreementId || signedAgreementId.length > 255) {
+    return res.status(400).json({ error: "customerId and signed_agreement_id are required." });
+  }
+  return res.json({
+    provider: "Bridge",
+    customerId,
+    signedAgreementId,
+    nextStep: "Submit this agreement ID through the authenticated StableX operator endpoint to record acceptance.",
+    customerCreated: false,
+    fundsMoved: false,
+  });
+});
+
+bridgeRouter.post("/customers/tos-acceptance", async (req, res) => {
   try {
-    const customerId = String(req.query.customerId || "").trim();
-    const signedAgreementId = String(req.query.signed_agreement_id || "").trim();
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const customerId = String(req.body?.customerId || "").trim();
+    const signedAgreementId = String(req.body?.signedAgreementId || "").trim();
     if (!customerId || customerId.length > 128 || !signedAgreementId || signedAgreementId.length > 255) {
-      return res.status(400).json({ error: "customerId and signed_agreement_id are required." });
+      return res.status(400).json({ error: "customerId and signedAgreementId are required." });
     }
     const onboarding = await saveBridgeSignedAgreement({ customerId, signedAgreementId });
     return res.json({
       provider: "Bridge",
       onboarding,
-      nextStep: "Terms acceptance recorded. Customer profile completeness must be checked before Bridge customer creation.",
+      nextStep: "Terms acceptance recorded. Check customer profile completeness before Bridge customer creation.",
       customerCreated: false,
       fundsMoved: false,
     });
