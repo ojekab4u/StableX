@@ -308,7 +308,21 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
       orderId: order.orderId, customerId, providerTransactionId, status: "FUNDED",
       providerStatus, failureReason: null,
     });
-    return { order: publicOrder(updated), providerStatus, settlementVerified: false, refreshed: true };
+    return {
+      order: publicOrder(updated),
+      providerStatus,
+      chargeStatus: chargeStatus || null,
+      settlementVerified: false,
+      settlement: {
+        state: "WAITING_FOR_BLOCKCHAIN_TRANSFER",
+        receiverAddress: provider.receiverAddress || null,
+        cryptoAmount: provider.cryptoAmount || null,
+        chain: provider.chain || null,
+        transactionHash: txHash || null,
+        reason: "Fiat collection is successful, but Honeycoin has not supplied a verifiable blockchain transaction hash. StableX will not credit the USDC wallet or mark this transfer completed yet.",
+      },
+      refreshed: true,
+    };
   }
 
   const updated = await updateProviderOrder({
@@ -316,7 +330,19 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
     status: provider.stepRequired === "redirect" ? "ACTION_REQUIRED" : "AWAITING_PAYMENT",
     providerStatus, failureReason: null,
   });
-  return { order: publicOrder(updated), providerStatus, refreshed: true };
+  return {
+    order: publicOrder(updated),
+    providerStatus,
+    chargeStatus: chargeStatus || null,
+    settlement: {
+      state: "PAYMENT_NOT_CONFIRMED",
+      receiverAddress: provider.receiverAddress || null,
+      cryptoAmount: provider.cryptoAmount || null,
+      chain: provider.chain || null,
+      transactionHash: txHash || null,
+    },
+    refreshed: true,
+  };
 }
 
 export async function getHoneycoinOrderForTransfer({ transferId, customerId }) {
