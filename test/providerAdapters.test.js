@@ -159,7 +159,11 @@ test("Bridge readiness reports implemented preview and customer onboarding capab
   try {
     const readiness = getBridgeReadiness();
     assert.equal(readiness.configured, false);
-    assert.deepEqual(readiness.capabilities, [\n      "INDICATIVE_FX_RATE_PREVIEW",\n      "CUSTOMER_LOOKUP",\n      "CUSTOMER_CREATION_AFTER_COMPLIANCE_AND_TOS",\n    ]);
+    assert.deepEqual(readiness.capabilities, [
+      "INDICATIVE_FX_RATE_PREVIEW",
+      "CUSTOMER_LOOKUP",
+      "CUSTOMER_CREATION_AFTER_COMPLIANCE_AND_TOS",
+    ]);
     assert.equal(readiness.executionEnabled, false);
   } finally {
     if (originalKey === undefined) delete process.env.BRIDGE_API_KEY;
