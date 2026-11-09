@@ -80,8 +80,10 @@ export function getBridgeReadiness() {
   };
 }
 
-export async function listBridgeCustomers() {
-  return bridgeRequest("/customers");
+export async function listBridgeCustomers({ startingAfter, limit = 100 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (startingAfter) params.set("starting_after", startingAfter);
+  return bridgeRequest(`/customers?${params.toString()}`);
 }
 
 export async function getBridgeCustomer(customerId) {
