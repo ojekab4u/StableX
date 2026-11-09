@@ -48,7 +48,7 @@ const rpcUrl =
 const connection = new Connection(rpcUrl, "confirmed");
 
 app.use(express.json({
-  limit: "10kb",
+  limit: "12mb",
   verify: (req, _res, buffer) => { req.rawBody = buffer.toString("utf8"); },
 }));
 app.use(express.static(path.join(__dirname, "public")));
