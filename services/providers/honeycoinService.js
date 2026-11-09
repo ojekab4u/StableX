@@ -28,8 +28,9 @@ export function getHoneycoinReadiness() {
       : "AWAITING_PROVIDER_CREDENTIALS",
     environment: process.env.HONEYCOIN_ENVIRONMENT || "Sandbox",
     missingVariables,
-    capabilities: ["READ_ONLY_FX_RATE_PREVIEW"],
+    capabilities: ["READ_ONLY_FX_RATE_PREVIEW", "NGN_USDC_ONRAMP_ORDER_ADAPTER", "TRANSACTION_STATUS_LOOKUP"],
     executionEnabled: false,
+    executionNote: "Order adapter is implemented. Actual execution remains subject to Honeycoin account permissions and a successful sandbox order test.",
   };
 }
 
@@ -94,4 +95,124 @@ export async function getHoneycoinRate({ from, to, amount }) {
     executionEnabled: false,
     note: "Read-only FX preview. This is not a reserved quote and does not initiate a payment or crypto settlement.",
   };
+}
+
+
+function getCryptoBaseUrl() {
+  const configured = String(process.env.HONEYCOIN_CRYPTO_BASE_URL || "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const sandbox = String(process.env.HONEYCOIN_ENVIRONMENT || "Sandbox").toLowerCase() !== "production";
+  return sandbox
+    ? "https://crypto.honeycoin.app/api/sandbox"
+    : "https://crypto.honeycoin.app/api";
+}
+
+async function honeycoinJson(url, options = {}) {
+  const token = await getBearerToken();
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    const error = new Error(payload.message || `Honeycoin request failed with HTTP ${response.status}.`);
+    error.statusCode = response.status === 400 ? 400 : response.status === 401 || response.status === 403 ? 502 : 503;
+    throw error;
+  }
+  return payload;
+}
+
+// Creates an actual Honeycoin on-ramp order. This is an external provider action.
+export async function createHoneycoinOnrampOrder({
+  senderAmount, senderCurrency, receiverCurrency, chain, receiverAddress,
+  method, email, externalReference,
+}) {
+  const body = {
+    senderAmount: Number(senderAmount),
+    senderCurrency,
+    receiverCurrency,
+    chain,
+    receiverAddress,
+    method,
+    chargeDetails: { email },
+    externalReference,
+  };
+  const payload = await honeycoinJson(`${getCryptoBaseUrl()}/minting/onramp`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!payload.data?.transactionId) {
+    const error = new Error("Honeycoin accepted no identifiable transaction ID; the order cannot be safely reconciled.");
+    error.statusCode = 502;
+    throw error;
+  }
+  return {
+    transactionId: String(payload.data.transactionId),
+    stepRequired: payload.data.stepRequired || null,
+    redirectUrl: payload.data.redirectUrl || payload.data.paymentSdkLink || null,
+    status: payload.data.status || "PENDING",
+    chargeStatus: payload.data.chargeStatus || "pending",
+    virtualAccount: payload.data.virtualAccount || null,
+    providerData: payload.data,
+  };
+}
+
+// Reads the provider's canonical transaction record; never trusts browser-supplied status.
+export async function getHoneycoinWebhookDeliveries(reference) {
+  if (typeof reference !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(reference)) {
+    const error = new Error("Invalid Honeycoin webhook reference.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const url = new URL(`${getBaseUrl()}/webhooks`);
+  url.searchParams.set("reference", reference);
+  const payload = await honeycoinJson(url, { method: "GET" });
+  return payload.data ?? payload;
+}
+
+// Fetches one webhook delivery so diagnostics can distinguish queued from delivered events.
+export async function getHoneycoinWebhookDelivery(webhookId) {
+  // The webhook list currently exposes a composite display value:
+  // "<webhook-id> - <event> - <created-at>". The detail endpoint expects
+  // the actual ID, which is the first segment.
+  if (typeof webhookId !== "string") {
+    const error = new Error("Invalid Honeycoin webhook ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedId = webhookId.split(" - ")[0].trim();
+  if (
+    normalizedId.length < 6
+    || normalizedId.length > 128
+    || !/^[A-Za-z0-9_-]+$/.test(normalizedId)
+  ) {
+    const error = new Error("Invalid Honeycoin webhook ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const payload = await honeycoinJson(
+    `${getBaseUrl()}/webhook/${encodeURIComponent(normalizedId)}`,
+    { method: "GET" },
+  );
+  return payload.data ?? payload;
+}
+
+export async function getHoneycoinTransaction(transactionId) {
+  if (typeof transactionId !== "string" || !/^[A-Za-z0-9_-]{6,128}$/.test(transactionId)) {
+    const error = new Error("Invalid Honeycoin transaction ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const payload = await honeycoinJson(`${getBaseUrl()}/transactions/${encodeURIComponent(transactionId)}`, {
+    method: "GET",
+  });
+  return payload.data ?? payload;
 }

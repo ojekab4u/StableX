@@ -1,0 +1,29 @@
+name: Node.js tests
+
+on:
+  push:
+    branches:
+      - feature/honeycoin-onramp-orders
+  pull_request:
+    branches:
+      - feature/customer-routing-interface
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: node --check services/providers/honeycoinService.js
+      - run: node --check services/providerOrderService.js
+      - run: node --check repositories/providerOrderRepository.js
+      - run: node --check routes/transferRoutes.js
+      - run: node --check db/initialize.js
+      - name: Check Honeycoin frontend script syntax
+        run: node --input-type=module -e "import fs from 'node:fs'; const html = fs.readFileSync('public/honeycoin-onramp.html', 'utf8'); const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)?.[1]; if (!script) throw new Error('Frontend script not found'); new Function(script);"
+      - run: npm test
