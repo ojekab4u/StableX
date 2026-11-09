@@ -12,7 +12,14 @@ import {
 } from "../services/providers/bridgeService.js";
 
 export const bridgeRouter = Router();
-const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
+const fail = (res, e) => res.status(e.statusCode || 503).json({
+  error: e.message,
+  ...(e.providerStatus ? { provider: "Bridge", providerStatus: e.providerStatus } : {}),
+  ...(e.providerResponse ? {
+    providerDetails: e.providerResponse.errors || e.providerResponse.validation_errors || e.providerResponse.message || e.providerResponse.error || null,
+    providerRequestId: e.providerResponse.request_id || e.providerResponse.requestId || null,
+  } : {}),
+});
 
 bridgeRouter.get("/readiness", (_req, res) => res.json(getBridgeReadiness()));
 
