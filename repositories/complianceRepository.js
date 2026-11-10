@@ -64,7 +64,7 @@ export async function updateComplianceProviderStatus({ caseId, providerStatus, s
   try {
     await client.query("BEGIN");
     const current = await client.query(
-      "SELECT status, provider_status FROM compliance_cases WHERE case_id=$1 FOR UPDATE",
+      "SELECT status, provider_status FROM compliance_cases WHERE case_id=$1::uuid FOR UPDATE",
       [caseId]
     );
     if (!current.rowCount) {
@@ -83,7 +83,7 @@ export async function updateComplianceProviderStatus({ caseId, providerStatus, s
            decision_reason=CASE WHEN $1 IN ('APPROVED','REJECTED') THEN $3 ELSE decision_reason END,
            decided_at=CASE WHEN $1 IN ('APPROVED','REJECTED') THEN NOW() ELSE decided_at END,
            updated_at=NOW()
-       WHERE case_id=$4
+       WHERE case_id=$4::uuid
        RETURNING case_id AS "caseId", status, provider_status AS "providerStatus",
                  decided_at AS "decidedAt", updated_at AS "updatedAt"`,
       [status, providerStatus, `VOVE provider outcome: ${providerStatus}`, caseId]
@@ -91,7 +91,7 @@ export async function updateComplianceProviderStatus({ caseId, providerStatus, s
     if (previous !== status || current.rows[0].provider_status !== providerStatus) {
       await client.query(
         `INSERT INTO audit_logs(actor_type, actor_id, action, resource_type, resource_id, metadata)
-         VALUES('PROVIDER','VOVE_ID','COMPLIANCE_PROVIDER_STATUS_UPDATED','COMPLIANCE_CASE',$1,$2::jsonb)`,
+         VALUES('PROVIDER','VOVE_ID','COMPLIANCE_PROVIDER_STATUS_UPDATED','COMPLIANCE_CASE',$1::uuid,$2::jsonb)`,
         [caseId, JSON.stringify({ from: previous, to: status, providerStatus, eventType })]
       );
     }

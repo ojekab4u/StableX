@@ -38,7 +38,12 @@ function saveToken(token) {
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+    console.log(`[StableX API] ${options.method || "GET"} ${path} — token sent (${token.slice(0, 8)}...)`);
+  } else {
+    console.log(`[StableX API] ${options.method || "GET"} ${path} — NO TOKEN`);
+  }
   const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {

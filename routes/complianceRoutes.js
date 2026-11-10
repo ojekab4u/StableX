@@ -11,8 +11,10 @@ import {
   processVoveWebhook,
 } from "../services/complianceService.js";
 import { verifyVoveWebhookSignature } from "../services/voveKybService.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth, bearerTokenFrom } from "../middleware/requireAuth.js";
 import { submitSelfServeComplianceCase } from "../services/complianceService.js";
+import { sha256Hex } from "../services/accountService.js";
+import { findLiveSessionByToken } from "../repositories/accountRepository.js";
 
 export const complianceRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
@@ -76,12 +78,25 @@ complianceRouter.get("/cases/all", async (req, res) => {
 
 complianceRouter.post("/cases/:caseId/refresh", async (req, res) => {
   try {
-    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
-    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
-      return res.status(401).json({ error: "Unauthorized operator action." });
+    const token = bearerTokenFrom(req);
+    if (!token) {
+      return res.status(401).json({ error: "No session token provided. Sign in again." });
+    }
+    const resolved = await findLiveSessionByToken(sha256Hex(token));
+    if (!resolved) {
+      return res.status(401).json({ error: "Session is invalid or expired. Sign in again." });
+    }
+    const caseRecord = await getComplianceCase(req.params.caseId);
+    if (!caseRecord) {
+      return res.status(404).json({ error: "Compliance case not found." });
+    }
+    if (caseRecord.customerId !== resolved.accountId) {
+      return res.status(403).json({ error: "You can only refresh your own compliance case." });
     }
     return res.json(await refreshVoveComplianceCase(req.params.caseId));
   } catch (e) {
+    console.error("[compliance refresh] error:", e.message);
+    console.error("[compliance refresh] stack:", e.stack?.split("\n").slice(0, 3));
     return fail(res, e);
   }
 });

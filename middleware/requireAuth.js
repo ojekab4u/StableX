@@ -11,10 +11,12 @@ function bearerToken(req) {
 export async function requireAuth(req, res, next) {
   try {
     const token = bearerToken(req);
+    console.log(`[requireAuth] path=${req.path} token=${token ? token.slice(0, 8) + "..." : "NULL"}`);
     if (!token) {
-      return res.status(401).json({ error: "Provide a Bearer session token from POST /api/auth/login." });
+      return res.status(401).json({ error: "No session token provided. Sign in again." });
     }
     const resolved = await getAccountBySessionToken(token);
+    console.log(`[requireAuth] resolved=${resolved ? resolved.account.accountId : "NULL"}`);
     if (!resolved) {
       return res.status(401).json({ error: "Session is invalid or expired. Sign in again." });
     }
@@ -23,6 +25,7 @@ export async function requireAuth(req, res, next) {
     req.authToken = token;
     return next();
   } catch (error) {
+    console.log(`[requireAuth] error=${error.message}`);
     return res.status(error.statusCode || 503).json({ error: error.message });
   }
 }
