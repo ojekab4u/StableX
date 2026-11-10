@@ -239,6 +239,10 @@ export async function refreshVoveComplianceCase(caseId) {
       refreshed: false,
       reason: "This case already has a final StableX compliance decision.",
       case: caseRecord,
+      providerStatus: caseRecord.providerStatus || "UNKNOWN",
+      complianceStatus: caseRecord.status,
+      providerStatusField: null,
+      providerResponseKeys: [],
     };
   }
   const refId = caseRecord.providerReference || caseRecord.screening?.voveRefId;
@@ -253,7 +257,7 @@ export async function refreshVoveComplianceCase(caseId) {
     error.statusCode = 502;
     throw error;
   }
-  const outcome = normalizeVoveOutcome(null, providerResult);
+  const outcome = normalizeVoveOutcome(null, providerResult, { subjectType: caseRecord.subjectType });
   const updated = await updateComplianceProviderStatus({
     caseId,
     providerStatus: outcome.providerStatus,
@@ -267,7 +271,9 @@ export async function refreshVoveComplianceCase(caseId) {
     subjectType: caseRecord.subjectType,
     providerStatus: updated.providerStatus,
     complianceStatus: updated.status,
-    providerUpdatedAt: providerResult.updatedAt || null,
+    providerStatusField: outcome.statusField,
+    providerResponseKeys: Object.keys(providerResult || {}),
+    providerUpdatedAt: providerResult.updatedAt || providerResult.updated_at || null,
     // Deliberately omit document, biometric, and registry PII from this response.
   };
 }
@@ -329,34 +335,72 @@ export async function getCustomerGateStatus(customerId) {
   return { customerId, gate: evaluateGate(cases), caseCount: cases.length };
 }
 
-export function normalizeVoveOutcome(event, result) {
+function extractVoveStatus(result) {
+  const candidates = [
+    ["status", result?.status],
+    ["verificationStatus", result?.verificationStatus],
+    ["verification_status", result?.verification_status],
+    ["data.status", result?.data?.status],
+    ["data.verificationStatus", result?.data?.verificationStatus],
+    ["data.verification_status", result?.data?.verification_status],
+    ["user.status", result?.user?.status],
+    ["user.verificationStatus", result?.user?.verificationStatus],
+    ["data.user.status", result?.data?.user?.status],
+    ["data.user.verificationStatus", result?.data?.user?.verificationStatus],
+    ["verification.status", result?.verification?.status],
+    ["data.verification.status", result?.data?.verification?.status],
+    ["result.status", result?.result?.status],
+    ["kybCase.status", result?.kybCase?.status],
+    ["data.kybCase.status", result?.data?.kybCase?.status],
+    ["data[0].status", Array.isArray(result?.data) ? result.data[0]?.status : undefined],
+  ];
+  const found = candidates.find(([, value]) =>
+    typeof value === "string" && value.trim()
+  );
+  return found
+    ? { value: found[1], field: found[0] }
+    : { value: undefined, field: null };
+}
+
+export function normalizeVoveOutcome(event, result, { subjectType = "INDIVIDUAL" } = {}) {
   const data = event?.data || {};
   const eventType = String(event?.type || "").toLowerCase();
-  const rawStatus = result?.status || result?.data?.status || result?.user?.status ||
-    data.status || data.case?.status || data.session?.status ||
+  const extracted = extractVoveStatus(result);
+  const eventStatus = data.status || data.case?.status || data.session?.status;
+  const rawStatus = extracted.value || eventStatus ||
     (eventType.endsWith(".rejected") ? "REJECTED" :
       eventType.endsWith(".completed") ? "COMPLETED" : "UNKNOWN");
   const providerStatus = String(rawStatus).trim().toUpperCase();
+  const statusField = extracted.field || (eventStatus ? "event.data.status" :
+    eventType.endsWith(".rejected") || eventType.endsWith(".completed") ? "event.type" : null);
 
-  // VOVE's documented "successful" result means verification is complete and
-  // approved. COMPLETED is VOVE's own word for "Verification approved" on both
-  // KYC and KYB hosted flows, so it satisfies the customer compliance gate.
-  // VERIFIED/APPROVED/SUCCESSFUL additionally require a refId for correlation;
-  // COMPLETED is inferred from the event type itself.
-  if (
-    providerStatus === "COMPLETED" ||
-    (["VERIFIED", "APPROVED", "SUCCESSFUL"].includes(providerStatus) && result?.refId)
-  ) {
-    return { providerStatus, status: "APPROVED" };
+  if (providerStatus === "REJECTED") {
+    return { providerStatus, status: "REJECTED", statusField };
   }
-  if (providerStatus === "REJECTED") return { providerStatus, status: "REJECTED" };
-  if (["IN_REVIEW", "SUSPECTED", "PENDING_REVIEW"].includes(providerStatus)) {
-    return { providerStatus, status: "IN_REVIEW" };
+
+  // VOVE documents KYB COMPLETED as ready for the customer's internal review,
+  // not as an automatic business-account approval. Keep all BUSINESS cases
+  // behind StableX's own review/decision gate.
+  if (subjectType === "BUSINESS" &&
+      ["COMPLETED", "SUCCESSFUL", "VERIFIED", "APPROVED"].includes(providerStatus)) {
+    return { providerStatus, status: "IN_REVIEW", statusField };
   }
-  if (["IN_PROGRESS", "PENDING", "NOT_STARTED", "UNKNOWN"].includes(providerStatus)) {
-    return { providerStatus, status: "SUBMITTED" };
+
+  // For an individual KYC case, a provider-fetched SUCCESSFUL / VERIFIED /
+  // APPROVED result is authoritative. The lookup itself is scoped by our saved
+  // refId, so the response does not also need to echo refId.
+  if (subjectType !== "BUSINESS" &&
+      ["SUCCESSFUL", "VERIFIED", "APPROVED"].includes(providerStatus)) {
+    return { providerStatus, status: "APPROVED", statusField };
   }
-  return { providerStatus, status: "SUBMITTED" };
+
+  if (["COMPLETED", "IN_REVIEW", "SUSPECTED", "PENDING_REVIEW"].includes(providerStatus)) {
+    return { providerStatus, status: "IN_REVIEW", statusField };
+  }
+  if (["IN_PROGRESS", "PENDING", "NOT_STARTED", "UNKNOWN", "CANCELED", "CANCELLED", "MAX_ATTEMPTS"].includes(providerStatus)) {
+    return { providerStatus, status: "SUBMITTED", statusField };
+  }
+  return { providerStatus, status: "SUBMITTED", statusField };
 }
 
 export async function processVoveWebhook(event) {
@@ -374,7 +418,7 @@ export async function processVoveWebhook(event) {
   // Fetch the latest provider record rather than trusting an unsigned status field
   // or treating a hosted-flow completion as a compliance approval.
   const result = await getVoveVerificationResult(String(refId), { subjectType: caseRecord.subjectType });
-  const outcome = normalizeVoveOutcome(event, result);
+  const outcome = normalizeVoveOutcome(event, result, { subjectType: caseRecord.subjectType });
   const updated = await updateComplianceProviderStatus({
     caseId: caseRecord.caseId,
     providerStatus: outcome.providerStatus,

@@ -126,12 +126,16 @@ complianceRouter.post("/cases/:caseId/decision", async (req, res) => {
 
 complianceRouter.post("/webhook", async (req, res) => {
   try {
-    const signature = req.get("svix-signature");
+    const svixHeaders = {
+      id: req.get("svix-id"),
+      timestamp: req.get("svix-timestamp"),
+      signature: req.get("svix-signature"),
+    };
     const secret = process.env.VOVE_WEBHOOK_SECRET || process.env.VOVE_ID_WEBHOOK_SECRET;
-    if (!req.rawBody || !signature || !secret) {
-      return res.status(400).json({ error: "Missing VOVE webhook signature, signing secret or raw request body." });
+    if (!req.rawBody || !svixHeaders.id || !svixHeaders.timestamp || !svixHeaders.signature || !secret) {
+      return res.status(400).json({ error: "Missing Svix webhook headers, signing secret or raw request body." });
     }
-    if (!verifyVoveWebhookSignature(req.rawBody, signature, secret)) {
+    if (!verifyVoveWebhookSignature(req.rawBody, svixHeaders, secret)) {
       return res.status(401).json({ error: "Invalid VOVE webhook signature." });
     }
 

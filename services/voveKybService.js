@@ -190,10 +190,42 @@ export async function getVoveVerificationResult(refId, { subjectType = "INDIVIDU
   return subjectType === "BUSINESS" ? getVoveKybResult(refId) : getVoveKycResult(refId);
 }
 
-export function verifyVoveWebhookSignature(rawBody, signature, secret) {
-  if (!rawBody || !signature || !secret) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
-  const received = Buffer.from(signature);
-  const calculated = Buffer.from(expected);
-  return received.length === calculated.length && timingSafeEqual(received, calculated);
+export function verifyVoveWebhookSignature(
+  rawBody,
+  { id, timestamp, signature } = {},
+  secret,
+  { now = Date.now(), toleranceSeconds = 300 } = {}
+) {
+  if (!rawBody || !id || !timestamp || !signature || !secret) return false;
+  if (!secret.startsWith("whsec_")) return false;
+
+  const timestampNumber = Number(timestamp);
+  if (!Number.isInteger(timestampNumber) ||
+      Math.abs(Math.floor(now / 1000) - timestampNumber) > toleranceSeconds) {
+    return false;
+  }
+
+  let key;
+  try {
+    key = Buffer.from(secret.slice("whsec_".length), "base64");
+  } catch {
+    return false;
+  }
+  if (!key.length) return false;
+
+  const signedContent = `${id}.${timestamp}.${rawBody}`;
+  const expected = createHmac("sha256", key).update(signedContent).digest();
+  const candidates = String(signature).split(" ").filter(Boolean);
+
+  return candidates.some((candidate) => {
+    const [version, encoded] = candidate.split(",", 2);
+    if (version !== "v1" || !encoded) return false;
+    let received;
+    try {
+      received = Buffer.from(encoded, "base64");
+    } catch {
+      return false;
+    }
+    return received.length === expected.length && timingSafeEqual(received, expected);
+  });
 }
