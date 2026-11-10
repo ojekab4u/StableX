@@ -239,6 +239,10 @@ export async function refreshVoveComplianceCase(caseId) {
       refreshed: false,
       reason: "This case already has a final StableX compliance decision.",
       case: caseRecord,
+      providerStatus: caseRecord.providerStatus || "UNKNOWN",
+      complianceStatus: caseRecord.status,
+      providerStatusField: null,
+      providerResponseKeys: [],
     };
   }
   const refId = caseRecord.providerReference || caseRecord.screening?.voveRefId;
