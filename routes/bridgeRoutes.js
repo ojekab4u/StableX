@@ -12,6 +12,7 @@ import {
   requestBridgeTosLink,
   createBridgeVirtualAccount,
   listBridgeVirtualAccounts,
+  listBridgeWallets,
 } from "../services/providers/bridgeService.js";
 
 export const bridgeRouter = Router();
@@ -478,6 +479,59 @@ bridgeRouter.post("/customers/kyc-link", async (req, res) => {
 });
 
 
+
+// Read-only Bridge custodial wallet inventory. No wallet is created by this endpoint.
+bridgeRouter.get("/wallets", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const customerId = String(req.query.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "No Bridge customer is linked to this StableX customer." });
+    }
+    if (onboarding.baseEndorsementStatus !== "approved") {
+      return res.status(409).json({
+        error: "Bridge Base endorsement approval is required before wallet inventory can be checked.",
+        baseEndorsementStatus: onboarding.baseEndorsementStatus || null,
+      });
+    }
+    const result = await listBridgeWallets(onboarding.providerCustomerId);
+    const wallets = Array.isArray(result) ? result
+      : Array.isArray(result.data) ? result.data
+      : Array.isArray(result.wallets) ? result.wallets : null;
+    if (!wallets) {
+      return res.status(502).json({
+        error: "Bridge wallet-list response did not contain a recognized wallet array.",
+        responseKeys: Object.keys(result || {}),
+        walletInventoryChecked: false,
+      });
+    }
+    return res.json({
+      provider: "Bridge",
+      environment: getBridgeReadiness().environment,
+      customerId,
+      bridgeCustomerId: onboarding.providerCustomerId,
+      walletCount: wallets.length,
+      wallets: wallets.map((wallet) => ({
+        id: wallet.id || wallet.wallet_id || null,
+        chain: wallet.chain || null,
+        address: wallet.address || null,
+        createdAt: wallet.created_at || wallet.createdAt || null,
+        balances: Array.isArray(wallet.balances) ? wallet.balances : [],
+      })),
+      walletInventoryChecked: true,
+      walletCreated: false,
+      fundsMoved: false,
+      nextStep: "If no wallet exists, verify Bridge Sandbox wallet provisioning entitlement and supported chain values before requesting wallet creation.",
+    });
+  } catch (e) { return fail(res, e); }
+});
 
 // Sandbox virtual accounts return dummy deposit instructions. This is an
 // operator-only test action; it does not create a real bank account or move funds.
