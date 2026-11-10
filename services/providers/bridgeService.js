@@ -206,6 +206,13 @@ export async function createBridgeVirtualAccount({ bridgeCustomerId, currency, d
   });
 }
 
+// Read-only listing of custodial Bridge wallets already provisioned for a customer.
+export async function listBridgeWallets(bridgeCustomerId) {
+  const customerId = String(bridgeCustomerId || "").trim();
+  if (!customerId) throw Object.assign(new Error("A linked Bridge customer is required."), { statusCode: 400 });
+  return bridgeRequest(`/customers/${encodeURIComponent(customerId)}/wallets`);
+}
+
 export async function listBridgeVirtualAccounts(bridgeCustomerId) {
   const customerId = String(bridgeCustomerId || "").trim();
   if (!customerId) throw Object.assign(new Error("A linked Bridge customer is required."), { statusCode: 400 });

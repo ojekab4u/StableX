@@ -188,26 +188,45 @@ const bridgeHeaders = (idempotencyKey) => ({
 async function refreshBridgeOnboarding() {
   const id = customerId();
   if (!id) return;
-  bridgeMessage("Loading Bridge onboarding…");
+  bridgeMessage("Loading saved Bridge onboarding and endorsement status…");
   try {
     const data = await api(`/api/bridge/customers/onboarding?customerId=${encodeURIComponent(id)}`);
     bridgeOnboarding = data.onboarding || null;
     const providerId = bridgeOnboarding?.providerCustomerId;
-    let statusLine = [
+    const endorsements = bridgeOnboarding?.endorsements || [];
+    const endorsementSummary = endorsements.map(x => `${String(x.name || "").toUpperCase()}: ${String(x.status || "unknown").toUpperCase()}`).join(", ");
+    const statusLine = [
       `StableX customer: ${id}`,
       `Bridge customer: ${providerId || "Not created"}`,
       `ToS accepted: ${bridgeOnboarding?.signedAgreementId ? "Yes" : "No"}`,
-      `Onboarding: ${bridgeOnboarding?.onboardingStatus || "Not started"}`,
+      `Bridge onboarding: ${bridgeOnboarding?.onboardingStatus || "Not started"}`,
+      `Bridge customer status: ${String(bridgeOnboarding?.bridgeStatus || "Not synchronized").toUpperCase()}`,
+      `Endorsements: ${endorsementSummary || "Not synchronized yet"}`,
+      `Last sync: ${bridgeOnboarding?.statusCheckedAt ? new Date(bridgeOnboarding.statusCheckedAt).toLocaleString() : "Never"}`,
     ].join(" · ");
-    if (providerId) {
-      const profile = await api(`/api/bridge/customers/${encodeURIComponent(providerId)}`);
-      const c = profile.customer || {};
-      statusLine += ` · Bridge status: ${c.status || "Unknown"} · Endorsements: ${(c.endorsements || []).map(x => typeof x === "string" ? x : (x.name || x.status || JSON.stringify(x))).join(", ") || "Not returned"}`;
-    }
     bridgeMessage(statusLine);
     $("bridge-signed-agreement").value = bridgeOnboarding?.signedAgreementId || $("bridge-signed-agreement").value;
   } catch (e) {
     bridgeMessage(e.message, true);
+  }
+}
+async function syncBridgeStatus() {
+  try {
+    if (!bridgeToken()) throw new Error("Enter the StableX operator token first.");
+    const button = $("bridge-refresh");
+    button.disabled = true;
+    bridgeMessage("Retrieving the latest Bridge customer and endorsement statuses…");
+    const result = await api("/api/bridge/customers/status/refresh", {
+      method: "POST",
+      headers: bridgeHeaders(),
+      body: JSON.stringify({customerId: customerId()}),
+    });
+    await refreshBridgeOnboarding();
+    bridgeMessage(`Bridge status synchronized. Base: ${String(result.bridgeApproval?.base || "not returned").toUpperCase()} · SEPA: ${String(result.bridgeApproval?.sepa || "not returned").toUpperCase()}. StableX VOVE compliance remains separate.`);
+  } catch (e) {
+    bridgeMessage(e.message, true);
+  } finally {
+    $("bridge-refresh").disabled = false;
   }
 }
 $("bridge-create-tos").addEventListener("click", async () => {
@@ -308,4 +327,4 @@ $("bridge-kyc-link").addEventListener("click", async () => {
     bridgeMessage("Hosted KYC link created. Complete the Bridge flow, then refresh Bridge status.");
   } catch(e) { bridgeMessage(e.message, true); }
 });
-$("bridge-refresh").addEventListener("click", refreshBridgeOnboarding);
+$("bridge-refresh").addEventListener("click", syncBridgeStatus);

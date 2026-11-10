@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getCustomerGateStatus } from "../services/complianceService.js";
-import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding, saveBridgeCustomerId } from "../repositories/providerCustomerRepository.js";
+import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding, saveBridgeCustomerId, saveBridgeCustomerStatus } from "../repositories/providerCustomerRepository.js";
 import {
   getBridgeReadiness,
   getBridgeRate,
@@ -12,6 +12,7 @@ import {
   requestBridgeTosLink,
   createBridgeVirtualAccount,
   listBridgeVirtualAccounts,
+  listBridgeWallets,
 } from "../services/providers/bridgeService.js";
 
 export const bridgeRouter = Router();
@@ -122,6 +123,93 @@ bridgeRouter.get("/customers/onboarding", async (req, res) => {
       provider: "Bridge",
       customerId,
       onboarding: await getBridgeOnboarding(customerId),
+    });
+  } catch (e) { return fail(res, e); }
+});
+
+// Reconcile Bridge's authoritative customer and endorsement statuses into StableX.
+bridgeRouter.post("/customers/status/refresh", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const customerId = String(req.body?.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "No Bridge customer is linked to this StableX customer." });
+    }
+
+    const response = await getBridgeCustomer(onboarding.providerCustomerId);
+    const item = response.data || response;
+    const returnedId = item.id || item.customer_id || item.customerId;
+    const returnedReference = item.client_reference_id || item.clientReferenceId;
+    if (returnedId && returnedId !== onboarding.providerCustomerId) {
+      return res.status(502).json({ error: "Bridge returned a different customer ID; status was not saved." });
+    }
+    if (returnedReference && returnedReference !== customerId) {
+      return res.status(409).json({ error: "Bridge customer reference does not match this StableX customer; status was not saved." });
+    }
+
+    const rawEndorsements = Array.isArray(item.endorsements) ? item.endorsements : [];
+    const endorsements = rawEndorsements.map((entry) => ({
+      name: String(entry?.name || "").toLowerCase(),
+      status: String(entry?.status || "unknown").toLowerCase(),
+      requirements: {
+        complete: Array.isArray(entry?.requirements?.complete) ? entry.requirements.complete : [],
+        pending: Array.isArray(entry?.requirements?.pending) ? entry.requirements.pending : [],
+        missing: Array.isArray(entry?.requirements?.missing) ? entry.requirements.missing : [],
+        issues: Array.isArray(entry?.requirements?.issues) ? entry.requirements.issues : [],
+      },
+    })).filter((entry) => entry.name);
+
+    const endorsementStatus = (name) =>
+      endorsements.find((entry) => entry.name === name)?.status || null;
+    const baseEndorsementStatus = endorsementStatus("base");
+    const sepaEndorsementStatus = endorsementStatus("sepa");
+    const bridgeStatus = String(item.status || "unknown").toLowerCase();
+
+    let onboardingStatus = "CUSTOMER_CREATED";
+    if (baseEndorsementStatus === "approved" && sepaEndorsementStatus === "approved") {
+      onboardingStatus = "BASE_AND_SEPA_APPROVED";
+    } else if (baseEndorsementStatus === "approved") {
+      onboardingStatus = "BASE_APPROVED";
+    } else if (sepaEndorsementStatus === "approved") {
+      onboardingStatus = "SEPA_APPROVED";
+    } else if (baseEndorsementStatus === "rejected") {
+      onboardingStatus = "BASE_REJECTED";
+    } else if (baseEndorsementStatus && ["pending", "in_review", "under_review"].includes(baseEndorsementStatus)) {
+      onboardingStatus = "KYC_PENDING";
+    }
+
+    const saved = await saveBridgeCustomerStatus({
+      customerId,
+      providerCustomerId: onboarding.providerCustomerId,
+      bridgeStatus,
+      endorsements,
+      baseEndorsementStatus,
+      sepaEndorsementStatus,
+      onboardingStatus,
+    });
+    if (!saved) {
+      return res.status(409).json({ error: "Bridge status was retrieved but the linked customer record changed before it could be saved." });
+    }
+
+    return res.json({
+      provider: "Bridge",
+      customerId,
+      onboarding: saved,
+      bridgeApproval: {
+        base: baseEndorsementStatus,
+        sepa: sepaEndorsementStatus,
+      },
+      statusSynchronized: true,
+      stablexComplianceGateChanged: false,
+      fundsMoved: false,
+      nextStep: "Bridge endorsement status is saved. StableX VOVE compliance remains a separate gate; wallet provisioning requires its own provider capability and account-permission checks.",
     });
   } catch (e) { return fail(res, e); }
 });
@@ -391,6 +479,59 @@ bridgeRouter.post("/customers/kyc-link", async (req, res) => {
 });
 
 
+
+// Read-only Bridge custodial wallet inventory. No wallet is created by this endpoint.
+bridgeRouter.get("/wallets", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    const customerId = String(req.query.customerId || "").trim();
+    if (!customerId || customerId.length > 128) {
+      return res.status(400).json({ error: "A valid StableX customerId is required." });
+    }
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "No Bridge customer is linked to this StableX customer." });
+    }
+    if (onboarding.baseEndorsementStatus !== "approved") {
+      return res.status(409).json({
+        error: "Bridge Base endorsement approval is required before wallet inventory can be checked.",
+        baseEndorsementStatus: onboarding.baseEndorsementStatus || null,
+      });
+    }
+    const result = await listBridgeWallets(onboarding.providerCustomerId);
+    const wallets = Array.isArray(result) ? result
+      : Array.isArray(result.data) ? result.data
+      : Array.isArray(result.wallets) ? result.wallets : null;
+    if (!wallets) {
+      return res.status(502).json({
+        error: "Bridge wallet-list response did not contain a recognized wallet array.",
+        responseKeys: Object.keys(result || {}),
+        walletInventoryChecked: false,
+      });
+    }
+    return res.json({
+      provider: "Bridge",
+      environment: getBridgeReadiness().environment,
+      customerId,
+      bridgeCustomerId: onboarding.providerCustomerId,
+      walletCount: wallets.length,
+      wallets: wallets.map((wallet) => ({
+        id: wallet.id || wallet.wallet_id || null,
+        chain: wallet.chain || null,
+        address: wallet.address || null,
+        createdAt: wallet.created_at || wallet.createdAt || null,
+        balances: Array.isArray(wallet.balances) ? wallet.balances : [],
+      })),
+      walletInventoryChecked: true,
+      walletCreated: false,
+      fundsMoved: false,
+      nextStep: "If no wallet exists, verify Bridge Sandbox wallet provisioning entitlement and supported chain values before requesting wallet creation.",
+    });
+  } catch (e) { return fail(res, e); }
+});
 
 // Sandbox virtual accounts return dummy deposit instructions. This is an
 // operator-only test action; it does not create a real bank account or move funds.

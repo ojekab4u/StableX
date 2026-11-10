@@ -57,13 +57,48 @@ export async function saveBridgeCustomerId({ customerId, providerCustomerId, sta
   return result.rows[0] || null;
 }
 
+export async function saveBridgeCustomerStatus({
+  customerId, providerCustomerId, bridgeStatus, endorsements,
+  baseEndorsementStatus, sepaEndorsementStatus, onboardingStatus,
+}) {
+  const result = await getPool().query(
+    `UPDATE provider_customers
+     SET bridge_status=$1,
+         endorsements=$2::jsonb,
+         base_endorsement_status=$3,
+         sepa_endorsement_status=$4,
+         onboarding_status=$5,
+         status_checked_at=NOW(),
+         updated_at=NOW()
+     WHERE provider='Bridge' AND customer_id=$6 AND provider_customer_id=$7
+     RETURNING customer_id AS "customerId",
+       provider_customer_id AS "providerCustomerId",
+       onboarding_status AS "onboardingStatus",
+       bridge_status AS "bridgeStatus",
+       endorsements,
+       base_endorsement_status AS "baseEndorsementStatus",
+       sepa_endorsement_status AS "sepaEndorsementStatus",
+       status_checked_at AS "statusCheckedAt",
+       signed_agreement_id AS "signedAgreementId"`,
+    [bridgeStatus || null, JSON.stringify(endorsements || []),
+      baseEndorsementStatus || null, sepaEndorsementStatus || null,
+      onboardingStatus, customerId, providerCustomerId]
+  );
+  return result.rows[0] || null;
+}
+
 export async function getBridgeOnboarding(customerId) {
   const result = await getPool().query(
     `SELECT customer_id AS "customerId",
        provider_customer_id AS "providerCustomerId",
        onboarding_status AS "onboardingStatus",
        tos_url AS "tosUrl",
-       signed_agreement_id AS "signedAgreementId"
+       signed_agreement_id AS "signedAgreementId",
+       bridge_status AS "bridgeStatus",
+       endorsements,
+       base_endorsement_status AS "baseEndorsementStatus",
+       sepa_endorsement_status AS "sepaEndorsementStatus",
+       status_checked_at AS "statusCheckedAt"
      FROM provider_customers
      WHERE provider='Bridge' AND customer_id=$1 LIMIT 1`,
     [customerId]
