@@ -281,9 +281,8 @@ function renderComplianceView(session) {
   complianceCaseId = complianceGate?.caseId || null;
   complianceVerificationUrl = session?.verificationUrl || null;
 
-  // Always show the hosted VOVE link when there is a pending case, so the user
-  // can open it themselves (browsers block auto-popups). It persists across
-  // polls and page refreshes.
+  // Show the hosted VOVE link when the creation response still has it.
+  // The short-lived hosted token is not persisted in the session response.
   if (complianceCaseId && mode === "VOVE_HOSTED") {
     const box = $("compliance-result");
     box.replaceChildren();
@@ -346,7 +345,7 @@ $("form-compliance").addEventListener("submit", async (event) => {
       link.style.cssText = "display:block;margin-top:10px;padding:12px 24px;font-size:1rem;max-width:420px";
       const hint = document.createElement("p");
       hint.className = "hint";
-      hint.textContent = "Browsers block auto-popups, so please click the link above to open VOVE in a new tab. StableX will poll for approval every second once you return.";
+      hint.textContent = "Browsers block auto-popups, so please click the link above to open VOVE in a new tab. StableX will check the provider status periodically and you can refresh it manually.";
       card.append(link, hint);
       box.append(card);
     } else {
