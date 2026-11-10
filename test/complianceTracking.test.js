@@ -51,11 +51,18 @@ test("VOVE rejected outcome remains rejected", () => {
   );
 });
 
-test("VOVE webhook signature must match the exact raw body", () => {
-  const secret = "local-test-webhook-secret";
-  const body = '{"type":"kyc.case.completed","data":{"refId":"stablex_kyc_test"}}';
-  const signature = createHmac("sha256", secret).update(body).digest("base64");
-  assert.equal(verifyVoveWebhookSignature(body, signature, secret), true);
-  assert.equal(verifyVoveWebhookSignature(body + " ", signature, secret), false);
-  assert.equal(verifyVoveWebhookSignature(body, signature, ""), false);
+test("Svix webhook signature validates signed id, timestamp and exact raw body", () => {
+  const key = Buffer.from("local-test-svix-secret");
+  const secret = `whsec_${key.toString("base64")}`;
+  const body = '{"type":"user.verification.successful","refId":"stablex_kyc_test"}';
+  const headers = { id: "msg_test_123", timestamp: "1794277641" };
+  const signedContent = `${headers.id}.${headers.timestamp}.${body}`;
+  const signature = createHmac("sha256", key).update(signedContent).digest("base64");
+  const signedHeaders = { ...headers, signature: `v1,${signature}` };
+  const now = Number(headers.timestamp) * 1000;
+
+  assert.equal(verifyVoveWebhookSignature(body, signedHeaders, secret, { now }), true);
+  assert.equal(verifyVoveWebhookSignature(body + " ", signedHeaders, secret, { now }), false);
+  assert.equal(verifyVoveWebhookSignature(body, signedHeaders, secret, { now: now + 600_000 }), false);
+  assert.equal(verifyVoveWebhookSignature(body, signedHeaders, "wrong-secret", { now }), false);
 });
