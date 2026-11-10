@@ -17,7 +17,8 @@ let pollingDelayMs = 15000;
 
 function show(viewId) {
   views.forEach((id) => $(id).classList.toggle("hidden", id !== viewId));
-  $("session-footer").classList.toggle("hidden", viewId === "view-auth" || !getToken());
+  // The approved view has its own sign-out control; avoid rendering the shared one there.
+  $("session-footer").classList.toggle("hidden", viewId === "view-auth" || viewId === "view-done" || !getToken());
 }
 
 function showMessage(text, kind = "info") {
@@ -335,7 +336,8 @@ $("form-compliance").addEventListener("submit", async (event) => {
     if (result.verificationUrl) {
       const card = document.createElement("div");
       card.className = "msg show info";
-      card.textContent = result.gateMessage;
+      // Keep the hosted URL out of the visible message; the button below is the link.
+      card.textContent = "Your compliance case has been created. Open the hosted VOVE session below to complete verification.";
       const link = document.createElement("a");
       link.href = result.verificationUrl;
       link.target = "_blank";
