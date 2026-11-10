@@ -10,7 +10,10 @@ let registeredCodes = {};   // demo codes returned by registration, keyed by cha
 let pendingAccountId = null; // used before sign-in when verification is required
 let complianceCaseId = null; // KYC/KYB case id for polling refresh
 let complianceVerificationUrl = null; // hosted VOVE session URL for the user to open
-let pollingInterval = null;  // auto-refresh timer
+let pollingTimeout = null;   // one scheduled refresh; avoids overlapping requests
+let pollingActive = false;
+let pollingInFlight = false;
+let pollingDelayMs = 15000;
 
 function show(viewId) {
   views.forEach((id) => $(id).classList.toggle("hidden", id !== viewId));
@@ -288,17 +291,23 @@ function renderComplianceView(session) {
     card.className = "msg show info";
     const label = document.createElement("p");
     label.textContent = "1. Open the hosted VOVE verification session and complete identity checks:";
-    const link = document.createElement("a");
-    link.href = complianceVerificationUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = "Open VOVE verification session";
-    link.className = "auth-btn";
-    link.style.cssText = "display:inline-block;margin-top:8px;padding:12px 24px;font-size:1rem";
+    if (complianceVerificationUrl) {
+      const link = document.createElement("a");
+      link.href = complianceVerificationUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open VOVE verification session";
+      link.className = "auth-btn";
+      link.style.cssText = "display:inline-block;margin-top:8px;padding:12px 24px;font-size:1rem";
+      card.append(label, link);
+    } else {
+      label.textContent = "Your VOVE verification case is already registered. Refresh the status below; a new hosted link may be required if the previous session expired.";
+      card.append(label);
+    }
     const hint = document.createElement("p");
     hint.className = "hint";
-    hint.textContent = "2. StableX polls VOVE every second. When approved, you proceed to the dashboard.";
-    card.append(label, link, hint);
+    hint.textContent = "StableX checks VOVE periodically and displays the latest provider response below.";
+    card.append(hint);
     box.append(card);
     startPolling();
   } else if (complianceGate?.approved) {
@@ -355,38 +364,105 @@ $("form-compliance").addEventListener("submit", async (event) => {
   }
 });
 
-// Poll VOVE via StableX every second until the compliance gate flips to APPROVED
-// or REJECTED. Case id is captured from /api/auth/session (complianceGate.caseId)
-// after the case is created.
-function startPolling() {
-  stopPolling();
-  pollingInterval = setInterval(async () => {
-    if (!complianceCaseId) {
+function setComplianceSyncMessage(message, kind = "info") {
+  const element = $("compliance-sync-status");
+  if (!element) return;
+  element.textContent = message;
+  element.dataset.state = kind;
+}
+
+function scheduleCompliancePoll(delayMs = pollingDelayMs) {
+  if (!pollingActive || !complianceCaseId) return;
+  if (pollingTimeout) clearTimeout(pollingTimeout);
+  pollingTimeout = setTimeout(() => {
+    pollingTimeout = null;
+    refreshComplianceStatus({ silent: true });
+  }, delayMs);
+}
+
+// A single-flight refresh avoids overlapping provider requests. The customer
+// sees both the provider result and the StableX gate, plus actionable errors.
+async function refreshComplianceStatus({ silent = false } = {}) {
+  if (!complianceCaseId) {
+    setComplianceSyncMessage("No VOVE compliance case is linked to this account.", "warn");
+    return;
+  }
+  if (pollingInFlight) return;
+  if (pollingTimeout) {
+    clearTimeout(pollingTimeout);
+    pollingTimeout = null;
+  }
+  pollingInFlight = true;
+  try {
+    const refreshed = await api(
+      `/api/compliance/cases/${encodeURIComponent(complianceCaseId)}/refresh`,
+      { method: "POST" }
+    );
+    const session = await api("/api/auth/session");
+    const gate = session.complianceGate || {};
+    const providerStatus = refreshed.providerStatus || "UNKNOWN";
+    const stableStatus = gate.status || refreshed.complianceStatus || "PENDING";
+    const badge = $("compliance-badge");
+    badge.textContent = stableStatus;
+    badge.className = `badge ${gate.approved ? "ok" : stableStatus === "REJECTED" ? "bad" : "wait"}`;
+
+    const checkedAt = new Date().toLocaleString();
+    const field = refreshed.providerStatusField ? `; field: ${refreshed.providerStatusField}` : "";
+    const responseKeys = Array.isArray(refreshed.providerResponseKeys)
+      ? `; response keys: ${refreshed.providerResponseKeys.join(", ") || "(none)"}`
+      : "";
+    setComplianceSyncMessage(
+      `Last checked: ${checkedAt}. VOVE: ${providerStatus}${field}. StableX gate: ${stableStatus}${responseKeys}.`,
+      gate.approved ? "success" : stableStatus === "REJECTED" ? "error" : "info"
+    );
+
+    if (gate.approved) {
       stopPolling();
+      show("view-done");
       return;
     }
-    try {
-      await api(`/api/compliance/cases/${complianceCaseId}/refresh`, { method: "POST" });
-      const session = await api("/api/auth/session");
-      if (session.complianceGate?.approved) {
-        stopPolling();
-        show("view-done");
-      } else if (session.complianceGate?.status === "REJECTED") {
-        stopPolling();
-        showMessage("Verification was rejected. Please contact support.", "error");
-      }
-      // otherwise keep polling; gate is still PENDING or IN_REVIEW
-    } catch (error) {
-      console.error("[StableX compliance poll failed]", error.status, error.message);
-      if (error.status === 404 || error.status === 401) stopPolling();
+    if (stableStatus === "REJECTED") {
+      stopPolling();
+      showMessage("Verification was rejected. Please contact support.", "error");
+      return;
     }
-  }, 1000);
+    pollingDelayMs = 15000;
+    if (pollingActive) scheduleCompliancePoll();
+  } catch (error) {
+    console.error("[StableX compliance status refresh failed]", error.status, error.message);
+    setComplianceSyncMessage(
+      `Could not retrieve the latest VOVE status: ${error.message}. The saved StableX status has not been changed by this failed check.`,
+      "error"
+    );
+    if (error.status === 401 || error.status === 404) {
+      stopPolling();
+    } else if (pollingActive) {
+      pollingDelayMs = Math.min(Math.max(pollingDelayMs * 2, 30000), 120000);
+      scheduleCompliancePoll(pollingDelayMs);
+    }
+    if (!silent) showMessage(error.message, "error");
+  } finally {
+    pollingInFlight = false;
+  }
+}
+
+$("compliance-refresh").addEventListener("click", () => {
+  refreshComplianceStatus({ silent: false });
+});
+
+function startPolling() {
+  stopPolling();
+  pollingActive = true;
+  pollingDelayMs = 15000;
+  setComplianceSyncMessage("Checking VOVE for the latest verification result…", "info");
+  refreshComplianceStatus({ silent: true });
 }
 
 function stopPolling() {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-    pollingInterval = null;
+  pollingActive = false;
+  if (pollingTimeout) {
+    clearTimeout(pollingTimeout);
+    pollingTimeout = null;
   }
 }
 
