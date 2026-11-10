@@ -167,6 +167,11 @@ const schemaStatements = [
     UNIQUE(provider, customer_id),
     UNIQUE(provider, provider_customer_id)
   )`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS bridge_status VARCHAR(40)`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS endorsements JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS base_endorsement_status VARCHAR(40)`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS sepa_endorsement_status VARCHAR(40)`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS status_checked_at TIMESTAMPTZ`,
   `CREATE TABLE IF NOT EXISTS external_wallets (
     external_wallet_id UUID PRIMARY KEY,
     customer_id VARCHAR(128) NOT NULL,
