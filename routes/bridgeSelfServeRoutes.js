@@ -143,6 +143,9 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   if (typeof profile.conductsMoneyServices !== "boolean") required.push("conductsMoneyServices");
   if (typeof profile.conductsMoneyServicesUsingBridge !== "boolean" && profile.conductsMoneyServices) required.push("conductsMoneyServicesUsingBridge");
   if (profile.conductsMoneyServices && clean(profile.complianceScreeningExplanation).length < 10) required.push("complianceScreeningExplanation");
+  if (profile.conductsMoneyServices && clean(profile.conductsMoneyServicesDescription).length < 10) required.push("conductsMoneyServicesDescription");
+  if (profile.highRiskActivities?.some((activity) => activity !== "none_of_the_above") && clean(profile.highRiskActivitiesExplanation).length < 10) required.push("highRiskActivitiesExplanation");
+  if (profile.accountPurpose === "other" && clean(profile.accountPurposeOther).length < 2) required.push("accountPurposeOther");
   if (!Array.isArray(profile.associatedPersons) || !profile.associatedPersons.length) required.push("associatedPersons (at least one UBO/control person)");
   const persons = Array.isArray(profile.associatedPersons) ? profile.associatedPersons : [];
   if (persons.length && !persons.some((person) => person.hasControl === true)) required.push("at least one associated person with hasControl=true");
@@ -156,6 +159,8 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
     if (!validDate(clean(person.birthDate))) required.push(prefix + ".birthDate");
     if (!person.residentialAddress) required.push(prefix + ".residentialAddress");
     if (!Array.isArray(person.identifyingInformation) || !person.identifyingInformation.length) required.push(prefix + ".identifyingInformation");
+    else if (person.identifyingInformation.some((id) => !validDataUri(id.imageFrontDataUri))) required.push(prefix + ".identifyingInformation front image");
+    if (person.hasOwnership && (!Number.isInteger(Number(person.ownershipPercentage)) || Number(person.ownershipPercentage) < 1 || Number(person.ownershipPercentage) > 100)) required.push(prefix + ".ownershipPercentage (1-100)");
     if (person.hasControl && !clean(person.title)) required.push(prefix + ".title");
   }
   const documents = Array.isArray(profile.documents) ? profile.documents : [];
@@ -176,6 +181,7 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   if (!purposes.has("business_formation")) required.push("business formation document");
   if (!purposes.has("ownership_information") && !persons.some((person) => person.attestedOwnershipStructure === true)) required.push("ownership document or UBO ownership attestation");
   if (!purposes.has("proof_of_address")) required.push("proof of business address document");
+  if (!clean(profile.primaryWebsite) && !purposes.has("proof_of_nature_of_business")) required.push("primary website or proof of nature of business document");
   if (profile.conductsMoneyServicesUsingBridge && !purposes.has("flow_of_funds")) required.push("flow of funds document");
   if (required.length) {
     const error = new Error("Bridge business KYB profile is incomplete.");
@@ -246,13 +252,13 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   };
   for (const [source, target] of [
     ["primaryWebsite", "primary_website"], ["accountPurposeOther", "account_purpose_other"],
-    ["sourceOfFundsDescription", "source_of_funds_description"],
+    ["sourceOfFundsDescription", "source_of_funds_description"], ["highRiskActivitiesExplanation", "high_risk_activities_explanation"],
     ["complianceScreeningExplanation", "compliance_screening_explanation"],
     ["conductsMoneyServicesUsingBridge", "conducts_money_services_using_bridge"],
     ["conductsMoneyServicesDescription", "conducts_money_services_description"],
     ["isDao", "is_dao"], ["hasMaterialIntermediaryOwnership", "has_material_intermediary_ownership"],
     ["estimatedAnnualRevenueUsd", "estimated_annual_revenue_usd"],
-    ["expectedMonthlyPaymentsUsd", "expected_monthly_payments_usd"],
+    ["expectedMonthlyPaymentsUsd", "expected_monthly_payments_usd"], ["operatesInProhibitedCountries", "operates_in_prohibited_countries"],
     ["operatesInProhibitedCountries", "operates_in_prohibited_countries"],
     ["businessTradeName", "business_trade_name"],
   ]) {
