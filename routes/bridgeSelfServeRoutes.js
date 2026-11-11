@@ -392,6 +392,7 @@ bridgeSelfServeRouter.post("/customer", async (req, res) => {
 bridgeSelfServeRouter.post("/status/refresh", async (req, res) => {
   try {
     const customerId = req.account.accountId;
+    const gate = await getCustomerGateStatus(customerId);
     const onboarding = await getBridgeOnboarding(customerId);
     if (!onboarding?.providerCustomerId) return res.status(409).json({ error: "No Bridge customer is linked to this account." });
     const response = await getBridgeCustomer(onboarding.providerCustomerId);
@@ -436,7 +437,7 @@ bridgeSelfServeRouter.post("/status/refresh", async (req, res) => {
         base: base === "approved",
         sepa: sepa === "approved",
         // StableX identity approval and Bridge product endorsements are separate.
-        stablexIdentityApproved: gateStatusPlaceholder(),
+        stablexIdentityApproved: gate.gate.approved,
       },
       fundsMoved: false,
     });
