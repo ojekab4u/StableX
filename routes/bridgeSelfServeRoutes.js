@@ -146,11 +146,10 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   if (profile.conductsMoneyServices && clean(profile.conductsMoneyServicesDescription).length < 10) required.push("conductsMoneyServicesDescription");
   const hasHighRiskActivity = profile.highRiskActivities?.some((activity) => activity !== "none_of_the_above");
   if (hasHighRiskActivity && clean(profile.highRiskActivitiesExplanation).length < 10) required.push("highRiskActivitiesExplanation");
+  if (hasHighRiskActivity && clean(profile.sourceOfFundsDescription).length < 5) required.push("sourceOfFundsDescription");
   if (hasHighRiskActivity && !profile.estimatedAnnualRevenueUsd) required.push("estimatedAnnualRevenueUsd");
   if (hasHighRiskActivity && (!Number.isInteger(Number(profile.expectedMonthlyPaymentsUsd)) || Number(profile.expectedMonthlyPaymentsUsd) < 0)) required.push("expectedMonthlyPaymentsUsd");
   if (hasHighRiskActivity && typeof profile.operatesInProhibitedCountries !== "boolean") required.push("operatesInProhibitedCountries");
-  if (profile.conductsMoneyServices && !profile.highRiskActivities?.includes("money_services")) required.push("select money_services under high-risk activities when applicable");
-  if (profile.highRiskActivities?.includes("money_services") && !profile.conductsMoneyServices) required.push("confirm whether the business conducts money services");
   if (profile.accountPurpose === "other" && clean(profile.accountPurposeOther).length < 2) required.push("accountPurposeOther");
   if (!Array.isArray(profile.associatedPersons) || !profile.associatedPersons.length) required.push("associatedPersons (at least one UBO/control person)");
   const persons = Array.isArray(profile.associatedPersons) ? profile.associatedPersons : [];
