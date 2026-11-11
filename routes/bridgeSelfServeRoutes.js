@@ -216,6 +216,7 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
       email: clean(person.email),
       phone: clean(person.phone),
       birth_date: clean(person.birthDate),
+      ...(Array.isArray(person.nationalities) && person.nationalities.length ? { nationalities: person.nationalities.map((value) => clean(value).toUpperCase()) } : {}),
       residential_address: residentialAddress,
       identifying_information: identifyingInformation,
       has_ownership: person.hasOwnership === true,
