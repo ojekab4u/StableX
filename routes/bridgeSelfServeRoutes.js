@@ -70,7 +70,7 @@ function buildIndividualPayload(account, profile, customerId, signedAgreementId)
   if (!validDate(birthDate)) required.push("birthDate (YYYY-MM-DD)");
   required.push(...addressMissing);
   const idType = clean(profile.identificationType || "passport").toLowerCase();
-  const issuingCountry = clean(profile.identificationIssuingCountry || residentialAddress.country).toLowerCase();
+  const issuingCountry = clean(profile.identificationIssuingCountry).toLowerCase();
   const idNumber = clean(profile.identificationNumber);
   const imageFront = clean(profile.identificationImageFrontDataUri);
   const imageBack = clean(profile.identificationImageBackDataUri);
@@ -130,7 +130,7 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   const { value: physicalAddress, missing: physicalMissing } =
     addressPayload(profile.physicalAddress || profile.registeredAddress, "physicalAddress");
   const required = [];
-  if (clean(profile.businessLegalName).length < 2) required.push("businessLegalName");
+  if (clean(profile.businessLegalName || account.businessName).length < 2) required.push("businessLegalName");
   if (!validEmail(email)) required.push("email");
   if (!validPhone(phone)) required.push("phone (E.164)");
   if (!["cooperative", "corporation", "llc", "other", "partnership", "sole_prop", "trust"].includes(profile.businessType)) required.push("businessType");
@@ -223,7 +223,7 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   });
   const payload = {
     type: "business",
-    business_legal_name: clean(profile.businessLegalName),
+    business_legal_name: clean(profile.businessLegalName || account.businessName),
     business_description: clean(profile.businessDescription),
     business_type: profile.businessType,
     email,
