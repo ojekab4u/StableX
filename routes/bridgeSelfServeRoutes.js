@@ -337,6 +337,8 @@ bridgeSelfServeRouter.post("/tos-link", async (req, res) => {
 bridgeSelfServeRouter.post("/tos-acceptance", async (req, res) => {
   try {
     const signedAgreementId = clean(req.body?.signedAgreementId);
+    const callbackCustomerId = clean(req.body?.customerId);
+    if (callbackCustomerId !== req.account.accountId) return res.status(403).json({ error: "Bridge agreement callback does not match the signed-in StableX account." });
     if (!signedAgreementId || signedAgreementId.length > 255) {
       return res.status(400).json({ error: "A valid signedAgreementId from the Bridge redirect is required." });
     }
