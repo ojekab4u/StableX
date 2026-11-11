@@ -144,7 +144,13 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   if (typeof profile.conductsMoneyServicesUsingBridge !== "boolean" && profile.conductsMoneyServices) required.push("conductsMoneyServicesUsingBridge");
   if (profile.conductsMoneyServices && clean(profile.complianceScreeningExplanation).length < 10) required.push("complianceScreeningExplanation");
   if (profile.conductsMoneyServices && clean(profile.conductsMoneyServicesDescription).length < 10) required.push("conductsMoneyServicesDescription");
-  if (profile.highRiskActivities?.some((activity) => activity !== "none_of_the_above") && clean(profile.highRiskActivitiesExplanation).length < 10) required.push("highRiskActivitiesExplanation");
+  const hasHighRiskActivity = profile.highRiskActivities?.some((activity) => activity !== "none_of_the_above");
+  if (hasHighRiskActivity && clean(profile.highRiskActivitiesExplanation).length < 10) required.push("highRiskActivitiesExplanation");
+  if (hasHighRiskActivity && !profile.estimatedAnnualRevenueUsd) required.push("estimatedAnnualRevenueUsd");
+  if (hasHighRiskActivity && (!Number.isInteger(Number(profile.expectedMonthlyPaymentsUsd)) || Number(profile.expectedMonthlyPaymentsUsd) < 0)) required.push("expectedMonthlyPaymentsUsd");
+  if (hasHighRiskActivity && typeof profile.operatesInProhibitedCountries !== "boolean") required.push("operatesInProhibitedCountries");
+  if (profile.conductsMoneyServices && !profile.highRiskActivities?.includes("money_services")) required.push("select money_services under high-risk activities when applicable");
+  if (profile.highRiskActivities?.includes("money_services") && !profile.conductsMoneyServices) required.push("confirm whether the business conducts money services");
   if (profile.accountPurpose === "other" && clean(profile.accountPurposeOther).length < 2) required.push("accountPurposeOther");
   if (!Array.isArray(profile.associatedPersons) || !profile.associatedPersons.length) required.push("associatedPersons (at least one UBO/control person)");
   const persons = Array.isArray(profile.associatedPersons) ? profile.associatedPersons : [];
@@ -265,6 +271,7 @@ function buildBusinessPayload(account, profile, customerId, signedAgreementId) {
   ]) {
     if (profile[source] !== undefined && profile[source] !== "") payload[target] = profile[source];
   }
+  if (profile.incorporationDate) payload.incorporation_date = clean(profile.incorporationDate);
   if (profile.identifyingInformation) {
     payload.identifying_information = profile.identifyingInformation.map((id) => ({
       type: clean(id.type).toLowerCase(),
