@@ -18,6 +18,7 @@ main{max-width:680px;margin:48px auto;padding:0 20px}.panel{background:#fff;bord
 <h2>Paytrie execution permissions</h2><div id="readiness" class="status">Checking provider configuration…</div>
 <div class="warning"><strong>Important:</strong> Connecting a Paytrie customer account does not authorise StableX to transact as a money services business. Order creation remains disabled until Paytrie explicitly approves StableX's platform/partner arrangement.</div>
 <div id="auth-status" class="status">Checking Paytrie customer authentication…</div>
+<div class="field"><label for="email">Email registered with Paytrie</label><input id="email" type="email" autocomplete="email" required placeholder="you@example.com"></div>
 <div class="field"><label for="code">4-digit Paytrie email code</label><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" placeholder="Enter the code sent by Paytrie"></div>
 <div class="actions"><button id="request">Send Paytrie login code</button><button id="verify">Verify code &amp; connect</button><button id="disconnect" class="secondary">Disconnect Paytrie</button></div>
 <div id="message" class="status" role="status" aria-live="polite">Your Paytrie credentials are never requested by StableX.</div>
@@ -32,12 +33,13 @@ async function load(){
  try{
   const [session,ready,auth]=await Promise.all([api("/api/auth/session"),fetch("/api/paytrie/readiness").then(r=>r.json()),api("/api/paytrie/customer/auth")]);
   $("account").textContent=session.account.email+" · "+session.account.status;
+  $("email").value=session.account.email;
   $("readiness").textContent=JSON.stringify({apiKeyPresent:ready.apiKeyPresent,platformAuthorizationRequired:ready.platformAuthorizationRequired,platformExecutionApproved:ready.platformExecutionApproved,transactionCreationEnabled:ready.transactionCreationEnabled,status:ready.status},null,2);
   $("auth-status").textContent=auth.authenticated?"Connected · session expires "+new Date(auth.expiresAt).toLocaleString():auth.message;
  }catch(e){$("account").textContent=e.message;$("request").disabled=$("verify").disabled=$("disconnect").disabled=true;}
 }
-$("request").addEventListener("click",async()=>{ $("request").disabled=true;try{const d=await api("/api/paytrie/customer/auth/login-code",{method:"POST",body:"{}"});message(d.message,"success");}catch(e){message(e.message,"error");}finally{$("request").disabled=false;}});
-$("verify").addEventListener("click",async()=>{const code=$("code").value.trim();if(!/^\d{4}$/.test(code)){message("Enter the 4-digit code sent by Paytrie.","error");return;} $("verify").disabled=true;try{const d=await api("/api/paytrie/customer/auth/verify",{method:"POST",body:JSON.stringify({code})});$("code").value="";message(d.message+" Expires "+new Date(d.expiresAt).toLocaleString(),"success");await load();}catch(e){message(e.message,"error");}finally{$("verify").disabled=false;}});
+$("request").addEventListener("click",async()=>{ $("request").disabled=true;try{const d=await api("/api/paytrie/customer/auth/login-code",{method:"POST",body:JSON.stringify({email:$("email").value.trim()})});message(d.message,"success");}catch(e){message(e.message,"error");}finally{$("request").disabled=false;}});
+$("verify").addEventListener("click",async()=>{const code=$("code").value.trim();if(!/^\d{4}$/.test(code)){message("Enter the 4-digit code sent by Paytrie.","error");return;} $("verify").disabled=true;try{const d=await api("/api/paytrie/customer/auth/verify",{method:"POST",body:JSON.stringify({email:$("email").value.trim(),code})});$("code").value="";message(d.message+" Expires "+new Date(d.expiresAt).toLocaleString(),"success");await load();}catch(e){message(e.message,"error");}finally{$("verify").disabled=false;}});
 $("disconnect").addEventListener("click",async()=>{try{const d=await api("/api/paytrie/customer/auth",{method:"DELETE"});message(d.message,"success");await load();}catch(e){message(e.message,"error");}});
 load();
 </script>
