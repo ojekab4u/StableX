@@ -219,9 +219,9 @@ export async function getRoutingQuotes({ from, to, amount, customerId = null }) 
   };
 }
 
-export async function getRoutingQuote(quoteId) {
+export async function getRoutingQuote(quoteId, customerId) {
   const quote = await readRoutingQuote(quoteId);
-  if (!quote || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
+  if (!quote || quote.customerId !== customerId || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
   return quote;
 }
 
