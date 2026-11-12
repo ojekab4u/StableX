@@ -8,7 +8,6 @@ import {
   createProviderOrder, readProviderOrderByTransfer, updateProviderOrder,
 } from "../repositories/providerOrderRepository.js";
 import { decryptBeneficiaryDetails, encryptBeneficiaryDetails } from "./beneficiaryCrypto.js";
-import { savePaytrieCustomerSession, getPaytrieCustomerSession, deletePaytrieCustomerSession } from "../repositories/paytrieCustomerRepository.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 
 const API_BASE = "https://api.paytrie.com/v2";
@@ -56,70 +55,17 @@ export function getPaytrieExecutionReadiness() {
     provider: "Paytrie",
     apiVersion: "v2",
     apiKeyPresent: keyPresent,
-    customerJwtRequired: true,
+    customerAuthenticationModel: "AWAITING_PAYTRIE_PLATFORM_CONFIRMATION",
     platformAuthorizationRequired: true,
     platformExecutionApproved: platformApproved,
     transactionCreationEnabled: keyPresent && platformApproved,
-    status: !keyPresent ? "API_KEY_MISSING" : !platformApproved ? "PAYTRIE_PLATFORM_APPROVAL_REQUIRED" : "CONFIGURED_AWAITING_CUSTOMER_AUTH",
+    status: !keyPresent ? "API_KEY_MISSING" : !platformApproved ? "PAYTRIE_PLATFORM_APPROVAL_REQUIRED" : "PLATFORM_AUTH_MODEL_UNCONFIRMED",
     supportedExecutionRoute: "CAD -> USDC-BASE",
     note: platformApproved
-      ? "Platform execution is enabled by local configuration; verify Paytrie's explicit approval before use."
-      : "Paytrie has not confirmed an approved platform/partner arrangement for StableX. An API key or customer JWT does not grant StableX permission to transact as an MSB. Order creation is disabled."
+      ? "Local approval flag is enabled, but execution must remain unavailable until Paytrie confirms the approved platform authentication and end-user funding model."
+      : "Paytrie has not confirmed an approved platform/partner arrangement for StableX. StableX customers must not be asked to create Paytrie accounts as a workaround. Order creation is disabled."
   };
 }
-export async function requestPaytrieLoginCode(email) {
-  if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw fail("Enter the registered Paytrie customer email.");
-  return request("/auth/login-codes", { method: "POST", body: { email: email.trim().toLowerCase() } });
-}
-export async function verifyPaytrieLoginCode({ email, code }) {
-  if (typeof email !== "string" || typeof code !== "string" || !/^\d{4}$/.test(code.trim())) throw fail("Enter the registered email and 4-digit Paytrie code.");
-  const result = await request("/auth/login-codes/verify", { method: "POST", body: { email: email.trim().toLowerCase(), code: code.trim() } });
-  if (!result.accessToken) throw fail("Paytrie did not return an access token.", 502);
-  return { accessToken: result.accessToken, tokenType: result.tokenType || "Bearer", expiresIn: result.expiresIn || 3600 };
-}
-
-// Customer authentication is bound to the authenticated StableX account ID and the customer's Paytrie-registered email.
-// Paytrie JWTs are encrypted at rest and never returned to the browser.
-export async function requestPaytrieCustomerLoginCode({ customerId, email }) {
-  if (!customerId || typeof email !== "string") throw fail("Authenticated StableX customer is required.", 401);
-  await requestPaytrieLoginCode(email);
-  return { requested: true, email, message: "Paytrie login code requested. Verify the code to link this Paytrie customer session to your signed-in StableX account." };
-}
-
-export async function verifyPaytrieCustomerLoginCode({ customerId, email, code }) {
-  if (!customerId || typeof email !== "string") throw fail("Authenticated StableX customer is required.", 401);
-  const session = await verifyPaytrieLoginCode({ email, code });
-  const expiresAt = new Date(Date.now() + Number(session.expiresIn || 3600) * 1000).toISOString();
-  await savePaytrieCustomerSession({
-    customerId,
-    encryptedToken: encryptBeneficiaryDetails({ accessToken: session.accessToken }),
-    expiresAt,
-  });
-  return { authenticated: true, expiresAt, tokenType: session.tokenType, message: "Paytrie customer authentication stored securely for this StableX account." };
-}
-
-export async function getPaytrieCustomerAuthStatus(customerId) {
-  const session = await getPaytrieCustomerSession(customerId);
-  return {
-    authenticated: Boolean(session),
-    expiresAt: session?.expiresAt || null,
-    message: session ? "A valid Paytrie customer session is available." : "Paytrie customer authentication is required or has expired.",
-  };
-}
-
-async function getStoredPaytrieCustomerJwt(customerId) {
-  const session = await getPaytrieCustomerSession(customerId);
-  if (!session) throw fail("Paytrie customer authentication is missing or expired. Request a new login code.", 401);
-  const decrypted = decryptBeneficiaryDetails(session.encryptedToken);
-  if (!decrypted.accessToken) throw fail("Stored Paytrie customer session is invalid. Authenticate again.", 401);
-  return decrypted.accessToken;
-}
-
-export async function logoutPaytrieCustomer({ customerId }) {
-  await deletePaytrieCustomerSession(customerId);
-  return { authenticated: false, message: "Paytrie customer session revoked from StableX." };
-}
-
 function safeOrder(order) {
   const secret = order.paymentDetails ? decryptBeneficiaryDetails(order.paymentDetails) : {};
   return { ...order, paymentDetails: secret.instructions || null, redirectUrl: secret.redirectUrl || null, providerResponse: secret.providerResponse || null };
