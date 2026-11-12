@@ -49,3 +49,23 @@ test("Paytrie order creation fails closed before touching transfers when platfor
     if (oldApproval === undefined) delete process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED; else process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED = oldApproval;
   }
 });
+
+test("Paytrie execution stays disabled even if the local approval flag is manually enabled without the confirmed auth model", async () => {
+  const oldApproval = process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED;
+  const oldKey = process.env.PAYTRIE_API_KEY;
+  try {
+    process.env.PAYTRIE_API_KEY = "test-paytrie-api-key";
+    process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED = "true";
+    const readiness = getPaytrieExecutionReadiness();
+    assert.equal(readiness.platformExecutionApproved, true);
+    assert.equal(readiness.transactionCreationEnabled, false);
+    assert.equal(readiness.status, "PLATFORM_AUTH_MODEL_UNCONFIRMED");
+    await assert.rejects(
+      createPaytrieOrder({}),
+      error => error.statusCode === 503 && /authentication and end-user funding model/i.test(error.message)
+    );
+  } finally {
+    if (oldApproval === undefined) delete process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED; else process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED = oldApproval;
+    if (oldKey === undefined) delete process.env.PAYTRIE_API_KEY; else process.env.PAYTRIE_API_KEY = oldKey;
+  }
+});
