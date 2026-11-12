@@ -11,8 +11,8 @@ const fail = (res, error) => res.status(error.statusCode || 503).json({ error: e
 
 paytrieRouter.get("/readiness", (_req, res) => res.json(getPaytrieExecutionReadiness()));
 
-// Both order creation and refresh are customer-scoped. The customer ID and
-// Paytrie JWT are resolved server-side; neither is accepted from the browser.
+// Order creation and refresh require a signed-in StableX account. The account
+// ID is derived from the session; no customer ID or Paytrie JWT comes from the browser.
 paytrieRouter.post("/transfers/:id/order", requireAuth, async (req, res) => {
   try {
     const result = await createPaytrieOrder({
