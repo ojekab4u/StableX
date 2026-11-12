@@ -106,7 +106,7 @@ $("paytrieConnectWallet").onclick=async()=>{
       chain=String(await window.ethereum.request({method:"eth_chainId"})).toLowerCase();
     }
     if(chain!=="0x2105")throw new Error("Switch your wallet to Base Mainnet (chain ID 8453).");
-    const message="StableX wallet connection\\nCustomer: "+account.accountId+"\\nAddress: "+address.toLowerCase()+"\\nChain ID: 8453";
+    const message="StableX wallet connection\nCustomer: "+account.accountId+"\nAddress: "+address.toLowerCase()+"\nChain ID: 8453";
     const signature=await window.ethereum.request({method:"personal_sign",params:[message,address]});
     const d=await api("/api/paytrie/customer/base-wallet",{method:"POST",body:{address,chainId:8453,walletProvider:window.ethereum.isMetaMask?"MetaMask":"EVM Wallet",message,signature}});
     baseWalletReady=true;
