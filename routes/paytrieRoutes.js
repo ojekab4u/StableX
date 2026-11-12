@@ -1,38 +1,82 @@
 import { Router } from "express";
 import {
-  getPaytrieExecutionReadiness, requestPaytrieLoginCode, verifyPaytrieLoginCode,
-  createPaytrieOrder, refreshPaytrieOrder,
+  getPaytrieExecutionReadiness,
+  requestPaytrieCustomerLoginCode,
+  verifyPaytrieCustomerLoginCode,
+  getPaytrieCustomerAuthStatus,
+  logoutPaytrieCustomer,
+  createPaytrieOrder,
+  refreshPaytrieOrder,
 } from "../services/paytrieExecutionService.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 
 export const paytrieRouter = Router();
-function requireOperator(req,res) {
-  const token = process.env.STABLEX_OPERATOR_TOKEN;
-  if (!token || req.get("Authorization") !== `Bearer ${token}`) {
-    res.status(401).json({ error: "Operator authentication required for this integration workspace." });
-    return false;
-  }
-  return true;
-}
-paytrieRouter.get("/readiness", (_req,res) => res.json(getPaytrieExecutionReadiness()));
-paytrieRouter.post("/auth/login-code", async (req,res) => {
-  if (!requireOperator(req,res)) return;
-  try { return res.status(202).json({ message: "Login code requested. The verified Paytrie customer must provide the code.", result: await requestPaytrieLoginCode(req.body?.email) }); }
-  catch(e) { return res.status(e.statusCode || 502).json({ error: e.message }); }
-});
-paytrieRouter.post("/auth/verify", async (req,res) => {
-  if (!requireOperator(req,res)) return;
-  try { return res.json(await verifyPaytrieLoginCode({ email:req.body?.email, code:req.body?.code })); }
-  catch(e) { return res.status(e.statusCode || 502).json({ error: e.message }); }
-});
-paytrieRouter.post("/transfers/:id/order", async (req,res) => {
-  if (!requireOperator(req,res)) return;
+const fail = (res, error) => res.status(error.statusCode || 503).json({ error: error.message });
+
+paytrieRouter.get("/readiness", (_req, res) => res.json(getPaytrieExecutionReadiness()));
+
+paytrieRouter.get("/customer/auth", requireAuth, async (req, res) => {
   try {
-    const result = await createPaytrieOrder({ transferId:req.params.id, customerId:String(req.body?.customerId || ""), jwt:req.get("X-Paytrie-User-Token"), confirm:req.body?.confirm });
-    return res.status(result.created ? 201 : 200).json(result);
-  } catch(e) { return res.status(e.statusCode || 503).json({ error:e.message }); }
+    return res.json(await getPaytrieCustomerAuthStatus(req.account.accountId));
+  } catch (error) { return fail(res, error); }
 });
-paytrieRouter.post("/transfers/:id/refresh", async (req,res) => {
-  if (!requireOperator(req,res)) return;
-  try { return res.json(await refreshPaytrieOrder({ transferId:req.params.id, customerId:String(req.body?.customerId || ""), jwt:req.get("X-Paytrie-User-Token") })); }
-  catch(e) { return res.status(e.statusCode || 503).json({ error:e.message }); }
+
+paytrieRouter.post("/customer/auth/login-code", requireAuth, async (req, res) => {
+  try {
+    if (req.account.status !== "ACTIVE") return res.status(403).json({ error: "Verify your StableX account email before connecting Paytrie." });
+    const result = await requestPaytrieCustomerLoginCode({
+      customerId: req.account.accountId,
+      email: req.account.email,
+    });
+    return res.status(202).json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/auth/verify", requireAuth, async (req, res) => {
+  try {
+    if (req.account.status !== "ACTIVE") return res.status(403).json({ error: "Verify your StableX account email before connecting Paytrie." });
+    const result = await verifyPaytrieCustomerLoginCode({
+      customerId: req.account.accountId,
+      email: req.account.email,
+      code: req.body?.code,
+    });
+    return res.json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.delete("/customer/auth", requireAuth, async (req, res) => {
+  try { return res.json(await logoutPaytrieCustomer({ customerId: req.account.accountId })); }
+  catch (error) { return fail(res, error); }
+});
+
+// Both order creation and refresh are customer-scoped. The customer ID and
+// Paytrie JWT are resolved server-side; neither is accepted from the browser.
+paytrieRouter.post("/transfers/:id/order", requireAuth, async (req, res) => {
+  try {
+    const result = await createPaytrieOrder({
+      transferId: req.params.id,
+      customerId: req.account.accountId,
+      jwt: await (async () => {
+        const status = await getPaytrieCustomerAuthStatus(req.account.accountId);
+        if (!status.authenticated) {
+          const error = new Error("Paytrie customer authentication is missing or expired. Connect your Paytrie account first.");
+          error.statusCode = 401;
+          throw error;
+        }
+        return undefined;
+      })(),
+      confirm: req.body?.confirm,
+    });
+    return res.status(result.created ? 201 : 200).json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/transfers/:id/refresh", requireAuth, async (req, res) => {
+  try {
+    const result = await refreshPaytrieOrder({
+      transferId: req.params.id,
+      customerId: req.account.accountId,
+    });
+    return res.json(result);
+  } catch (error) { return fail(res, error); }
 });
