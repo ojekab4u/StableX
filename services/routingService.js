@@ -319,6 +319,8 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
       rate: quote.rate,
       fee: quote.fee,
       feeCurrency: quote.feeCurrency,
+      feeBreakdown: quote.feeBreakdown || quote.providerData?.breakdown || null,
+      pricingPolicy: quote.pricingPolicy || null,
       expiresAt: quote.expiresAt,
       selectedAt: new Date().toISOString(),
       providerQuoteId: quote.providerQuoteId,
