@@ -103,8 +103,11 @@ function renderRecoveredTransaction(data){
   addSummaryCard(summary,"Base settlement verification",data.settlementVerified===true?"Verified on Base Mainnet":data.verification?.reason||"Not yet independently verified by StableX");
   const quote=t.quote||{};
   const provider=o?.providerResponse||{};
+  const quoteBreakdown=quote.providerData?.breakdown||quote.raw?.breakdown||{};
   const feeCandidates=[
     ["Selected quote fee",quote.fee,quote.feeCurrency||t.destinationCurrency],
+    ["Paytrie fee (quote breakdown)",quoteBreakdown.paytrieFee,"provider did not specify currency unit"],
+    ["Gas fee (quote breakdown)",quoteBreakdown.gasFee,"provider did not specify currency unit"],
     ["Provider fee",provider.fee??provider.feeAmount??provider.totalFee,provider.feeCurrency||t.sourceCurrency],
     ["Network fee",provider.networkFee??provider.network_fee,provider.networkFeeCurrency||t.destinationCurrency],
     ["Service fee",provider.serviceFee??provider.service_fee,provider.serviceFeeCurrency||t.sourceCurrency]
@@ -112,7 +115,7 @@ function renderRecoveredTransaction(data){
   const rows=[
     "Source amount: "+(t.sourceAmount??"Not supplied")+" "+(t.sourceCurrency||""),
     "Quoted destination: "+(quote.destinationAmount??t.destinationAmount??"Not supplied")+" "+(t.destinationCurrency||""),
-    "Quoted rate: "+(quote.rate??"Not supplied"),
+    "Quoted rate: "+(quote.rate??"Not supplied"),\n    "USD/CAD factor from quote: "+(quoteBreakdown.usdToCad??"Not supplied"),
     ...feeCandidates.map(([label,value,currency])=>label+": "+value+" "+(currency||"")),
     "Payment method: "+(o?.paymentMethod||"Not supplied"),
     "Interac reference: "+(o?.paymentDetails?.rmtId||"Not supplied")
