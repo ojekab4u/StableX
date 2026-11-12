@@ -115,13 +115,14 @@ function renderRecoveredTransaction(data){
   const rows=[
     "Source amount: "+(t.sourceAmount??"Not supplied")+" "+(t.sourceCurrency||""),
     "Quoted destination: "+(quote.destinationAmount??t.destinationAmount??"Not supplied")+" "+(t.destinationCurrency||""),
-    "Quoted rate: "+(quote.rate??"Not supplied"),\n    "USD/CAD factor from quote: "+(quoteBreakdown.usdToCad??"Not supplied"),
+    "Quoted rate: "+(quote.rate??"Not supplied"),
+    "USD/CAD factor from quote: "+(quoteBreakdown.usdToCad??"Not supplied"),
     ...feeCandidates.map(([label,value,currency])=>label+": "+value+" "+(currency||"")),
     "Payment method: "+(o?.paymentMethod||"Not supplied"),
     "Interac reference: "+(o?.paymentDetails?.rmtId||"Not supplied")
   ];
   if(!feeCandidates.length) rows.push("Fee disclosure: Paytrie did not return a separately identifiable fee in the saved order response. No fee has been estimated or invented.");
-  charges.textContent=rows.join("\\n");
+  charges.textContent=rows.join("\n");
   $("result").textContent=JSON.stringify(data,null,2);
   show("recoveryState",o?"Saved Paytrie order loaded. Use Refresh provider status for the latest provider response.":(data.message||"No Paytrie order is saved for this transfer."),o?"success":"status");
   paytrieOrderCreated=Boolean(o);
