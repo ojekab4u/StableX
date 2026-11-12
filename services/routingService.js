@@ -103,6 +103,7 @@ function normalizeProviderResult(provider, request, result) {
 
   return {
     quoteId: randomUUID(),
+    customerId: request.customerId || null,
     provider,
     providerClass: classify(result.quoteType),
     from: request.from,
@@ -180,10 +181,11 @@ export function rankRoutingQuotes(quotes) {
   });
 }
 
-export async function getRoutingQuotes({ from, to, amount }) {
+export async function getRoutingQuotes({ from, to, amount, customerId = null }) {
   const request = {
     ...normalizeRoute(from, to),
     amount: normalizeAmount(amount),
+    customerId,
   };
 
   const direct = await collectSingleHopCandidates(request);
@@ -236,8 +238,8 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
   }
 
   const quote = await readRoutingQuote(quoteId);
-  if (!quote) {
-    const error = new Error("Quote not found or expired. Request new quotes and select again.");
+  if (!quote || (quote.customerId && quote.customerId !== customerId)) {
+    const error = new Error("Quote not found for this customer or expired. Request new quotes and select again.");
     error.statusCode = 404;
     throw error;
   }
