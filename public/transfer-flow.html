@@ -141,7 +141,8 @@ $("refreshRecoveredOrder").onclick=async()=>{
   try{
     if(!transferId)throw new Error("Load a saved transfer first.");
     const d=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/refresh",{method:"POST",body:{}});
-    renderRecoveredTransaction({transfer:d.transfer||{},order:d.order||null,providerStatus:d.providerStatus,settlementVerified:d.settlementVerified,verification:d.verification,message:d.message});
+    const saved=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order");
+    renderRecoveredTransaction({...saved,settlementVerified:d.settlementVerified,verification:d.verification});
     show("recoveryState",d.message||"Provider status refreshed.",d.settlementVerified?"success":"status");
   }catch(e){show("recoveryState",e.message,"error");}
 };
