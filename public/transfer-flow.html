@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StableX · Transfer</title>
+<link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/customer-dashboard.css">
+<style>
+body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}.wrap{max-width:980px;margin:32px auto;padding:20px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:22px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}label{display:block;font-size:13px;color:#475569;margin:10px 0 5px}input,select{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:7px}button{padding:11px 16px;border:0;border-radius:7px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;margin-top:12px}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#64748b;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}.success{color:#047857;white-space:pre-wrap}.quote{border:1px solid #cbd5e1;border-radius:8px;padding:14px;margin:10px 0}.quote button{margin-left:8px}.status{padding:10px;background:#eff6ff;border-radius:8px;white-space:pre-wrap}a{color:#1d4ed8}
+</style></head>
+<body><main class="wrap">
+<h1>StableX transfer</h1><p class="muted">Customer-first flow: sign in → beneficiary → draft transfer → live provider quotes → select quote. Quote selection records the chosen offer; it does not create a provider order or move funds.</p>
+<section class="card">
+<h2>1. Sign in to StableX</h2><div class="grid"><div><label>Email</label><input id="email" type="email" autocomplete="username"></div><div><label>Password</label><input id="password" type="password" autocomplete="current-password"></div></div>
+<button id="login">Sign in</button> <button id="logout" type="button">Sign out</button><p id="authState" class="status">Not signed in.</p><p id="authError" class="error"></p>
+</section>
+<section class="card">
+<h2>2. Beneficiary</h2><p class="muted">Save the destination details once. Use a wallet address for crypto destinations or bank account/IBAN details for fiat destinations.</p>
+<div class="grid">
+<div><label>Beneficiary name</label><input id="benName" placeholder="Recipient name"></div>
+<div><label>Country (ISO-2)</label><input id="benCountry" value="CA" maxlength="2"></div>
+<div><label>Destination currency</label><input id="benCurrency" value="CADC"></div>
+<div><label>Wallet address (if crypto)</label><input id="benWallet" placeholder="0x…"></div>
+<div><label>Account number (if fiat)</label><input id="benAccount"></div>
+<div><label>IBAN (if applicable)</label><input id="benIban"></div>
+<div><label>Bank name (if applicable)</label><input id="benBank"></div>
+<div><label>Network (if crypto)</label><input id="benNetwork" value="Base"></div>
+</div><button id="saveBeneficiary" disabled>Save beneficiary</button><p id="benState" class="muted"></p>
+</section>
+<section class="card">
+<h2>3. Create transfer draft</h2><div class="grid">
+<div><label>Source currency</label><input id="from" value="CAD"></div>
+<div><label>Destination currency</label><input id="to" value="USDC"></div>
+<div><label>Amount</label><input id="amount" type="number" min="0.01" step="0.01" value="100"></div>
+</div><button id="createDraft" disabled>Create draft transfer</button><p id="draftState" class="status">No transfer created.</p>
+</section>
+<section class="card">
+<h2>4. Get live provider quotes</h2><button id="getQuotes" disabled>Request quotes</button><div id="quotes"></div>
+</section>
+<section class="card">
+<h2>5. Transfer record</h2><p class="muted">The selected quote and transfer state are persisted in PostgreSQL. Execution remains disabled unless a provider explicitly supports it and StableX has approval.</p><pre id="result" class="status">No transfer yet.</pre>
+</section>
+</main>
+<script type="module">
+const API="";
+let token=sessionStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=null,issuedQuotes=[];
+const $=id=>document.getElementById(id);
+async function api(path,{method="GET",body,headers={}}={}){const h={"Content-Type":"application/json",...headers};if(token)h.Authorization="Bearer "+token;const r=await fetch(API+path,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({error:"Invalid server response"}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
+function show(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className=cls;}
+function authUI(){const ok=!!token;$("saveBeneficiary").disabled=!ok;$("createDraft").disabled=!ok;$("authState").textContent=account?"Signed in as "+account.email+" · "+account.accountId:ok?"Session token loaded.":"Not signed in.";}
+$("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;sessionStorage.setItem("stablex_session_token",token);show("authError","");authUI();}catch(e){show("authError",e.message,"error");}};
+$("logout").onclick=async()=>{try{if(token)await api("/api/auth/logout",{method:"POST"});}catch{}token="";account=null;sessionStorage.removeItem("stablex_session_token");authUI();show("authError","");};
+$("saveBeneficiary").onclick=async()=>{try{const details={name:$("benName").value.trim(),country:$("benCountry").value.trim().toUpperCase(),currency:$("benCurrency").value.trim().toUpperCase(),...( $("benWallet").value.trim()?{walletAddress:$("benWallet").value.trim(),network:$("benNetwork").value.trim()}:{}),...( $("benAccount").value.trim()?{accountNumber:$("benAccount").value.trim()}:{}),...( $("benIban").value.trim()?{iban:$("benIban").value.trim()}:{}),...( $("benBank").value.trim()?{bankName:$("benBank").value.trim()}: {})};const d=await api("/api/transfers/beneficiaries",{method:"POST",body:{details}});beneficiaryId=d.beneficiary.beneficiaryId;show("benState","Saved beneficiary "+beneficiaryId,"success");$("createDraft").disabled=false;}catch(e){show("benState",e.message,"error");}};
+$("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;issuedQuotes=[];$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";}catch(e){show("draftState",e.message,"error");}};
+$("getQuotes").onclick=async()=>{try{if(!transferId)throw new Error("Create a draft first.");const d=await api("/api/routing/quotes",{method:"POST",body:{from:$("from").value.trim().toUpperCase(),to:$("to").value.trim().toUpperCase(),amount:Number($("amount").value)}});issuedQuotes=d.candidates||[];$("quotes").innerHTML="";if(!issuedQuotes.length){$("quotes").textContent=(d.disclaimer||"No provider quotes returned.")+"\n"+JSON.stringify(d.unavailableProviders||[],null,2);return;}for(const q of issuedQuotes){const card=document.createElement("div");card.className="quote";const title=document.createElement("strong");title.textContent=q.provider+" · "+q.providerClass+" · "+q.quoteType;const details=document.createElement("p");details.textContent=String(q.sourceAmount)+" "+q.from+" → "+(q.destinationAmount??"Not supplied")+" "+q.to+" · rate "+(q.rate??"n/a")+" · expires "+q.expiresAt+" · execution "+(q.executionEnabled?"enabled":"disabled");const button=document.createElement("button");button.textContent="Select this quote";button.onclick=()=>selectQuote(q.quoteId,button);card.append(title,details,button);$("quotes").append(card);}}catch(e){$("quotes").textContent=e.message;}};
+async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
+authUI();
+if(token){try{const d=await api("/api/auth/session");account=d.account;authUI();}catch{token="";sessionStorage.removeItem("stablex_session_token");authUI();}}
+</script></body></html>
