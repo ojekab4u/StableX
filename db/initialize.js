@@ -221,7 +221,14 @@ const schemaStatements = [
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `CREATE INDEX IF NOT EXISTS auth_sessions_account_idx ON auth_sessions (account_id)`
+  `CREATE INDEX IF NOT EXISTS auth_sessions_account_idx ON auth_sessions (account_id)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_customer_sessions (
+    customer_id VARCHAR(128) PRIMARY KEY,
+    encrypted_token JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_customer_sessions_expiry_idx ON paytrie_customer_sessions (expires_at)`
 
 ];
 
@@ -234,7 +241,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
