@@ -101,6 +101,32 @@ function normalizeProviderResult(provider, request, result) {
     normalizedRate = normalizedDestination / request.amount;
   }
 
+  const explicitFee = pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]);
+  const paytrieBreakdown = provider === "Paytrie" && raw?.breakdown && typeof raw.breakdown === "object"
+    ? raw.breakdown
+    : null;
+  const paytrieBreakdownFee = extractNumeric(paytrieBreakdown?.paytrieFee);
+  const fee = explicitFee ?? paytrieBreakdownFee;
+  const feeCurrency = result.feeCurrency || raw?.feeCurrency || raw?.fee_currency ||
+    (provider === "Paytrie" && paytrieBreakdownFee !== null
+      ? (paytrieBreakdown?.paytrieFeeCurrency || paytrieBreakdown?.feeCurrency || null)
+      : request.to);
+  const paytriePricingPolicy = provider === "Paytrie" && request.from === "CAD" && request.to === "USDC"
+    ? {
+        feeRateBps: 60,
+        feeRatePercent: 0.6,
+        minimumFee: 5,
+        minimumFeeCurrency: "CAD",
+        percentageFee: Number((request.amount * 0.006).toFixed(8)),
+        estimatedFee: Number(Math.max(request.amount * 0.006, 5).toFixed(8)),
+        estimatedNetSourceAmount: Number(Math.max(0, request.amount - Math.max(request.amount * 0.006, 5)).toFixed(8)),
+        minimumFeeApplies: request.amount * 0.006 < 5,
+        estimateOnly: true,
+        source: "Paytrie support pricing confirmation and Paytrie public CAD-to-USDC swap display",
+        note: "Pricing-rule estimate only. The original Paytrie quote breakdown is authoritative for the actual transaction. The $5 minimum is treated as CAD for this CAD-funded route.",
+      }
+    : null;
+
   return {
     quoteId: randomUUID(),
     customerId: request.customerId || null,
@@ -111,8 +137,10 @@ function normalizeProviderResult(provider, request, result) {
     sourceAmount: request.amount,
     destinationAmount: normalizedDestination ?? null,
     rate: normalizedRate ?? null,
-    fee: pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]),
-    feeCurrency: result.feeCurrency || raw?.feeCurrency || raw?.fee_currency || request.to,
+    fee,
+    feeCurrency,
+    feeBreakdown: paytrieBreakdown,
+    pricingPolicy: paytriePricingPolicy,
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
     expiresAt: result.expiresAt || new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
