@@ -99,7 +99,8 @@ function renderRecoveredTransaction(data){
   addSummaryCard(summary,"Paytrie status",o?.providerStatus||"No Paytrie order");
   addSummaryCard(summary,"Amount paid / source",t.sourceAmount!=null?Number(t.sourceAmount).toFixed(2)+" "+t.sourceCurrency:"Not supplied");
   addSummaryCard(summary,"Expected / recorded receive",t.destinationAmount!=null?String(t.destinationAmount)+" "+t.destinationCurrency:"Not supplied");
-  addSummaryCard(summary,"Settlement transaction",o?.transactionHash||"Not recorded");
+  addSummaryCard(summary,"Settlement transaction hash",o?.transactionHash||"Not supplied by provider");
+  addSummaryCard(summary,"Base settlement verification",data.settlementVerified===true?"Verified on Base Mainnet":data.verification?.reason||"Not yet independently verified by StableX");
   const quote=t.quote||{};
   const provider=o?.providerResponse||{};
   const feeCandidates=[
