@@ -8,6 +8,7 @@ const TOKEN_LABELS = {
 export function getPaytrieReadiness() {
   const apiKey = String(process.env.PAYTRIE_API_KEY || "").trim();
   const hasUsableKey = Boolean(apiKey) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(apiKey);
+  const platformApproved = String(process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED || "").trim().toLowerCase() === "true";
   return {
     name: "Paytrie",
     apiVersion: "v2",
@@ -16,12 +17,16 @@ export function getPaytrieReadiness() {
     status: hasUsableKey ? "CREDENTIAL_PRESENT_CONNECTION_NOT_TESTED" : "PUBLIC_QUOTES_NO_KEY_REQUIRED",
     supportedStablecoinPairs: ["CAD/USDC-BASE", "CAD/CADC-BASE", "USDC-BASE/CAD", "CADC-BASE/CAD"],
     quoteEndpoint: API_BASE + "/quotes",
-    transactionCreationEnabled: hasUsableKey,
+    platformAuthorizationRequired: true,
+    platformExecutionApproved: platformApproved,
+    transactionCreationEnabled: hasUsableKey && platformApproved,
     authenticationRequired: "PAYTRIE_USER_JWT_PER_CUSTOMER",
     transactionEndpoint: API_BASE + "/transactions",
-    note: hasUsableKey
-      ? "Integrator API key is configured; a verified Paytrie customer JWT is still required for transaction creation. Account permissions have not yet been verified."
-      : "Live quotes may be available without a key; transaction creation requires PAYTRIE_API_KEY and a verified Paytrie customer JWT.",
+    note: !hasUsableKey
+      ? "Live quotes may be available without a key. Transaction creation also requires an API key, a verified customer JWT and Paytrie's explicit approval of StableX's platform/partner arrangement."
+      : !platformApproved
+        ? "API key is present, but platform execution remains disabled until Paytrie explicitly approves StableX's platform/partner arrangement."
+        : "Platform approval flag is enabled. A verified Paytrie customer JWT and eligible customer account are still required; verify the written approval before use.",
   };
 }
 
