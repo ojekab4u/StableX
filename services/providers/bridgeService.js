@@ -137,6 +137,23 @@ export async function getBridgeCustomer(customerId) {
   return bridgeRequest(`/customers/${encodeURIComponent(customerId.trim())}`);
 }
 
+// Partial update of an existing Bridge customer. Bridge's documented contract
+// is PUT /customers/{customerID} with any subset of the customer payload; the
+// customer re-enters KYC review after the update. Note: Bridge rejects
+// Idempotency-Key headers on this PUT resource, so none is sent.
+export async function updateBridgeCustomer(bridgeCustomerId, patch) {
+  const customerId = String(bridgeCustomerId || "").trim();
+  if (!customerId || typeof patch !== "object" || patch === null || Array.isArray(patch)) {
+    const error = new Error("A Bridge customer ID and an update payload are required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return bridgeRequest(`/customers/${encodeURIComponent(customerId)}`, {
+    method: "PUT",
+    body: patch,
+  });
+}
+
 export async function getBridgeRate({ from, to, amount }) {
   const source = String(from || "").trim().toUpperCase();
   const destination = String(to || "").trim().toUpperCase();

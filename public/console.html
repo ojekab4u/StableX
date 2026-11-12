@@ -24,7 +24,7 @@
 
     <section class="panel">
       <div class="section-heading"><div><p class="eyebrow">01 / CUSTOMER</p><h2>Customer status</h2></div><button id="refresh-customer" class="secondary" type="button">Refresh</button></div>
-      <div class="inline-form"><label for="customer-id">StableX customer ID</label><input id="customer-id" value="customer-001" autocomplete="off"><button id="load-customer" type="button">Load customer</button></div>
+      <div class="inline-form"><span id="session-badge">Checking your sign-in…</span><button id="load-customer" type="button" class="secondary">Reload</button></div>
       <div class="status-grid">
         <article><span class="muted">VOVE compliance gate</span><strong id="gate-status">Loading…</strong></article>
         <article><span class="muted">Compliance cases</span><strong id="case-count">—</strong></article>
@@ -34,43 +34,10 @@
     </section>
 
     <section class="panel" id="bridge-onboarding">
-      <p class="eyebrow">02 / BRIDGE CUSTOMER ONBOARDING</p>
-      <h2>Complete Bridge verification</h2>
-      <p class="muted">Start or resume Bridge onboarding for this StableX customer. Identity details are sent to Bridge and are not stored by StableX. Use the operator token only in this trusted demo workspace; it is kept in this page's memory and is not saved.</p>
-      <div class="form-grid">
-        <div class="field"><label for="bridge-operator-token">StableX operator token</label><input id="bridge-operator-token" type="password" autocomplete="off" placeholder="Required for protected Bridge actions"></div>
-        <div class="field"><label for="bridge-endorsement">Required endorsement</label><select id="bridge-endorsement"><option value="base">Base</option><option value="sepa">SEPA</option></select></div>
-        <div class="field"><label for="bridge-signed-agreement">Signed agreement ID</label><input id="bridge-signed-agreement" autocomplete="off" placeholder="Paste ID returned by Bridge callback"></div>
-      </div>
-      <div class="button-row">
-        <button id="bridge-create-tos" type="button">Get Bridge Terms link</button>
-        <button id="bridge-record-tos" type="button" class="secondary">Record accepted Terms</button>
-        <button id="bridge-refresh" type="button" class="secondary">Sync & save Bridge approval</button>
-      </div>
-      <div id="bridge-tos-result" class="message" aria-live="polite"></div>
-      <details>
-        <summary>Bridge individual profile and identity document</summary>
-        <p class="notice">Sensitive information is submitted directly to Bridge. Do not use this form on a public/shared computer. The passport image is transmitted as a data URI and is not saved by StableX.</p>
-        <div class="form-grid">
-          <div class="field"><label for="bridge-first-name">First name</label><input id="bridge-first-name" autocomplete="given-name"></div>
-          <div class="field"><label for="bridge-middle-name">Middle name (optional)</label><input id="bridge-middle-name"></div>
-          <div class="field"><label for="bridge-last-name">Last name</label><input id="bridge-last-name" autocomplete="family-name"></div>
-          <div class="field"><label for="bridge-email">Email</label><input id="bridge-email" type="email" autocomplete="email"></div>
-          <div class="field"><label for="bridge-phone">Phone (E.164)</label><input id="bridge-phone" placeholder="+234…"></div>
-          <div class="field"><label for="bridge-dob">Date of birth</label><input id="bridge-dob" type="date"></div>
-          <div class="field"><label for="bridge-street">Residential street</label><input id="bridge-street" autocomplete="street-address"></div>
-          <div class="field"><label for="bridge-city">City</label><input id="bridge-city" autocomplete="address-level2"></div>
-          <div class="field"><label for="bridge-subdivision">State / subdivision</label><input id="bridge-subdivision" autocomplete="address-level1"></div>
-          <div class="field"><label for="bridge-country">Country (ISO-3)</label><input id="bridge-country" value="NGA" maxlength="3"></div>
-          <div class="field"><label for="bridge-passport-number">Passport number</label><input id="bridge-passport-number" autocomplete="off"></div>
-          <div class="field"><label for="bridge-passport-image">Passport image (JPEG/PNG)</label><input id="bridge-passport-image" type="file" accept="image/jpeg,image/png"></div>
-        </div>
-        <button id="bridge-create-customer" type="button">Submit profile to Bridge</button>
-      </details>
-      <div class="button-row">
-        <button id="bridge-kyc-link" type="button">Open hosted Bridge KYC</button>
-      </div>
-      <div id="bridge-onboarding-status" class="route-status" aria-live="polite">Saved Bridge onboarding status has not been loaded. Use “Sync & save Bridge approval” to retrieve the latest provider decision and persist it in StableX.</div>
+      <div class="section-heading"><div><p class="eyebrow">02 / BRIDGE CUSTOMER ONBOARDING</p><h2>Bridge verification status</h2></div><button id="bridge-refresh" class="secondary" type="button">Sync Bridge status</button></div>
+      <p class="muted">Your Bridge customer, Terms acceptance and endorsement approvals belong to your signed-in account. The full profile and KYC/KYB flow runs on the dedicated onboarding page.</p>
+      <div id="bridge-onboarding-status" class="route-status" aria-live="polite">Saved Bridge onboarding status has not been loaded yet.</div>
+      <div class="button-row"><a href="/bridge-onboarding.html">Open Bridge onboarding flow</a></div>
     </section>
 
     <section class="panel">

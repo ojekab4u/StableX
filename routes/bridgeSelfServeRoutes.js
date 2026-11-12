@@ -13,7 +13,18 @@ import {
   requestBridgeTosLink,
   createBridgeCustomer,
   getBridgeCustomer,
+  updateBridgeCustomer,
+  createBridgeVirtualAccount,
+  listBridgeVirtualAccounts,
 } from "../services/providers/bridgeService.js";
+import {
+  listBridgeOccupations,
+  isValidBridgeOccupation,
+  BRIDGE_EMPLOYMENT_STATUSES,
+  BRIDGE_EXPECTED_MONTHLY_PAYMENTS,
+  BRIDGE_ACCOUNT_PURPOSES,
+  BRIDGE_SOURCE_OF_FUNDS,
+} from "../services/providers/bridgeOccupations.js";
 
 export const bridgeSelfServeRouter = Router();
 bridgeSelfServeRouter.use(requireAuth);
@@ -51,6 +62,54 @@ function addressPayload(value, label) {
   if (!result.city) missing.push(label + ".city");
   if (!/^[A-Z]{3}$/.test(result.country)) missing.push(label + ".country (ISO alpha-3)");
   return { value: result, missing };
+}
+
+// Individual source-of-funds (SOF) fields. Bridge requires exact enum values:
+// https://apidocs.bridge.xyz/api-reference/customers/update-a-single-customer-object
+// With requireAll=false the fields are optional but any value supplied must be
+// valid; with requireAll=true every field must be present and valid.
+function validatedIndividualSofFields(profile, { requireAll = false } = {}) {
+  const invalid = [];
+  const missing = [];
+  const result = {};
+
+  const employmentStatus = clean(profile.employmentStatus);
+  if (employmentStatus) {
+    if (BRIDGE_EMPLOYMENT_STATUSES.includes(employmentStatus)) result.employment_status = employmentStatus;
+    else invalid.push("employmentStatus");
+  } else if (requireAll) missing.push("employmentStatus");
+
+  const expectedMonthly = clean(profile.expectedMonthlyPaymentsUsd);
+  if (expectedMonthly) {
+    // For individuals Bridge expects the bucket enum, not a raw number.
+    if (BRIDGE_EXPECTED_MONTHLY_PAYMENTS.includes(expectedMonthly)) result.expected_monthly_payments_usd = expectedMonthly;
+    else invalid.push("expectedMonthlyPaymentsUsd (use 0_4999, 5000_9999, 10000_49999 or 50000_plus)");
+  } else if (requireAll) missing.push("expectedMonthlyPaymentsUsd");
+
+  const occupation = clean(profile.mostRecentOccupation);
+  if (occupation) {
+    if (isValidBridgeOccupation(occupation)) result.most_recent_occupation = occupation;
+    else invalid.push("mostRecentOccupation (must be an official Bridge occupation code)");
+  } else if (requireAll) missing.push("mostRecentOccupation");
+
+  if (typeof profile.actingAsIntermediary === "boolean") result.acting_as_intermediary = profile.actingAsIntermediary;
+  else if (profile.actingAsIntermediary === "true") result.acting_as_intermediary = true;
+  else if (profile.actingAsIntermediary === "false") result.acting_as_intermediary = false;
+  else if (requireAll) missing.push("actingAsIntermediary");
+
+  const accountPurpose = clean(profile.accountPurpose);
+  if (accountPurpose) {
+    if (BRIDGE_ACCOUNT_PURPOSES.includes(accountPurpose)) result.account_purpose = accountPurpose;
+    else invalid.push("accountPurpose");
+  }
+
+  const sourceOfFunds = clean(profile.sourceOfFunds);
+  if (sourceOfFunds) {
+    if (BRIDGE_SOURCE_OF_FUNDS.includes(sourceOfFunds)) result.source_of_funds = sourceOfFunds;
+    else invalid.push("sourceOfFunds");
+  }
+
+  return { result, missing, invalid };
 }
 
 function buildIndividualPayload(account, profile, customerId, signedAgreementId) {
@@ -108,17 +167,14 @@ function buildIndividualPayload(account, profile, customerId, signedAgreementId)
     }],
   };
   if (clean(profile.middleName)) payload.middle_name = clean(profile.middleName);
-  for (const key of ["accountPurpose", "sourceOfFunds", "employmentStatus", "expectedMonthlyPaymentsUsd"]) {
-    if (profile[key] !== undefined && profile[key] !== "") {
-      const target = {
-        accountPurpose: "account_purpose",
-        sourceOfFunds: "source_of_funds",
-        employmentStatus: "employment_status",
-        expectedMonthlyPaymentsUsd: "expected_monthly_payments_usd",
-      }[key];
-      payload[target] = profile[key];
-    }
+  const sof = validatedIndividualSofFields(profile, { requireAll: false });
+  if (sof.invalid.length) {
+    const error = new Error("Invalid source-of-funds values.");
+    error.statusCode = 400;
+    error.missingFields = sof.invalid;
+    throw error;
   }
+  Object.assign(payload, sof.result);
   return payload;
 }
 
@@ -404,56 +460,221 @@ bridgeSelfServeRouter.post("/customer", async (req, res) => {
   }
 });
 
+// Shared sync: fetch the linked Bridge customer from the provider, normalize
+// the endorsement requirements, and persist the result. Used by the manual
+// refresh and immediately after a source-of-funds update so the caller sees
+// the post-update state without a second request.
+async function syncBridgeStatus(account) {
+  const customerId = account.accountId;
+  const gate = await getCustomerGateStatus(customerId);
+  const onboarding = await getBridgeOnboarding(customerId);
+  if (!onboarding?.providerCustomerId) {
+    const error = new Error("No Bridge customer is linked to this account.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const response = await getBridgeCustomer(onboarding.providerCustomerId);
+  const item = response.data || response;
+  const returnedId = item.id || item.customer_id || item.customerId;
+  const returnedReference = item.client_reference_id || item.clientReferenceId;
+  if (returnedId && returnedId !== onboarding.providerCustomerId) {
+    const error = new Error("Bridge returned a different customer ID; status was not saved.");
+    error.statusCode = 502;
+    throw error;
+  }
+  if (returnedReference && returnedReference !== customerId) {
+    const error = new Error("Bridge customer reference does not match this account; status was not saved.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const endorsements = (Array.isArray(item.endorsements) ? item.endorsements : []).map((entry) => ({
+    name: String(entry?.name || "").toLowerCase(),
+    status: String(entry?.status || "unknown").toLowerCase(),
+    requirements: {
+      complete: Array.isArray(entry?.requirements?.complete) ? entry.requirements.complete : [],
+      pending: Array.isArray(entry?.requirements?.pending) ? entry.requirements.pending : [],
+      // Bridge documents missing as an object, not just an array. Preserve it.
+      missing: entry?.requirements?.missing && typeof entry.requirements.missing === "object"
+        ? entry.requirements.missing
+        : Array.isArray(entry?.requirements?.missing) ? entry.requirements.missing : {},
+      issues: Array.isArray(entry?.requirements?.issues) ? entry.requirements.issues : [],
+    },
+  })).filter((entry) => entry.name);
+  const statusOf = (name) => endorsements.find((entry) => entry.name === name)?.status || null;
+  const base = statusOf("base");
+  const sepa = statusOf("sepa");
+  const status = String(item.status || item.kyc_status || "unknown").toLowerCase();
+  const onboardingStatus = base === "approved" && sepa === "approved" ? "BASE_AND_SEPA_APPROVED"
+    : base === "approved" ? "BASE_APPROVED"
+    : sepa === "approved" ? "SEPA_APPROVED"
+    : base === "rejected" || status === "rejected" ? "BASE_REJECTED"
+    : ["under_review", "awaiting_questionnaire", "awaiting_ubo"].includes(status) ? "KYC_PENDING"
+    : "CUSTOMER_CREATED";
+  const saved = await saveBridgeCustomerStatus({
+    customerId, providerCustomerId: onboarding.providerCustomerId,
+    bridgeStatus: status, endorsements, baseEndorsementStatus: base,
+    sepaEndorsementStatus: sepa, onboardingStatus,
+  });
+  if (!saved) {
+    const error = new Error("Bridge status was fetched but the linked customer changed before saving.");
+    error.statusCode = 409;
+    throw error;
+  }
+  return {
+    provider: "Bridge", customerId, onboarding: saved,
+    bridgeStatus: status, endorsements, statusSynchronized: true,
+    transactionGate: {
+      base: base === "approved",
+      sepa: sepa === "approved",
+      // StableX identity approval and Bridge product endorsements are separate.
+      stablexIdentityApproved: gate.gate.approved,
+    },
+    fundsMoved: false,
+  };
+}
+
 bridgeSelfServeRouter.post("/status/refresh", async (req, res) => {
   try {
+    return res.json(await syncBridgeStatus(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+// Official Bridge occupation codes for the individual "most recent occupation"
+// field. Read-only; the browser dropdown is populated from this.
+bridgeSelfServeRouter.get("/occupations", (_req, res) => {
+  return res.json({ provider: "Bridge", occupations: listBridgeOccupations() });
+});
+
+// Session-based funding workspace. The customer is always the signed-in
+// account; no customerId or operator token is accepted from the client.
+bridgeSelfServeRouter.get("/funding", async (req, res) => {
+  try {
     const customerId = req.account.accountId;
-    const gate = await getCustomerGateStatus(customerId);
     const onboarding = await getBridgeOnboarding(customerId);
-    if (!onboarding?.providerCustomerId) return res.status(409).json({ error: "No Bridge customer is linked to this account." });
-    const response = await getBridgeCustomer(onboarding.providerCustomerId);
-    const item = response.data || response;
-    const returnedId = item.id || item.customer_id || item.customerId;
-    const returnedReference = item.client_reference_id || item.clientReferenceId;
-    if (returnedId && returnedId !== onboarding.providerCustomerId) return res.status(502).json({ error: "Bridge returned a different customer ID; status was not saved." });
-    if (returnedReference && returnedReference !== customerId) return res.status(409).json({ error: "Bridge customer reference does not match this account; status was not saved." });
-    const endorsements = (Array.isArray(item.endorsements) ? item.endorsements : []).map((entry) => ({
-      name: String(entry?.name || "").toLowerCase(),
-      status: String(entry?.status || "unknown").toLowerCase(),
-      requirements: {
-        complete: Array.isArray(entry?.requirements?.complete) ? entry.requirements.complete : [],
-        pending: Array.isArray(entry?.requirements?.pending) ? entry.requirements.pending : [],
-        // Bridge documents missing as an object, not just an array. Preserve it.
-        missing: entry?.requirements?.missing && typeof entry.requirements.missing === "object"
-          ? entry.requirements.missing
-          : Array.isArray(entry?.requirements?.missing) ? entry.requirements.missing : {},
-        issues: Array.isArray(entry?.requirements?.issues) ? entry.requirements.issues : [],
-      },
-    })).filter((entry) => entry.name);
-    const statusOf = (name) => endorsements.find((entry) => entry.name === name)?.status || null;
-    const base = statusOf("base");
-    const sepa = statusOf("sepa");
-    const status = String(item.status || item.kyc_status || "unknown").toLowerCase();
-    const onboardingStatus = base === "approved" && sepa === "approved" ? "BASE_AND_SEPA_APPROVED"
-      : base === "approved" ? "BASE_APPROVED"
-      : sepa === "approved" ? "SEPA_APPROVED"
-      : base === "rejected" || status === "rejected" ? "BASE_REJECTED"
-      : ["under_review", "awaiting_questionnaire", "awaiting_ubo"].includes(status) ? "KYC_PENDING"
-      : "CUSTOMER_CREATED";
-    const saved = await saveBridgeCustomerStatus({
-      customerId, providerCustomerId: onboarding.providerCustomerId,
-      bridgeStatus: status, endorsements, baseEndorsementStatus: base,
-      sepaEndorsementStatus: sepa, onboardingStatus,
-    });
-    if (!saved) return res.status(409).json({ error: "Bridge status was fetched but the linked customer changed before saving." });
+    const readiness = getBridgeReadiness();
     return res.json({
-      provider: "Bridge", customerId, onboarding: saved,
-      bridgeStatus: status, endorsements, statusSynchronized: true,
-      transactionGate: {
-        base: base === "approved",
-        sepa: sepa === "approved",
-        // StableX identity approval and Bridge product endorsements are separate.
-        stablexIdentityApproved: gate.gate.approved,
-      },
+      provider: "Bridge",
+      customerId,
+      accountType: req.account.accountType,
+      linked: Boolean(onboarding?.providerCustomerId),
+      bridgeCustomerId: onboarding?.providerCustomerId || null,
+      bridgeStatus: onboarding?.bridgeStatus || null,
+      baseEndorsementStatus: onboarding?.baseEndorsementStatus || null,
+      sepaEndorsementStatus: onboarding?.sepaEndorsementStatus || null,
+      onboardingStatus: onboarding?.onboardingStatus || null,
+      environment: readiness.environment,
+      sandboxOnly: readiness.environment === "Sandbox",
+    });
+  } catch (error) { return fail(res, error); }
+});
+
+// List virtual accounts (dummy deposit instructions in Sandbox) for the
+// signed-in customer's linked Bridge customer.
+bridgeSelfServeRouter.get("/virtual-accounts", async (req, res) => {
+  try {
+    const customerId = req.account.accountId;
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "No Bridge customer is linked to this account. Complete Bridge onboarding first." });
+    }
+    const result = await listBridgeVirtualAccounts(onboarding.providerCustomerId);
+    const readiness = getBridgeReadiness();
+    return res.json({
+      provider: "Bridge", environment: readiness.environment, customerId,
+      bridgeCustomerId: onboarding.providerCustomerId,
+      virtualAccounts: result.data || result,
+      sandboxOnly: readiness.environment === "Sandbox", fundsMoved: false,
+    });
+  } catch (error) { return fail(res, error); }
+});
+
+// Create dummy Sandbox deposit instructions for the signed-in customer. The
+// Idempotency-Key comes from the browser so a retry cannot double-create.
+bridgeSelfServeRouter.post("/virtual-accounts", async (req, res) => {
+  try {
+    const customerId = req.account.accountId;
+    const currency = String(req.body?.currency || "").trim().toUpperCase();
+    const destinationAddress = String(req.body?.destinationAddress || "").trim();
+    const readiness = getBridgeReadiness();
+    if (readiness.environment !== "Sandbox") {
+      return res.status(409).json({ error: "This workspace is restricted to Bridge Sandbox. Live accounts need the separately approved production workflow.", environment: readiness.environment });
+    }
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "No Bridge customer is linked to this account. Complete Bridge onboarding first." });
+    }
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+      return res.status(400).json({ error: "Provide an Idempotency-Key header (maximum 128 characters)." });
+    }
+    const result = await createBridgeVirtualAccount({
+      bridgeCustomerId: onboarding.providerCustomerId,
+      currency,
+      destinationAddress,
+      idempotencyKey,
+    });
+    const account = result.data || result;
+    return res.status(201).json({
+      provider: "Bridge", environment: readiness.environment, customerId,
+      bridgeCustomerId: onboarding.providerCustomerId, virtualAccount: account,
+      sandboxOnly: true, dummyDepositInstructions: true, fundsMoved: false,
+      nextStep: "Use the returned source_deposit_instructions to display the simulated funding details. Sandbox does not fire payment webhooks or move real money.",
+    });
+  } catch (error) { return fail(res, error); }
+});
+
+// Submit the Source-of-Funds (SOF) fields Bridge's base/SEPA review flags as
+// incomplete_sof_field. Updates the linked Bridge customer via the documented
+// partial PUT, then immediately re-syncs status so the response shows whether
+// the requirement cleared.
+bridgeSelfServeRouter.post("/customer/sof", async (req, res) => {
+  try {
+    const customerId = req.account.accountId;
+    const onboarding = await getBridgeOnboarding(customerId);
+    if (!onboarding?.providerCustomerId) {
+      return res.status(409).json({ error: "No Bridge customer is linked to this account." });
+    }
+    const profile = req.body || {};
+    let patch;
+    if (req.account.accountType === "BUSINESS") {
+      // For businesses Bridge expects an integer monthly figure.
+      const monthly = Number(profile.expectedMonthlyPaymentsUsd);
+      if (!Number.isInteger(monthly) || monthly < 0) {
+        return res.status(400).json({ error: "expectedMonthlyPaymentsUsd must be a non-negative whole number for business accounts." });
+      }
+      if (typeof profile.actingAsIntermediary !== "boolean") {
+        return res.status(400).json({ error: "actingAsIntermediary must be true or false." });
+      }
+      patch = {
+        type: "business",
+        expected_monthly_payments_usd: monthly,
+        acting_as_intermediary: profile.actingAsIntermediary,
+      };
+    } else {
+      const { result, missing, invalid } = validatedIndividualSofFields(profile, { requireAll: true });
+      if (invalid.length) {
+        return res.status(400).json({ error: "Invalid source-of-funds values.", invalid });
+      }
+      if (missing.length) {
+        return res.status(400).json({ error: "All source-of-funds fields are required.", missingFields: missing });
+      }
+      patch = { type: "individual", ...result };
+    }
+    // Bridge's PUT customer resource does not accept an Idempotency-Key header,
+    // so the update is sent without one. The StableX-side duplicate risk is
+    // limited: the payload is validated and the customer ID is linked to this
+    // account only.
+    const updated = await updateBridgeCustomer(onboarding.providerCustomerId, patch);
+    const synced = await syncBridgeStatus(req.account);
+    const updatedItem = updated.data || updated;
+    return res.json({
+      provider: "Bridge", customerId,
+      sourceOfFundsUpdated: true,
+      bridgeStatus: synced.bridgeStatus,
+      endorsements: synced.endorsements,
+      transactionGate: synced.transactionGate,
+      onboarding: synced.onboarding,
+      providerUpdatedAt: updatedItem.updated_at || updatedItem.updatedAt || null,
       fundsMoved: false,
     });
   } catch (error) { return fail(res, error); }

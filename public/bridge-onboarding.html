@@ -36,6 +36,50 @@ small{color:#64748b}.doc{border:1px dashed #cbd5e1;padding:12px;border-radius:8p
 <div class="row" style="margin-top:16px"><button id="refreshStatus" class="secondary">Refresh Bridge status</button><button id="termsButton">Continue to Bridge Terms</button></div>
 <p id="termsHint">Bridge's terms must be opened and accepted by the customer personally.</p>
 </section>
+<section id="sofPanel" class="panel hidden">
+<h2>Source of funds</h2>
+<p>Bridge's review needs a few more details about your funds before it can approve Base/SEPA. Submit these once; Bridge re-reviews the customer automatically afterwards.</p>
+<form id="sofForm">
+<div id="sofIndividual">
+<div class="grid">
+<label>Employment status *<select id="sofEmployment" required>
+<option value="">Select</option>
+<option value="employed">Employed</option>
+<option value="self_employed">Self-employed</option>
+<option value="student">Student</option>
+<option value="retired">Retired</option>
+<option value="homemaker">Homemaker</option>
+<option value="unemployed">Unemployed</option>
+</select></label>
+<label>Expected monthly payments (USD) *<select id="sofMonthly" required>
+<option value="">Select</option>
+<option value="0_4999">$0 – $4,999</option>
+<option value="5000_9999">$5,000 – $9,999</option>
+<option value="10000_49999">$10,000 – $49,999</option>
+<option value="50000_plus">$50,000 or more</option>
+</select></label>
+<label>Acting as an intermediary for a third party? *<select id="sofIntermediary" required>
+<option value="">Select</option>
+<option value="false">No</option>
+<option value="true">Yes</option>
+</select></label>
+<label class="full">Most recent occupation * — type to search, then pick a code<input id="sofOccupationInput" list="occupationList" autocomplete="off" placeholder="Start typing a job title…" required></label>
+<datalist id="occupationList"></datalist>
+</div>
+</div>
+<div id="sofBusiness" class="hidden">
+<div class="grid">
+<label>Expected monthly payments (USD, whole number) *<input id="sofMonthlyBusiness" type="number" min="0" step="1" required></label>
+<label>Acting as an intermediary for a third party? *<select id="sofIntermediaryBusiness" required>
+<option value="">Select</option>
+<option value="false">No</option>
+<option value="true">Yes</option>
+</select></label>
+</div>
+</div>
+<div class="row" style="margin-top:12px"><button id="submitSof" type="submit">Submit source of funds</button><span id="sofHint" class="muted"></span></div>
+</form>
+</section>
 <section id="profilePanel" class="panel hidden">
 <h2 id="profileHeading">Bridge profile</h2>
 <p>Complete the fields below. Sensitive information and document images are sent to Bridge over the server-side API and are not stored as a StableX profile record.</p>
@@ -169,7 +213,44 @@ function message(text,kind="notice"){const el=$("message");el.textContent=text;e
 async function api(path,options={}){const headers={...(options.headers||{}),"Content-Type":"application/json",Authorization:"Bearer "+token()};const response=await fetch(path,{...options,headers});const data=await response.json().catch(()=>({}));if(!response.ok){const error=new Error(data.error||"Request failed");error.data=data;throw error}return data}
 async function fileData(input){const file=input.files?.[0];if(!file)return null;if(file.size>9*1024*1024)throw new Error(file.name+" exceeds 9 MB. Compress it before upload.");return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("Could not read "+file.name));reader.readAsDataURL(file)})}
 function addr(street,city,subdivision,postal,country){return {streetLine1:$(street).value,city:$(city).value,subdivision:$(subdivision).value,postalCode:$(postal).value,country:$(country).value.toUpperCase()}}
-function showStatus(data){$("voveStatus").textContent=data.stablexCompliance?.status||"—";$("bridgeStatus").textContent=data.onboarding?.bridgeStatus||data.onboarding?.onboardingStatus||"Not created";$("baseStatus").textContent=data.onboarding?.baseEndorsementStatus||"—";$("sepaStatus").textContent=data.onboarding?.sepaEndorsementStatus||"—";const approved=data.stablexCompliance?.approved;$("termsButton").disabled=!approved||!!data.onboarding?.signedAgreementId;$("termsHint").textContent=!approved?"Complete and receive StableX identity approval first.":data.onboarding?.signedAgreementId?"Bridge terms acceptance is recorded.": "Bridge's terms must be opened and accepted by the customer personally.";const panel=$("profilePanel");panel.classList.toggle("hidden",!approved||!data.onboarding?.signedAgreementId||!!data.onboarding?.providerCustomerId);const box=$("requirements");box.replaceChildren();for(const endorsement of data.onboarding?.endorsements||[]){const h=document.createElement("p");h.textContent=endorsement.name.toUpperCase()+" — "+endorsement.status;box.append(h);const missing=endorsement.requirements?.missing||{};for(const [key,value] of Object.entries(missing)){const row=document.createElement("div");row.className="req";row.textContent=key.replaceAll("_"," ")+": "+(typeof value==="string"?value:JSON.stringify(value));box.append(row)}for(const issue of endorsement.requirements?.issues||[]){const row=document.createElement("div");row.className="req";row.textContent="Issue: "+(typeof issue==="string"?issue:JSON.stringify(issue));box.append(row)}}if(data.onboarding?.providerCustomerId&&!data.onboarding?.baseEndorsementStatus){const row=document.createElement("p");row.className="muted";row.textContent="Bridge customer created. Refresh status to retrieve endorsement requirements.";box.append(row)}}
+function showStatus(data){
+  $("voveStatus").textContent=data.stablexCompliance?.status||"—";
+  $("bridgeStatus").textContent=data.onboarding?.bridgeStatus||data.onboarding?.onboardingStatus||"Not created";
+  $("baseStatus").textContent=data.onboarding?.baseEndorsementStatus||"—";
+  $("sepaStatus").textContent=data.onboarding?.sepaEndorsementStatus||"—";
+  const approved=data.stablexCompliance?.approved;
+  $("termsButton").disabled=!approved||!!data.onboarding?.signedAgreementId;
+  $("termsHint").textContent=!approved?"Complete and receive StableX identity approval first.":data.onboarding?.signedAgreementId?"Bridge terms acceptance is recorded.":"Bridge's terms must be opened and accepted by the customer personally.";
+  const panel=$("profilePanel");panel.classList.toggle("hidden",!approved||!data.onboarding?.signedAgreementId||!!data.onboarding?.providerCustomerId);
+  const box=$("requirements");box.replaceChildren();
+  let needsSof=false;
+  for(const endorsement of data.onboarding?.endorsements||[]){
+    const h=document.createElement("p");h.textContent=endorsement.name.toUpperCase()+" — "+endorsement.status;box.append(h);
+    const missing=endorsement.requirements?.missing||{};
+    for(const [key,value] of Object.entries(missing)){
+      const text=key.replaceAll("_"," ")+": "+(typeof value==="string"?value:JSON.stringify(value));
+      const row=document.createElement("div");
+      if(text.includes("post_processing")){row.className="muted";row.textContent="Bridge is processing your review — this clears automatically once every other requirement is satisfied.";}
+      else{row.className="req";row.textContent=text;}
+      box.append(row);
+    }
+    for(const issue of endorsement.requirements?.issues||[]){
+      const text=typeof issue==="string"?issue:JSON.stringify(issue);
+      if(text.includes("incomplete_sof_field"))needsSof=true;
+      const row=document.createElement("div");row.className="req";row.textContent="Issue: "+text;box.append(row);
+    }
+  }
+  if(data.onboarding?.providerCustomerId&&!data.onboarding?.baseEndorsementStatus){const row=document.createElement("p");row.className="muted";row.textContent="Bridge customer created. Refresh status to retrieve endorsement requirements.";box.append(row)}
+  // Show the source-of-funds form only when Bridge actually flags SOF fields
+  // as incomplete and a Bridge customer record already exists.
+  const business=session?.accountType==="BUSINESS";
+  $("sofIndividual").classList.toggle("hidden",business);
+  $("sofIndividual").querySelectorAll("input,select").forEach(el=>{el.disabled=business});
+  $("sofBusiness").classList.toggle("hidden",!business);
+  $("sofBusiness").querySelectorAll("input,select").forEach(el=>{el.disabled=!business});
+  $("sofPanel").classList.toggle("hidden",!(needsSof&&data.onboarding?.providerCustomerId));
+  if(needsSof)loadOccupations().catch(()=>{});
+}
 async function load(){if(!token()){location.href="/auth.html";return}try{session=await api("/api/bridge/self/onboarding");showStatus(session);const p=session.accountPrefill||{};const iso3=({NG:"NGA",US:"USA",CA:"CAN",GB:"GBR",FR:"FRA",DE:"DEU",KE:"KEN",GH:"GHA",ZA:"ZAF",UG:"UGA",TZ:"TZA",RW:"RWA",AU:"AUS",NZ:"NZL",IN:"IND"})[String(p.country||"").toUpperCase()]||"";const parts=(p.fullName||"").trim().split(/\s+/);$("firstName").value=parts[0]||"";$("lastName").value=parts.slice(1).join(" ");$("indEmail").value=p.email||"";$("indPhone").value=p.phone||"";$("birthDate").value=p.dateOfBirth||"";$("bizName").value=p.businessName||"";$("bizEmail").value=p.email||"";$("bizPhone").value=p.phone||"";$("indCountry").value=iso3;$("idCountry").value="";$("regCountry").value=iso3;$("physCountry").value=iso3;$("bizTaxCountry").value=iso3;const business=session.accountType==="BUSINESS";$("profileHeading").textContent=business?"Bridge business KYB profile":"Bridge individual KYC profile";const individualSection=$("individualFields");const businessSection=$("businessFields");individualSection.classList.toggle("hidden",business);businessSection.classList.toggle("hidden",!business);individualSection.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=business});businessSection.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=!business}); }catch(e){message(e.message,"error")}}
 $("termsButton").addEventListener("click",async()=>{try{const d=await api("/api/bridge/self/tos-link",{method:"POST",headers:{"Idempotency-Key":"bridge-tos-"+session.customerId},body:"{}"});if(d.tosUrl)window.location.assign(d.tosUrl);message("Bridge Terms opened. Accept them in the Bridge tab, then return here.","notice")}catch(e){message(e.message,"error")}});
 async function handleCallback(){const params=new URLSearchParams(location.search);const signed=params.get("signed_agreement_id");if(!signed)return;try{await api("/api/bridge/self/tos-acceptance",{method:"POST",body:JSON.stringify({signedAgreementId:signed,customerId:params.get("customerId")||""})});history.replaceState({},document.title,location.pathname);message("Bridge Terms acceptance recorded. Continue with your provider profile.","success")}catch(e){message(e.message,"error")}}
@@ -177,6 +258,44 @@ $("profileForm").addEventListener("submit",async event=>{event.preventDefault();
 $("refreshStatus").addEventListener("click",async()=>{try{const d=await api("/api/bridge/self/status/refresh",{method:"POST",body:"{}"});message("Bridge status refreshed. Review the outstanding requirements below.","success");await load()}catch(e){message(e.message,"error")}});
 function addUboCard(){const fragment=$("uboTemplate").content.cloneNode(true);const card=fragment.querySelector(".ubo-card");card.querySelector(".remove-ubo").addEventListener("click",()=>{if(document.querySelectorAll(".ubo-card").length>1)card.remove()});for(const key of ["country","idCountry"])card.querySelector(`[data-field="${key}"]`).value="";$("uboContainer").append(fragment)}
 $("addUbo").addEventListener("click",addUboCard);
+let occupations=[];
+async function loadOccupations(){
+  if(occupations.length)return occupations;
+  const data=await api("/api/bridge/self/occupations");
+  occupations=(data.occupations||[]).slice().sort((a,b)=>a.label.localeCompare(b.label));
+  const list=$("occupationList");
+  list.replaceChildren(...occupations.map(entry=>{
+    const option=document.createElement("option");
+    option.value=entry.code;
+    option.label=entry.label+" ("+entry.code+")";
+    return option;
+  }));
+  return occupations;
+}
+$("sofForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const button=$("submitSof");
+  button.disabled=true;$("sofHint").textContent="Submitting to Bridge…";
+  try{
+    const business=session?.accountType==="BUSINESS";
+    let body;
+    if(business){
+      body={expectedMonthlyPaymentsUsd:Number($("sofMonthlyBusiness").value),actingAsIntermediary:$("sofIntermediaryBusiness").value==="true"};
+      if($("sofIntermediaryBusiness").value==="")throw new Error("Select whether you are acting as an intermediary.");
+      if(!Number.isInteger(body.expectedMonthlyPaymentsUsd)||body.expectedMonthlyPaymentsUsd<0)throw new Error("Enter a whole number of US dollars for expected monthly payments.");
+    }else{
+      const code=$("sofOccupationInput").value.trim();
+      if(!code)throw new Error("Select your most recent occupation.");
+      if(!occupations.some(entry=>entry.code===code))throw new Error("Occupation code not recognised; pick one from the suggestions.");
+      if($("sofIntermediary").value==="")throw new Error("Select whether you are acting as an intermediary.");
+      body={employmentStatus:$("sofEmployment").value,expectedMonthlyPaymentsUsd:$("sofMonthly").value,mostRecentOccupation:code,actingAsIntermediary:$("sofIntermediary").value==="true"};
+    }
+    await api("/api/bridge/self/customer/sof",{method:"POST",body:JSON.stringify(body)});
+    message("Source of funds submitted to Bridge. The status below is fresh from the provider.","success");
+    await load();
+  }catch(e){message(e.message,"error")}
+  finally{button.disabled=false;$("sofHint").textContent=""}
+});
 (async()=>{addUboCard();await handleCallback();await load()})();
 </script>
 </body></html>

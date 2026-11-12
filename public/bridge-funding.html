@@ -14,20 +14,16 @@ button{background:#2457d6;color:#fff;border:0;border-radius:8px;padding:12px 18p
 button.secondary{background:#e9eefb;color:#23437e}button:disabled{opacity:.5;cursor:not-allowed}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fc;border:1px solid #e7ebf2;border-radius:9px;padding:15px;min-height:60px}
 .notice{padding:12px;border-radius:9px;background:#fff7e6;color:#80520a}.success{background:#ecfdf3;color:#067647}
+.status{display:inline-block;padding:4px 10px;border-radius:20px;background:#eef2ff;font-size:12px;font-weight:700;margin-left:8px}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.panel{padding:16px}}
 </style></head>
 <body><main>
 <p class="eyebrow">STABLEX · PROVIDER TEST WORKSPACE</p>
 <h1>Bridge Sandbox funding instructions</h1>
-<p class="muted">Create and inspect dummy fiat deposit instructions for a linked Bridge Sandbox customer. No real bank account is issued and no funds move.</p>
+<p class="muted">Create and inspect dummy fiat deposit instructions for <b>your own</b> linked Bridge Sandbox customer. No real bank account is issued and no funds move.</p>
 <section class="panel">
 <div class="notice">Sandbox only. Bridge documents virtual accounts and deposit instructions as dummy data in Sandbox. Payment-related webhooks are not fired.</div>
-<div class="grid">
-<div><label for="customer">StableX customer ID</label><input id="customer" value="customer-001"></div>
-<div><label for="operator">StableX operator token</label><input id="operator" type="password" autocomplete="off" placeholder="Enter your local operator token"></div>
-</div>
-<button id="load">Load linked Bridge customer</button>
-<p id="customerStatus" class="muted">Not loaded.</p>
+<div id="fundingStatus" class="muted">Checking your linked Bridge customer…</div>
 <div class="grid">
 <div><label for="currency">Deposit currency</label><select id="currency"><option value="USD">USD · US virtual account</option><option value="EUR">EUR · SEPA virtual account</option><option value="GBP">GBP · GBP virtual account (availability subject to account access)</option></select></div>
 <div><label for="address">Base destination wallet address</label><input id="address" placeholder="0x..."></div>
@@ -37,16 +33,46 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fc;border:1px so
 <button id="refresh" class="secondary" disabled>Refresh virtual accounts</button>
 </section>
 <section class="panel"><h2>Provider response</h2><pre id="result">No request made.</pre></section>
-<p class="muted"><a href="/console.html">Customer console</a> · <a href="/honeycoin-onramp.html">Honeycoin on-ramp diagnostics</a> · <a href="/">StableX home</a></p>
+<p class="muted"><a href="/bridge-onboarding.html">Bridge onboarding</a> · <a href="/customer-dashboard.html">Dashboard</a> · <a href="/auth.html">Account</a></p>
 </main>
 <script>
 (() => {
-const $=id=>document.getElementById(id);let bridgeCustomerId=null;let currentEnvironment=null;
-async function api(path,options={}){const r=await fetch(path,{...options,headers:{"content-type":"application/json",...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Request failed");return d}
+const $=id=>document.getElementById(id);
+const TOKEN_KEY="stablex_session";
+let bridgeCustomerId=null;let currentEnvironment=null;let accountType="INDIVIDUAL";
+const token=()=>localStorage.getItem(TOKEN_KEY)||"";
+async function api(path,options={}){const r=await fetch(path,{...options,headers:{"content-type":"application/json",Authorization:"Bearer "+token(),...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Request failed");return d}
 function show(v){$("result").textContent=JSON.stringify(v,null,2)}
-function headers(key){const token=$("operator").value.trim();if(!token)throw new Error("Enter your StableX operator token.");return {"Authorization":"Bearer "+token,...(key?{"Idempotency-Key":key}:{})}}
-$("load").onclick=async()=>{try{$("load").disabled=true;const id=encodeURIComponent($("customer").value.trim());const data=await api("/api/bridge/customers/onboarding?customerId="+id);bridgeCustomerId=data.onboarding?.providerCustomerId||null;if(!bridgeCustomerId)throw new Error("No Bridge customer is linked to this StableX customer. Complete Bridge onboarding first.");const profile=await api("/api/bridge/customers/"+encodeURIComponent(bridgeCustomerId));currentEnvironment=(await api("/api/bridge/readiness")).environment;$("customerStatus").textContent="Linked Bridge customer: "+bridgeCustomerId+" · Provider status: "+(profile.customer?.status||"unknown")+" · Environment: "+currentEnvironment;$("create").disabled=currentEnvironment!=="Sandbox";$("refresh").disabled=false;show({onboarding:data.onboarding,customer:profile.customer,environment:currentEnvironment});}catch(e){$("customerStatus").textContent=e.message;show({error:e.message});}finally{$("load").disabled=false}};
-$("create").onclick=async()=>{try{if(!bridgeCustomerId)throw new Error("Load the linked Bridge customer first.");const key=crypto.randomUUID();$("create").disabled=true;const data=await api("/api/bridge/virtual-accounts",{method:"POST",headers:headers(key),body:JSON.stringify({customerId:$("customer").value.trim(),currency:$("currency").value,destinationAddress:$("address").value.trim()})});show(data);$("refresh").disabled=false;}catch(e){show({error:e.message});}finally{$("create").disabled=!bridgeCustomerId||currentEnvironment!=="Sandbox"}};
-$("refresh").onclick=async()=>{try{const id=encodeURIComponent($("customer").value.trim());const data=await api("/api/bridge/virtual-accounts?customerId="+id,{headers:headers()});show(data);}catch(e){show({error:e.message});}};
+function status(text,kind){const el=$("fundingStatus");el.textContent=text;el.className=kind==="success"?"success":kind==="notice"?"notice":"muted"}
+async function loadFunding(){
+  try{
+    const data=await api("/api/bridge/self/funding");
+    currentEnvironment=data.environment;accountType=data.accountType||"INDIVIDUAL";
+    if(!data.linked){
+      bridgeCustomerId=null;
+      status("No Bridge customer is linked to this account yet. Complete Bridge onboarding first — the funding buttons stay disabled.","notice");
+      $("create").disabled=true;$("refresh").disabled=true;
+      show({onboarding:data});return;
+    }
+    bridgeCustomerId=data.bridgeCustomerId;
+    const endorsement=data.baseEndorsementStatus||"—";
+    status("Signed in customer: "+data.customerId.slice(0,8)+"… · Linked Bridge customer: "+bridgeCustomerId+" · Status: "+(data.bridgeStatus||"unknown")+" · Base endorsement: "+endorsement+" · Environment: "+data.environment,"success");
+    $("create").disabled=currentEnvironment!=="Sandbox";
+    $("refresh").disabled=false;
+    show(data);
+  }catch(e){
+    if(/Session is invalid|Bearer session token|401/i.test(e.message)){location.href="/auth.html";return}
+    status(e.message,"notice");show({error:e.message});
+  }
+}
+$("create").onclick=async()=>{try{
+  if(!bridgeCustomerId)throw new Error("Load the linked Bridge customer first.");
+  if(!/^0x[a-fA-F0-9]{40}$/.test($("address").value.trim()))throw new Error("Enter a valid Base (EVM) destination address, e.g. 0x followed by 40 hex characters.");
+  $("create").disabled=true;
+  const data=await api("/api/bridge/self/virtual-accounts",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({currency:$("currency").value,destinationAddress:$("address").value.trim()})});
+  show(data);$("refresh").disabled=false;
+}catch(e){show({error:e.message});}finally{$("create").disabled=!bridgeCustomerId||currentEnvironment!=="Sandbox"}};
+$("refresh").onclick=async()=>{try{const data=await api("/api/bridge/self/virtual-accounts");show(data);}catch(e){show({error:e.message});}};
+if(!token()){location.href="/auth.html"}else{loadFunding()}
 })();
 </script></body></html>
