@@ -55,7 +55,7 @@ function classify(quoteType) {
   return "INDICATIVE";
 }
 
-function normalizeProviderResult(provider, request, result) {
+export function normalizeProviderResult(provider, request, result) {
   const raw = result.providerData ?? result.raw ?? result;
 
   // Paycrest nests direction-specific rates under buy/sell.
