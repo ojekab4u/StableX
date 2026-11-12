@@ -181,7 +181,7 @@ export async function createPaytrieOrder({ transferId, customerId, accountType, 
       String(process.env.PAYTRIE_PERSONAL_TEST_MODE || "").trim().toLowerCase() === "true" &&
       Boolean(String(process.env.PAYTRIE_PERSONAL_TEST_CUSTOMER_ID || "").trim());
     if (personalTestConfigured) {
-      throw fail("Paytrie personal-account test mode is restricted to the single configured StableX PERSONAL account.", 403);
+      throw fail("Paytrie personal-account test mode is restricted to the single StableX PERSONAL account configured for local testing.", 403);
     }
     throw fail("Paytrie platform execution is disabled. A local personal-account test must be explicitly configured for one StableX PERSONAL account.", 403);
   }
