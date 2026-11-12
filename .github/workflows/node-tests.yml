@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feature/honeycoin-onramp-orders
+      - feature/paytrie-platform-authorization-gate
   pull_request:
     branches:
       - feature/customer-routing-interface
+      - feature/bridge-self-serve-onboarding
       - main
 
 jobs:
@@ -19,6 +21,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install
+      - run: node --check services/routingService.js
+      - run: node --check services/paytrieService.js
+      - run: node --check services/paytrieExecutionService.js
+      - run: node --check routes/paytrieRoutes.js
+      - run: node --check test/providerAdapters.test.js
+      - name: Check Paytrie transfer frontend script syntax
+        run: node -e "const fs=require('node:fs'); const html=fs.readFileSync('public/transfer-flow.html','utf8'); const script=html.match(/<script type=\"module\">([\\s\\S]*?)<\\/script>/)?.[1]; if(!script) throw new Error('Transfer frontend script not found'); new Function('return (async()=>{'+script+'})');"
       - run: node --check services/providers/honeycoinService.js
       - run: node --check services/providerOrderService.js
       - run: node --check repositories/providerOrderRepository.js
