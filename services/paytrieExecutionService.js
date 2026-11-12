@@ -166,12 +166,12 @@ export async function createPaytrieOrder({ transferId, customerId, jwt, confirm 
   }
   return { created: Boolean(transactionId), order: safeOrder(updated), funding: { required: providerStatus.toLowerCase() === "awaiting-fiat", reference: result.rmtId || null, paymentType: result.paymentType || null }, message: "Paytrie transaction submitted. This response is not proof of payment or USDC settlement." };
 }
-export async function refreshPaytrieOrder({ transferId, customerId, jwt }) {
+export async function refreshPaytrieOrder({ transferId, customerId }) {
+  if (!isPaytriePlatformExecutionApproved()) throw fail("Paytrie platform execution is disabled pending written platform authorization.", 403);
   const order = await readProviderOrderByTransfer(transferId, customerId);
   if (!order || order.provider !== "Paytrie") throw fail("No Paytrie order exists for this transfer.", 404);
   if (!order.providerTransactionId) return { order: safeOrder(order), refreshed: false, message: "No provider transaction ID is stored. Do not retry an ambiguous create request." };
-  const customerJwt = typeof jwt === "string" && jwt.trim().length >= 20 ? jwt.trim() : await getStoredPaytrieCustomerJwt(customerId);
-  const result = await request(`/transactions/${encodeURIComponent(order.providerTransactionId)}`, { jwt: customerJwt });
+  throw fail("Paytrie platform authentication model is not confirmed. Order refresh is disabled.", 503);
   const status = String(result.status || "UNKNOWN");
   const state = status.toLowerCase();
   let transfer = await readTransfer(transferId, customerId);
