@@ -177,6 +177,7 @@ export async function createPaytrieOrder({ transferId, customerId, accountType, 
   const personalTestMode = isPaytriePersonalTestModeEnabled(customerId, accountType);
   if (!isPaytriePlatformExecutionApproved() && !personalTestMode) throw fail("Paytrie platform execution is disabled. For a local personal-account test, enable PAYTRIE_PERSONAL_TEST_MODE and bind PAYTRIE_PERSONAL_TEST_CUSTOMER_ID to this one StableX PERSONAL account.", 403);
   if (confirm !== true) throw fail("Explicit confirmation is required before submitting a real Paytrie transaction.");
+  apiKey(); // Fail before reserving an order if the provider credential is missing.
   const customerJwt = typeof jwt === "string" && jwt.trim().length >= 20 ? jwt.trim() : await getStoredPaytrieCustomerJwt(customerId);
   const transfer = await readTransfer(transferId, customerId);
   if (!transfer) throw fail("Transfer not found for this customer.", 404);
