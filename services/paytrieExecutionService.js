@@ -174,8 +174,17 @@ async function verifyUsdcReceipt({ hash, wallet, expectedAmount }) {
   return matched ? { verified: true, blockNumber: receipt.blockNumber.toString() } : { verified: false, reason: "The Base receipt does not contain the expected USDC transfer to the saved wallet." };
 }
 export async function createPaytrieOrder({ transferId, customerId, accountType, jwt, confirm }) {
+  const platformApproved = isPaytriePlatformExecutionApproved();
   const personalTestMode = isPaytriePersonalTestModeEnabled(customerId, accountType);
-  if (!isPaytriePlatformExecutionApproved() && !personalTestMode) throw fail("Paytrie platform execution is disabled. For a local personal-account test, enable PAYTRIE_PERSONAL_TEST_MODE and bind PAYTRIE_PERSONAL_TEST_CUSTOMER_ID to the single configured StableX PERSONAL account.", 403);
+  if (!platformApproved && !personalTestMode) {
+    const personalTestConfigured =
+      String(process.env.PAYTRIE_PERSONAL_TEST_MODE || "").trim().toLowerCase() === "true" &&
+      Boolean(String(process.env.PAYTRIE_PERSONAL_TEST_CUSTOMER_ID || "").trim());
+    if (personalTestConfigured) {
+      throw fail("Paytrie personal-account test mode is restricted to the single configured StableX PERSONAL account.", 403);
+    }
+    throw fail("Paytrie platform execution is disabled. A local personal-account test must be explicitly configured for one StableX PERSONAL account.", 403);
+  }
   if (confirm !== true) throw fail("Explicit confirmation is required before submitting a real Paytrie transaction.");
   apiKey(); // Fail before reserving an order if the provider credential is missing.
   const customerJwt = typeof jwt === "string" && jwt.trim().length >= 20 ? jwt.trim() : await getStoredPaytrieCustomerJwt(customerId);
