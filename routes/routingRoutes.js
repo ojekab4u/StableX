@@ -20,7 +20,7 @@ routingRouter.post("/quotes", requireAuth, async (req, res) => {
 
 routingRouter.get("/quotes/:quoteId", requireAuth, async (req, res) => {
   try {
-    const quote = await getRoutingQuote(req.params.quoteId);
+    const quote = await getRoutingQuote(req.params.quoteId, req.account.accountId);
     return quote ? res.json({ quote }) : res.status(404).json({ error: "Quote not found or expired." });
   } catch (e) {
     return fail(res, e);
