@@ -60,6 +60,7 @@ paytrieRouter.post("/customer/auth/login-code", requireAuth, async (req, res) =>
 
 paytrieRouter.post("/customer/auth/verify", requireAuth, async (req, res) => {
   try {
+    if (!requirePersonalTestAccount(req, res)) return;
     if (req.account.status !== "ACTIVE") return res.status(403).json({ error: "Verify your StableX account email before connecting Paytrie." });
     const result = await verifyPaytrieCustomerLoginCode({
       customerId: req.account.accountId,
