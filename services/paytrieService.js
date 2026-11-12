@@ -19,7 +19,7 @@ export function getPaytrieReadiness() {
     quoteEndpoint: API_BASE + "/quotes",
     platformAuthorizationRequired: true,
     platformExecutionApproved: platformApproved,
-    transactionCreationEnabled: hasUsableKey && platformApproved,
+    transactionCreationEnabled: false,
     customerAuthenticationModel: "AWAITING_PAYTRIE_PLATFORM_CONFIRMATION",
     transactionEndpoint: API_BASE + "/transactions",
     note: !hasUsableKey
