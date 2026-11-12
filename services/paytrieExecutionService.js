@@ -43,14 +43,27 @@ async function request(path, { method = "GET", jwt, body } = {}) {
   return data.data ?? data;
 }
 
+export function isPaytriePlatformExecutionApproved() {
+  return String(process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED || "").trim().toLowerCase() === "true";
+}
+
 export function getPaytrieExecutionReadiness() {
   let keyPresent = false;
   try { apiKey(); keyPresent = true; } catch {}
+  const platformApproved = isPaytriePlatformExecutionApproved();
   return {
-    provider: "Paytrie", apiVersion: "v2", apiKeyPresent: keyPresent,
-    customerJwtRequired: true, transactionCreationEnabled: keyPresent,
+    provider: "Paytrie",
+    apiVersion: "v2",
+    apiKeyPresent: keyPresent,
+    customerJwtRequired: true,
+    platformAuthorizationRequired: true,
+    platformExecutionApproved: platformApproved,
+    transactionCreationEnabled: keyPresent && platformApproved,
+    status: !keyPresent ? "API_KEY_MISSING" : !platformApproved ? "PAYTRIE_PLATFORM_APPROVAL_REQUIRED" : "CONFIGURED_AWAITING_CUSTOMER_AUTH",
     supportedExecutionRoute: "CAD -> USDC-BASE",
-    
+    note: platformApproved
+      ? "Platform execution is enabled by local configuration; verify Paytrie's explicit approval before use."
+      : "Paytrie has not confirmed an approved platform/partner arrangement for StableX. An API key or customer JWT does not grant StableX permission to transact as an MSB. Order creation is disabled."
   };
 }
 export async function requestPaytrieLoginCode(email) {
@@ -107,6 +120,7 @@ async function verifyUsdcReceipt({ hash, wallet, expectedAmount }) {
   return matched ? { verified: true, blockNumber: receipt.blockNumber.toString() } : { verified: false, reason: "The Base receipt does not contain the expected USDC transfer to the saved wallet." };
 }
 export async function createPaytrieOrder({ transferId, customerId, jwt, confirm }) {
+  if (!isPaytriePlatformExecutionApproved()) throw fail("Paytrie platform execution is disabled. Obtain Paytrie's explicit written approval for StableX's platform/partner model before creating customer orders.", 403);
   if (confirm !== true) throw fail("Explicit confirmation is required before submitting a real Paytrie transaction.");
   if (typeof jwt !== "string" || jwt.trim().length < 20) throw fail("Authenticate the verified Paytrie customer and provide its short-lived JWT.", 401);
   const transfer = await readTransfer(transferId, customerId);
