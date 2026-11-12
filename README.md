@@ -493,3 +493,14 @@ Keep `PAYTRIE_PLATFORM_EXECUTION_APPROVED=false`. A Paytrie API key or a retail 
 
 The customer-specific Paytrie login endpoints are not part of the normal StableX onboarding flow and must not be linked as a required customer step. Revisit the execution authentication model only after Paytrie confirms in writing how an approved platform should authenticate and transact for its end users.
 
+## Authenticated customer transfer flow
+
+Open `/transfer-flow.html` from the customer dashboard (or directly) to exercise the StableX-first transfer path:
+
+1. Sign in through `POST /api/auth/login`; the page keeps the StableX session token in session storage and sends it as a Bearer token.
+2. Save a beneficiary through authenticated `POST /api/transfers/beneficiaries`. The API derives the owner from the session.
+3. Create a durable DRAFT through authenticated `POST /api/transfers` with an `Idempotency-Key`.
+4. Request provider quotes through authenticated `POST /api/routing/quotes`. Each quote is persisted and bound to the requesting StableX account.
+5. Select one through authenticated `POST /api/routing/select`. The server verifies quote ownership, transfer ownership, route/amount match, expiry and the customer's APPROVED compliance gate; it atomically records the quote and advances the transfer to QUOTED.
+
+Quote selection is not an order, funding, debit, payout or settlement. Paytrie order creation and refresh remain disabled until Paytrie confirms the platform authentication and end-user funding model in writing. StableX customers are not required to register with Paytrie as a workaround.
