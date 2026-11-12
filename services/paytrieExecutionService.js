@@ -119,7 +119,8 @@ export async function logoutPaytrieCustomer({ customerId }) {
   await deletePaytrieCustomerSession(customerId);
   return { authenticated: false, message: "Paytrie customer session revoked from StableX." };
 }
-\nfunction safeOrder(order) {
+
+function safeOrder(order) {
   const secret = order.paymentDetails ? decryptBeneficiaryDetails(order.paymentDetails) : {};
   return { ...order, paymentDetails: secret.instructions || null, redirectUrl: secret.redirectUrl || null, providerResponse: secret.providerResponse || null };
 }
