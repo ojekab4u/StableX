@@ -6,7 +6,7 @@ import {
   getPaytrieCustomerAuthStatus,
   logoutPaytrieCustomer,
   createPaytrieOrder,
-  refreshPaytrieOrder,
+  refreshPaytrieOrder,\n  getPaytrieOrderForTransfer,
 } from "../services/paytrieExecutionService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { registerExternalWallet, listExternalWallets } from "../services/walletService.js";
@@ -111,6 +111,16 @@ paytrieRouter.post("/transfers/:id/order", requireAuth, async (req, res) => {
       confirm: req.body?.confirm,
     });
     return res.status(result.created ? 201 : 200).json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.get("/transfers/:id/order", requireAuth, async (req, res) => {
+  try {
+    if (!requirePersonalTestAccount(req, res)) return;
+    return res.json(await getPaytrieOrderForTransfer({
+      transferId: req.params.id,
+      customerId: req.account.accountId,
+    }));
   } catch (error) { return fail(res, error); }
 });
 
