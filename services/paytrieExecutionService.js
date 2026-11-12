@@ -20,7 +20,7 @@ const fail = (message, statusCode = 400) => Object.assign(new Error(message), { 
 function apiKey() {
   const value = String(process.env.PAYTRIE_API_KEY || "").trim();
   if (!value || /^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(value)) {
-    throw fail("PAYTRIE_API_KEY is not configured. Add the Paytrie-issued API key for the approved StableX integration to the server .env.", 503);
+    throw fail("PAYTRIE_API_KEY is not configured. Add the Paytrie-issued API key to the server .env for this personal-account test or approved integration.", 503);
   }
   return value;
 }
