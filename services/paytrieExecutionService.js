@@ -259,7 +259,7 @@ export async function refreshPaytrieOrder({ transferId, customerId, accountType,
     if (transfer.status === "AWAITING_FUNDING") await updateTransferStatus({ id: transferId, customerId, status: "FUNDED", actorId: "PAYTRIE", reason: "Paytrie reports fiat processing/finalization." });
     await updateTransferStatus({ id: transferId, customerId, status: "SETTLEMENT_PENDING", actorId: "PAYTRIE", reason: `Paytrie reports ${status}; waiting for Base verification.` });
   }
-  const hash = result.transactionHash || result.txHash || result.txid || null;
+  const hash = result.transactionHash || result.txHash || result.txid || result.paymentId || null;
   const expected = result.rightSideValue ?? result.cryptoAmount ?? transfer?.destinationAmount ?? null;
   let verification = { verified: false, reason: "Paytrie has not supplied a verifiable Base USDC settlement transaction yet." };
   if (state === "complete" && hash) verification = await verifyUsdcReceipt({ hash, wallet: order.recipientAddress, expectedAmount: expected });
