@@ -241,6 +241,20 @@ export async function createPaytrieOrder({ transferId, customerId, accountType, 
   }
   return { created: Boolean(transactionId), order: safeOrder(updated), funding: { required: providerStatus.toLowerCase() === "awaiting-fiat", reference: result.rmtId || null, paymentType: result.paymentType || null }, message: "Paytrie transaction submitted. This response is not proof of payment or USDC settlement." };
 }
+export async function getPaytrieOrderForTransfer({ transferId, customerId }) {
+  const [order, transfer] = await Promise.all([
+    readProviderOrderByTransfer(transferId, customerId),
+    readTransfer(transferId, customerId),
+  ]);
+  if (!transfer) throw fail("Transfer not found for this customer.", 404);
+  if (!order || order.provider !== "Paytrie") return { transfer, order: null, message: "No Paytrie order exists for this transfer." };
+  return {
+    transfer,
+    order: safeOrder(order),
+    message: "Saved Paytrie order recovered from StableX storage. Refresh provider status for the latest update.",
+  };
+}
+
 export async function refreshPaytrieOrder({ transferId, customerId, accountType, jwt }) {
   if (!isPaytriePlatformExecutionApproved() && !isPaytriePersonalTestModeEnabled(customerId, accountType)) throw fail("Paytrie order refresh is restricted to the configured personal-account test customer or an approved platform account.", 403);
   const order = await readProviderOrderByTransfer(transferId, customerId);
