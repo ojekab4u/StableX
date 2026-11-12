@@ -8,6 +8,7 @@ import {
   createProviderOrder, readProviderOrderByTransfer, updateProviderOrder,
 } from "../repositories/providerOrderRepository.js";
 import { decryptBeneficiaryDetails, encryptBeneficiaryDetails } from "./beneficiaryCrypto.js";
+import { savePaytrieCustomerSession, getPaytrieCustomerSession, deletePaytrieCustomerSession } from "../repositories/paytrieCustomerRepository.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 
 const API_BASE = "https://api.paytrie.com/v2";
@@ -76,7 +77,49 @@ export async function verifyPaytrieLoginCode({ email, code }) {
   if (!result.accessToken) throw fail("Paytrie did not return an access token.", 502);
   return { accessToken: result.accessToken, tokenType: result.tokenType || "Bearer", expiresIn: result.expiresIn || 3600 };
 }
-function safeOrder(order) {
+
+// Customer authentication is bound to the authenticated StableX account email.
+// Paytrie JWTs are encrypted at rest and never returned to the browser.
+export async function requestPaytrieCustomerLoginCode({ customerId, email }) {
+  if (!customerId || typeof email !== "string") throw fail("Authenticated StableX customer is required.", 401);
+  await requestPaytrieLoginCode(email);
+  return { requested: true, email, message: "Paytrie login code requested for the email registered on this StableX account." };
+}
+
+export async function verifyPaytrieCustomerLoginCode({ customerId, email, code }) {
+  if (!customerId || typeof email !== "string") throw fail("Authenticated StableX customer is required.", 401);
+  const session = await verifyPaytrieLoginCode({ email, code });
+  const expiresAt = new Date(Date.now() + Number(session.expiresIn || 3600) * 1000).toISOString();
+  await savePaytrieCustomerSession({
+    customerId,
+    encryptedToken: encryptBeneficiaryDetails({ accessToken: session.accessToken }),
+    expiresAt,
+  });
+  return { authenticated: true, expiresAt, tokenType: session.tokenType, message: "Paytrie customer authentication stored securely for this StableX account." };
+}
+
+export async function getPaytrieCustomerAuthStatus(customerId) {
+  const session = await getPaytrieCustomerSession(customerId);
+  return {
+    authenticated: Boolean(session),
+    expiresAt: session?.expiresAt || null,
+    message: session ? "A valid Paytrie customer session is available." : "Paytrie customer authentication is required or has expired.",
+  };
+}
+
+async function getStoredPaytrieCustomerJwt(customerId) {
+  const session = await getPaytrieCustomerSession(customerId);
+  if (!session) throw fail("Paytrie customer authentication is missing or expired. Request a new login code.", 401);
+  const decrypted = decryptBeneficiaryDetails(session.encryptedToken);
+  if (!decrypted.accessToken) throw fail("Stored Paytrie customer session is invalid. Authenticate again.", 401);
+  return decrypted.accessToken;
+}
+
+export async function logoutPaytrieCustomer({ customerId }) {
+  await deletePaytrieCustomerSession(customerId);
+  return { authenticated: false, message: "Paytrie customer session revoked from StableX." };
+}
+\nfunction safeOrder(order) {
   const secret = order.paymentDetails ? decryptBeneficiaryDetails(order.paymentDetails) : {};
   return { ...order, paymentDetails: secret.instructions || null, redirectUrl: secret.redirectUrl || null, providerResponse: secret.providerResponse || null };
 }
