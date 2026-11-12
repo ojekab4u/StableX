@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StableX — Connect Paytrie</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+main{max-width:680px;margin:48px auto;padding:0 20px}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:24px;margin:18px 0}.muted{color:#64748b}.status{padding:12px;border-radius:8px;background:#f1f5f9;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}.warning{background:#fffbeb;border-left:4px solid #d97706;padding:12px;margin:14px 0}.success{background:#ecfdf5}.error{background:#fef2f2}.field{display:grid;gap:6px;margin:14px 0}.field input{padding:11px;border:1px solid #cbd5e1;border-radius:8px}.actions{display:flex;gap:10px;flex-wrap:wrap}.actions button{padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}.actions button.secondary{background:#e2e8f0;color:#1e293b}.actions button:disabled{opacity:.55;cursor:not-allowed}
+</style>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/">Stable<span>X</span></a><nav><a href="/customer-dashboard.html">Dashboard</a><a href="/auth.html">Account</a></nav><div class="network-label">Paytrie customer connection</div></header>
+<main>
+<p class="eyebrow">STABLEX / PROVIDER ACCOUNT</p><h1>Connect your Paytrie account</h1>
+<p class="muted">StableX requests a one-time Paytrie login code using the email address on your signed-in StableX account. Your Paytrie session is encrypted and stored server-side; the JWT is never placed in browser storage.</p>
+<section class="panel">
+<h2>Account</h2><div id="account" class="status">Checking StableX session…</div>
+<h2>Paytrie execution permissions</h2><div id="readiness" class="status">Checking provider configuration…</div>
+<div class="warning"><strong>Important:</strong> Connecting a Paytrie customer account does not authorise StableX to transact as a money services business. Order creation remains disabled until Paytrie explicitly approves StableX's platform/partner arrangement.</div>
+<div id="auth-status" class="status">Checking Paytrie customer authentication…</div>
+<div class="field"><label for="code">4-digit Paytrie email code</label><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" placeholder="Enter the code sent by Paytrie"></div>
+<div class="actions"><button id="request">Send Paytrie login code</button><button id="verify">Verify code &amp; connect</button><button id="disconnect" class="secondary">Disconnect Paytrie</button></div>
+<div id="message" class="status" role="status" aria-live="polite">Your Paytrie credentials are never requested by StableX.</div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id), token=()=>localStorage.getItem("stablex_session")||"";
+async function api(path,options={}){const headers={"Content-Type":"application/json",...(options.headers||{})};if(token())headers.Authorization="Bearer "+token();const r=await fetch(path,{...options,headers});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
+function message(text,kind=""){const el=$("message");el.textContent=text;el.className="status "+kind;}
+async function load(){
+ if(!token()){ $("account").textContent="Not signed in. Sign in to StableX first."; $("request").disabled=$("verify").disabled=$("disconnect").disabled=true; return; }
+ try{
+  const [session,ready,auth]=await Promise.all([api("/api/auth/session"),fetch("/api/paytrie/readiness").then(r=>r.json()),api("/api/paytrie/customer/auth")]);
+  $("account").textContent=session.account.email+" · "+session.account.status;
+  $("readiness").textContent=JSON.stringify({apiKeyPresent:ready.apiKeyPresent,platformAuthorizationRequired:ready.platformAuthorizationRequired,platformExecutionApproved:ready.platformExecutionApproved,transactionCreationEnabled:ready.transactionCreationEnabled,status:ready.status},null,2);
+  $("auth-status").textContent=auth.authenticated?"Connected · session expires "+new Date(auth.expiresAt).toLocaleString():auth.message;
+ }catch(e){$("account").textContent=e.message;$("request").disabled=$("verify").disabled=$("disconnect").disabled=true;}
+}
+$("request").addEventListener("click",async()=>{ $("request").disabled=true;try{const d=await api("/api/paytrie/customer/auth/login-code",{method:"POST",body:"{}"});message(d.message,"success");}catch(e){message(e.message,"error");}finally{$("request").disabled=false;}});
+$("verify").addEventListener("click",async()=>{const code=$("code").value.trim();if(!/^\d{4}$/.test(code)){message("Enter the 4-digit code sent by Paytrie.","error");return;} $("verify").disabled=true;try{const d=await api("/api/paytrie/customer/auth/verify",{method:"POST",body:JSON.stringify({code})});$("code").value="";message(d.message+" Expires "+new Date(d.expiresAt).toLocaleString(),"success");await load();}catch(e){message(e.message,"error");}finally{$("verify").disabled=false;}});
+$("disconnect").addEventListener("click",async()=>{try{const d=await api("/api/paytrie/customer/auth",{method:"DELETE"});message(d.message,"success");await load();}catch(e){message(e.message,"error");}});
+load();
+</script>
+</body></html>
