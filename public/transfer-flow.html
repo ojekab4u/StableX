@@ -113,7 +113,11 @@ function renderRecoveredTransaction(data){
   const quote=t.quote||{};
   const provider=o?.providerResponse||{};
   const breakdown=quote.feeBreakdown||quote.providerData?.breakdown||quote.raw?.breakdown||{};
-  const policy=quote.pricingPolicy||null;
+  let policy=quote.pricingPolicy||null;
+  if(!policy&&t.sourceCurrency==="CAD"&&t.destinationCurrency==="USDC"&&Number.isFinite(Number(t.sourceAmount))){
+    const amount=Number(t.sourceAmount),percentageFee=Number((amount*0.006).toFixed(8)),minimumFee=5,estimatedFee=Number(Math.max(amount*0.006,minimumFee).toFixed(8));
+    policy={feeRateBps:60,feeRatePercent:0.6,minimumFee,minimumFeeCurrency:"CAD",percentageFee,estimatedFee,estimatedNetSourceAmount:Number(Math.max(0,amount-estimatedFee).toFixed(8)),minimumFeeApplies:percentageFee<minimumFee,estimateOnly:true,note:"Reconstructed from Paytrie support's 60 bps / $5 minimum pricing rule. This is an estimate, not proof of the exact historical fee; use the original quote breakdown as the source of truth."};
+  }
   const rows=[
     "Original provider quote ID: "+(quote.providerQuoteId??quote.providerData?.quoteId??"Not retained"),
     "Original quote timestamp: "+(quote.observedAt??quote.providerData?.timestamp??"Not retained"),
