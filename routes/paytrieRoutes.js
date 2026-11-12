@@ -56,15 +56,6 @@ paytrieRouter.post("/transfers/:id/order", requireAuth, async (req, res) => {
     const result = await createPaytrieOrder({
       transferId: req.params.id,
       customerId: req.account.accountId,
-      jwt: await (async () => {
-        const status = await getPaytrieCustomerAuthStatus(req.account.accountId);
-        if (!status.authenticated) {
-          const error = new Error("Paytrie customer authentication is missing or expired. Connect your Paytrie account first.");
-          error.statusCode = 401;
-          throw error;
-        }
-        return undefined;
-      })(),
       confirm: req.body?.confirm,
     });
     return res.status(result.created ? 201 : 200).json(result);
