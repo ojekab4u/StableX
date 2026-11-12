@@ -58,7 +58,7 @@ export function getPaytrieExecutionReadiness() {
     customerAuthenticationModel: "AWAITING_PAYTRIE_PLATFORM_CONFIRMATION",
     platformAuthorizationRequired: true,
     platformExecutionApproved: platformApproved,
-    transactionCreationEnabled: keyPresent && platformApproved,
+    transactionCreationEnabled: false,
     status: !keyPresent ? "API_KEY_MISSING" : !platformApproved ? "PAYTRIE_PLATFORM_APPROVAL_REQUIRED" : "PLATFORM_AUTH_MODEL_UNCONFIRMED",
     supportedExecutionRoute: "CAD -> USDC-BASE",
     note: platformApproved
