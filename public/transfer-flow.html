@@ -43,10 +43,12 @@ body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}
 <div><label>Your personal Paytrie account email</label><input id="paytrieEmail" type="email" autocomplete="email" placeholder="Email registered with Paytrie"></div>
 <div><label>4-digit Paytrie email code</label><input id="paytrieCode" inputmode="numeric" maxlength="4" placeholder="1234"></div>
 </div>
+<button id="paytrieConnectWallet" disabled>Connect Base Mainnet wallet</button>
 <button id="paytrieRequestCode" disabled>Request Paytrie login code</button>
 <button id="paytrieVerify" disabled>Verify and connect account</button>
 <button id="paytrieCreateOrder" disabled>Create real Paytrie order</button>
 <button id="paytrieRefresh" disabled>Refresh order status</button>
+<p id="paytrieWalletState" class="status">Base Mainnet wallet not linked.</p>
 <p id="paytrieState" class="status">Sign in to StableX to check whether this account is enabled for the restricted local test.</p>
 </section>
 <section class="card">
@@ -55,7 +57,7 @@ body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}
 </main>
 <script type="module">
 const API="";
-let token=sessionStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false;
+let token=sessionStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false;
 const $=id=>document.getElementById(id);
 async function api(path,{method="GET",body,headers={}}={}){const h={"Content-Type":"application/json",...headers};if(token)h.Authorization="Bearer "+token;const r=await fetch(API+path,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({error:"Invalid server response"}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
 function show(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className=cls;}
@@ -67,23 +69,51 @@ $("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a
 $("getQuotes").onclick=async()=>{try{if(!transferId)throw new Error("Create a draft first.");const d=await api("/api/routing/quotes",{method:"POST",body:{from:$("from").value.trim().toUpperCase(),to:$("to").value.trim().toUpperCase(),amount:Number($("amount").value)}});issuedQuotes=d.candidates||[];$("quotes").innerHTML="";if(!issuedQuotes.length){$("quotes").textContent=(d.disclaimer||"No provider quotes returned.")+"\n"+JSON.stringify(d.unavailableProviders||[],null,2);return;}for(const q of issuedQuotes){const card=document.createElement("div");card.className="quote";const title=document.createElement("strong");title.textContent=q.provider+" · "+q.providerClass+" · "+q.quoteType;const details=document.createElement("p");details.textContent=String(q.sourceAmount)+" "+q.from+" → "+(q.destinationAmount??"Not supplied")+" "+q.to+" · rate "+(q.rate??"n/a")+" · expires "+q.expiresAt+" · execution "+(q.executionEnabled?"enabled":"disabled");const button=document.createElement("button");button.textContent="Select this quote";button.onclick=()=>selectQuote(q.quoteId,button);card.append(title,details,button);$("quotes").append(card);}}catch(e){$("quotes").textContent=e.message;}};
 async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);selectedQuoteProvider=(issuedQuotes.find(q=>q.quoteId===quoteId)||{}).provider||null;updatePaytrieOrderControls();show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
 async function loadPaytrieTestState(){
-  paytrieTestEnabled=false;paytrieAuthenticated=false;updatePaytrieOrderControls();
+  paytrieTestEnabled=false;paytrieAuthenticated=false;baseWalletReady=false;updatePaytrieOrderControls();
   try{
     const readiness=await api("/api/paytrie/customer/test-readiness");
     paytrieTestEnabled=Boolean(readiness.personalTestModeEnabled&&readiness.apiKeyPresent);
     if(!paytrieTestEnabled){show("paytrieState",readiness.note||"Personal-account test mode is not enabled for this StableX account.","status");return;}
-    const auth=await api("/api/paytrie/customer/auth");
+    const [auth,wallets]=await Promise.all([api("/api/paytrie/customer/auth"),api("/api/paytrie/customer/base-wallet")]);
     paytrieAuthenticated=Boolean(auth.authenticated);
+    const baseWallet=(wallets.wallets||[])[0];
+    baseWalletReady=Boolean(baseWallet);
+    show("paytrieWalletState",baseWallet?"Linked Base Mainnet wallet: "+baseWallet.address:"Connect and sign with your own Base Mainnet wallet (chain ID 8453).","status");
     show("paytrieState",auth.message+" "+(auth.expiresAt?"Expires: "+auth.expiresAt:""),"status");
   }catch(e){show("paytrieState",e.message,"error");}
   updatePaytrieOrderControls();
 }
 function updatePaytrieOrderControls(){
+  $("paytrieConnectWallet").disabled=!paytrieTestEnabled;
   $("paytrieRequestCode").disabled=!paytrieTestEnabled;
   $("paytrieVerify").disabled=!paytrieTestEnabled;
-  $("paytrieCreateOrder").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&transferId&&selectedQuoteProvider==="Paytrie");
+  $("paytrieCreateOrder").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&baseWalletReady&&transferId&&selectedQuoteProvider==="Paytrie");
   $("paytrieRefresh").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&transferId);
 }
+$("paytrieConnectWallet").onclick=async()=>{
+  try{
+    if(!window.ethereum)throw new Error("Install or enable MetaMask or another EVM wallet first.");
+    const accounts=await window.ethereum.request({method:"eth_requestAccounts"});
+    if(!accounts?.length)throw new Error("No wallet account was selected.");
+    const address=accounts[0];
+    let chain=String(await window.ethereum.request({method:"eth_chainId"})).toLowerCase();
+    if(chain!=="0x2105"){
+      try{await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:"0x2105"}]});}
+      catch(error){
+        if(error.code!==4902)throw error;
+        await window.ethereum.request({method:"wallet_addEthereumChain",params:[{chainId:"0x2105",chainName:"Base",nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},rpcUrls:["https://mainnet.base.org"],blockExplorerUrls:["https://basescan.org"]}]});
+      }
+      chain=String(await window.ethereum.request({method:"eth_chainId"})).toLowerCase();
+    }
+    if(chain!=="0x2105")throw new Error("Switch your wallet to Base Mainnet (chain ID 8453).");
+    const message="StableX wallet connection\\nCustomer: "+account.accountId+"\\nAddress: "+address.toLowerCase()+"\\nChain ID: 8453";
+    const signature=await window.ethereum.request({method:"personal_sign",params:[message,address]});
+    const d=await api("/api/paytrie/customer/base-wallet",{method:"POST",body:{address,chainId:8453,walletProvider:window.ethereum.isMetaMask?"MetaMask":"EVM Wallet",message,signature}});
+    baseWalletReady=true;
+    show("paytrieWalletState","Linked Base Mainnet wallet: "+d.wallet.address,"success");
+  }catch(e){baseWalletReady=false;show("paytrieWalletState",e.message,"error");}
+  updatePaytrieOrderControls();
+};
 $("paytrieRequestCode").onclick=async()=>{
   try{
     const email=$("paytrieEmail").value.trim();
