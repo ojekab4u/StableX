@@ -18,14 +18,25 @@ import {
 export const bridgeSelfServeRouter = Router();
 bridgeSelfServeRouter.use(requireAuth);
 
-const fail = (res, error) => res.status(error.statusCode || 503).json({
-  error: error.message,
-  ...(error.providerStatus ? { provider: "Bridge", providerStatus: error.providerStatus } : {}),
-  ...(error.providerResponse ? {
-    providerDetails: error.providerResponse.errors || error.providerResponse.validation_errors ||
-      error.providerResponse.message || error.providerResponse.error || null,
-  } : {}),
-});
+
+const fail = (res, error) => {
+  const providerResponse = error.providerResponse ?? null;
+
+  console.error("[Bridge self-serve] Provider submission failed:", {
+    statusCode: error.statusCode,
+    providerStatus: error.providerStatus,
+    providerResponse,
+  });
+
+  return res.status(error.statusCode || 503).json({
+    error: error.message,
+    provider: "Bridge",
+    ...(error.providerStatus
+      ? { providerStatus: error.providerStatus }
+      : {}),
+    providerDetails: providerResponse,
+  });
+};
 
 const clean = (value) => typeof value === "string" ? value.trim() : "";
 const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
