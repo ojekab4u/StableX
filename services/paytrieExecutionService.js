@@ -165,7 +165,7 @@ async function verifyUsdcReceipt({ hash, wallet, expectedAmount }) {
 export async function createPaytrieOrder({ transferId, customerId, jwt, confirm }) {
   if (!isPaytriePlatformExecutionApproved()) throw fail("Paytrie platform execution is disabled. Obtain Paytrie's explicit written approval for StableX's platform/partner model before creating customer orders.", 403);
   if (confirm !== true) throw fail("Explicit confirmation is required before submitting a real Paytrie transaction.");
-  if (typeof jwt !== "string" || jwt.trim().length < 20) throw fail("Authenticate the verified Paytrie customer and provide its short-lived JWT.", 401);
+  const customerJwt = typeof jwt === "string" && jwt.trim().length >= 20 ? jwt.trim() : await getStoredPaytrieCustomerJwt(customerId);
   const transfer = await readTransfer(transferId, customerId);
   if (!transfer) throw fail("Transfer not found for this customer.", 404);
   if (transfer.status !== "QUOTED") throw fail(`Only a QUOTED transfer can be submitted. Current status: ${transfer.status}.`, 409);
@@ -193,7 +193,7 @@ export async function createPaytrieOrder({ transferId, customerId, jwt, confirm 
   if (!reserved.created) return { created: false, order: reserved.order ? safeOrder(reserved.order) : null, message: "An order already exists; no duplicate provider request was sent." };
   let result;
   try {
-    result = await request("/transactions", { method: "POST", jwt: jwt.trim(), body: transaction });
+    result = await request("/transactions", { method: "POST", jwt: customerJwt, body: transaction });
   } catch (error) {
     const updated = await updateProviderOrder({
       orderId, customerId, status: error.statusCode >= 500 ? "UNKNOWN" : "REJECTED",
@@ -223,7 +223,8 @@ export async function refreshPaytrieOrder({ transferId, customerId, jwt }) {
   const order = await readProviderOrderByTransfer(transferId, customerId);
   if (!order || order.provider !== "Paytrie") throw fail("No Paytrie order exists for this transfer.", 404);
   if (!order.providerTransactionId) return { order: safeOrder(order), refreshed: false, message: "No provider transaction ID is stored. Do not retry an ambiguous create request." };
-  const result = await request(`/transactions/${encodeURIComponent(order.providerTransactionId)}`, { jwt });
+  const customerJwt = typeof jwt === "string" && jwt.trim().length >= 20 ? jwt.trim() : await getStoredPaytrieCustomerJwt(customerId);
+  const result = await request(`/transactions/${encodeURIComponent(order.providerTransactionId)}`, { jwt: customerJwt });
   const status = String(result.status || "UNKNOWN");
   const state = status.toLowerCase();
   let transfer = await readTransfer(transferId, customerId);
