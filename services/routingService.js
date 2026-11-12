@@ -108,7 +108,7 @@ export function normalizeProviderResult(provider, request, result) {
   const paytrieBreakdownFee = extractNumeric(paytrieBreakdown?.paytrieFee);
   const fee = explicitFee ?? paytrieBreakdownFee;
   const feeCurrency = result.feeCurrency || raw?.feeCurrency || raw?.fee_currency ||
-    (provider === "Paytrie" && paytrieBreakdownFee !== null
+    (provider === "Paytrie"
       ? (paytrieBreakdown?.paytrieFeeCurrency || paytrieBreakdown?.feeCurrency || null)
       : request.to);
   const paytriePricingPolicy = provider === "Paytrie" && request.from === "CAD" && request.to === "USDC"
