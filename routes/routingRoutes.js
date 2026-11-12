@@ -5,19 +5,20 @@ import { requireAuth } from "../middleware/requireAuth.js";
 export const routingRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
 
-routingRouter.post("/quotes", async (req, res) => {
+routingRouter.post("/quotes", requireAuth, async (req, res) => {
   try {
     return res.status(201).json(await getRoutingQuotes({
       from: req.body?.from,
       to: req.body?.to,
       amount: req.body?.amount,
+      customerId: req.account.accountId,
     }));
   } catch (e) {
     return fail(res, e);
   }
 });
 
-routingRouter.get("/quotes/:quoteId", async (req, res) => {
+routingRouter.get("/quotes/:quoteId", requireAuth, async (req, res) => {
   try {
     const quote = await getRoutingQuote(req.params.quoteId);
     return quote ? res.json({ quote }) : res.status(404).json({ error: "Quote not found or expired." });
