@@ -52,22 +52,31 @@ body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}
 <p id="paytrieState" class="status">Sign in to StableX to check whether this account is enabled for the restricted local test.</p>
 </section>
 <section class="card">
-<h2>6. Transfer record</h2><p class="muted">The selected quote and transfer state are persisted in PostgreSQL. Execution remains disabled unless a provider explicitly supports it and StableX has approval.</p><pre id="result" class="status">No transfer yet.</pre>
+<h2>6. Recover an existing transfer</h2>
+<p class="muted">Transfers are saved in PostgreSQL. Load an earlier transfer to restore its Paytrie order after a refresh or when opening another tab. This does not create a new order.</p>
+<div class="grid"><div><label for="savedTransfers">Saved transfers</label><select id="savedTransfers"><option value="">Sign in to load transfers</option></select></div><div><label for="recoverTransferId">Transfer ID</label><input id="recoverTransferId" placeholder="Select a transfer or paste its ID"></div></div>
+<button id="loadExistingTransfer" disabled>Load saved transaction</button>
+<button id="refreshRecoveredOrder" disabled>Refresh provider status</button>
+<p id="recoveryState" class="status">Sign in to retrieve your saved transfers.</p>
+<div id="transactionSummary" class="grid"></div>
+<h3>Charges and conversion breakdown</h3>
+<div id="chargeSummary" class="status">No transaction loaded.</div>
+<details><summary>Technical transaction response</summary><pre id="result" class="status">No transfer yet.</pre></details>
 </section>
 </main>
 <script type="module">
 const API="";
-let token=sessionStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=sessionStorage.getItem("stablex_active_transfer_id")||null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false;
+let token=localStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=localStorage.getItem("stablex_active_transfer_id")||null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false;
 const $=id=>document.getElementById(id);
 async function api(path,{method="GET",body,headers={}}={}){const h={"Content-Type":"application/json",...headers};if(token)h.Authorization="Bearer "+token;const r=await fetch(API+path,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({error:"Invalid server response"}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
 function show(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className=cls;}
 function authUI(){const ok=!!token;$("saveBeneficiary").disabled=!ok;$("createDraft").disabled=!ok;$("authState").textContent=account?"Signed in as "+account.email+" · "+account.accountId:ok?"Session token loaded.":"Not signed in.";}
-$("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;sessionStorage.setItem("stablex_session_token",token);show("authError","");authUI();await loadPaytrieTestState();await loadSavedTransfers();if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch(e){show("authError",e.message,"error");}};
-$("logout").onclick=async()=>{try{if(token){try{await api("/api/paytrie/customer/auth",{method:"DELETE"});}catch{}await api("/api/auth/logout",{method:"POST"});}}catch{}token="";account=null;paytrieAuthenticated=false;paytrieTestEnabled=false;baseWalletReady=false;paytrieOrderCreated=false;sessionStorage.removeItem("stablex_session_token");authUI();updatePaytrieOrderControls();show("authError","");};
+$("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;localStorage.setItem("stablex_session_token",token);show("authError","");authUI();await loadPaytrieTestState();await loadSavedTransfers();if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch(e){show("authError",e.message,"error");}};
+$("logout").onclick=async()=>{try{if(token){try{await api("/api/paytrie/customer/auth",{method:"DELETE"});}catch{}await api("/api/auth/logout",{method:"POST"});}}catch{}token="";account=null;paytrieAuthenticated=false;paytrieTestEnabled=false;baseWalletReady=false;paytrieOrderCreated=false;localStorage.removeItem("stablex_session_token");authUI();updatePaytrieOrderControls();show("authError","");};
 $("saveBeneficiary").onclick=async()=>{try{const details={name:$("benName").value.trim(),country:$("benCountry").value.trim().toUpperCase(),currency:$("benCurrency").value.trim().toUpperCase(),...( $("benWallet").value.trim()?{walletAddress:$("benWallet").value.trim(),network:$("benNetwork").value.trim()}:{}),...( $("benAccount").value.trim()?{accountNumber:$("benAccount").value.trim()}:{}),...( $("benIban").value.trim()?{iban:$("benIban").value.trim()}:{}),...( $("benBank").value.trim()?{bankName:$("benBank").value.trim()}: {})};const d=await api("/api/transfers/beneficiaries",{method:"POST",body:{details}});beneficiaryId=d.beneficiary.beneficiaryId;show("benState","Saved beneficiary "+beneficiaryId,"success");$("createDraft").disabled=false;}catch(e){show("benState",e.message,"error");}};
-$("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;sessionStorage.setItem("stablex_active_transfer_id",transferId);issuedQuotes=[];paytrieOrderCreated=false;$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";selectedQuoteProvider=null;updatePaytrieOrderControls();}catch(e){show("draftState",e.message,"error");}};
+$("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;localStorage.setItem("stablex_active_transfer_id",transferId);issuedQuotes=[];paytrieOrderCreated=false;$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";selectedQuoteProvider=null;updatePaytrieOrderControls();}catch(e){show("draftState",e.message,"error");}};
 $("getQuotes").onclick=async()=>{try{if(!transferId)throw new Error("Create a draft first.");const d=await api("/api/routing/quotes",{method:"POST",body:{from:$("from").value.trim().toUpperCase(),to:$("to").value.trim().toUpperCase(),amount:Number($("amount").value)}});issuedQuotes=d.candidates||[];$("quotes").innerHTML="";if(!issuedQuotes.length){$("quotes").textContent=(d.disclaimer||"No provider quotes returned.")+"\n"+JSON.stringify(d.unavailableProviders||[],null,2);return;}for(const q of issuedQuotes){const card=document.createElement("div");card.className="quote";const title=document.createElement("strong");title.textContent=q.provider+" · "+q.providerClass+" · "+q.quoteType;const details=document.createElement("p");details.textContent=String(q.sourceAmount)+" "+q.from+" → "+(q.destinationAmount??"Not supplied")+" "+q.to+" · rate "+(q.rate??"n/a")+" · expires "+q.expiresAt+" · execution "+(q.executionEnabled?"enabled":"disabled");const button=document.createElement("button");button.textContent="Select this quote";button.onclick=()=>selectQuote(q.quoteId,button);card.append(title,details,button);$("quotes").append(card);}}catch(e){$("quotes").textContent=e.message;}};
-async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);selectedQuoteProvider=(issuedQuotes.find(q=>q.quoteId===quoteId)||{}).provider||null;sessionStorage.setItem("stablex_active_transfer_id",transferId);updatePaytrieOrderControls();show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
+async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);selectedQuoteProvider=(issuedQuotes.find(q=>q.quoteId===quoteId)||{}).provider||null;localStorage.setItem("stablex_active_transfer_id",transferId);updatePaytrieOrderControls();show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
 async function loadSavedTransfers(){
   const select=$("savedTransfers");
   select.innerHTML="";
@@ -127,7 +136,7 @@ function renderRecoveredTransaction(data){
   show("recoveryState",o?"Saved Paytrie order loaded. Use Refresh provider status for the latest provider response.":(data.message||"No Paytrie order is saved for this transfer."),o?"success":"status");
   paytrieOrderCreated=Boolean(o);
   transferId=t.transferId||transferId;
-  if(transferId){sessionStorage.setItem("stablex_active_transfer_id",transferId);$("recoverTransferId").value=transferId;}
+  if(transferId){localStorage.setItem("stablex_active_transfer_id",transferId);$("recoverTransferId").value=transferId;}
   $("refreshRecoveredOrder").disabled=!(o&&paytrieAuthenticated);
   updatePaytrieOrderControls();
 }
@@ -135,7 +144,7 @@ async function loadExistingTransaction(){
   try{
     const id=$("recoverTransferId").value.trim()||$("savedTransfers").value;
     if(!id)throw new Error("Choose or enter a saved transfer ID.");
-    transferId=id;sessionStorage.setItem("stablex_active_transfer_id",id);
+    transferId=id;localStorage.setItem("stablex_active_transfer_id",id);
     const d=await api("/api/paytrie/transfers/"+encodeURIComponent(id)+"/order");
     renderRecoveredTransaction(d);
   }catch(e){show("recoveryState",e.message,"error");}
@@ -234,5 +243,5 @@ $("paytrieRefresh").onclick=async()=>{
   }catch(e){show("paytrieState",e.message,"error");}
 };
 authUI();
-if(token){try{const d=await api("/api/auth/session");account=d.account;authUI();await loadPaytrieTestState();await loadSavedTransfers();if(transferId)$("recoverTransferId").value=transferId;if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch{token="";sessionStorage.removeItem("stablex_session_token");authUI();}}
+if(token){try{const d=await api("/api/auth/session");account=d.account;authUI();await loadPaytrieTestState();await loadSavedTransfers();if(transferId)$("recoverTransferId").value=transferId;if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch{token="";localStorage.removeItem("stablex_session_token");authUI();}}
 </script></body></html>
