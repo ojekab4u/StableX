@@ -485,23 +485,11 @@ The endpoint issues a real VOVE hosted verification session when credentials are
 - KYC auto-approval in the simulator (`VERIFIED` status) is explicitly labeled as simulated and not a real compliance decision.
 - Bridge customer creation additionally requires an operator token, ToS acceptance, passport number and passport image at the operator endpoint; registration data only pre-fills it.
 
-## Paytrie customer connection and platform authorization
+## Paytrie platform authorization and customer flow
 
-The Paytrie customer connection screen is available at `/paytrie-connect.html`. A signed-in, email-verified StableX customer enters the email registered with Paytrie, requests a 4-digit login code, and verifies it. StableX stores the returned short-lived Paytrie JWT encrypted in PostgreSQL using `BENEFICIARY_ENCRYPTION_KEY`; the JWT is not returned to or stored by the browser. The customer may revoke this stored session from the same screen.
+StableX customers do not need to create or connect a separate Paytrie account as a standard StableX onboarding step. The current Paytrie API v2 adapter supports read-only quotes. Order creation remains fail-closed until Paytrie explicitly approves StableX's platform/partner arrangement in writing.
 
-Customer-scoped endpoints (all require a StableX Bearer session):
+Keep `PAYTRIE_PLATFORM_EXECUTION_APPROVED=false`. A Paytrie API key or a retail customer's Paytrie JWT does not establish platform authorization. Do not ask StableX customers to register with Paytrie or enter Paytrie credentials as a workaround for the unresolved MSB/platform authorization issue.
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/api/paytrie/customer/auth` | Check whether the signed-in customer's Paytrie JWT is present and unexpired |
-| POST | `/api/paytrie/customer/auth/login-code` | Request a code for the supplied Paytrie-registered email |
-| POST | `/api/paytrie/customer/auth/verify` | Verify the email code and encrypt/store the Paytrie JWT |
-| DELETE | `/api/paytrie/customer/auth` | Revoke the stored Paytrie session |
-| POST | `/api/paytrie/transfers/:id/order` | Customer-scoped order request; requires explicit confirmation |
-| POST | `/api/paytrie/transfers/:id/refresh` | Refresh the signed-in customer's existing Paytrie order |
+The customer-specific Paytrie login endpoints are not part of the normal StableX onboarding flow and must not be linked as a required customer step. Revisit the execution authentication model only after Paytrie confirms in writing how an approved platform should authenticate and transact for its end users.
 
-StableX derives the customer ID from the authenticated session. The browser cannot supply a different customer ID or a Paytrie JWT. The encrypted session expires with the Paytrie token and must be renewed by the customer.
-
-**Platform authorization remains a separate gate.** `PAYTRIE_PLATFORM_EXECUTION_APPROVED=false` must remain in the server environment until Paytrie explicitly approves StableX's platform/partner model in writing. An API key and a retail customer's JWT do not grant StableX permission to transact as an MSB. Live quote access is independent; Paytrie order creation returns HTTP 403 while this approval flag is false. Do not change it to true based only on a successful customer login.
-
-The Paytrie JWT is encrypted at rest using the existing AES-256-GCM beneficiary encryption key. Protect and back up that key securely; losing it makes stored encrypted sessions unreadable. Use HTTPS for any non-local deployment.
