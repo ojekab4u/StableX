@@ -57,17 +57,94 @@ body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}
 </main>
 <script type="module">
 const API="";
-let token=sessionStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false;
+let token=sessionStorage.getItem("stablex_session_token")||"",account=null,beneficiaryId=null,transferId=sessionStorage.getItem("stablex_active_transfer_id")||null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false;
 const $=id=>document.getElementById(id);
 async function api(path,{method="GET",body,headers={}}={}){const h={"Content-Type":"application/json",...headers};if(token)h.Authorization="Bearer "+token;const r=await fetch(API+path,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({error:"Invalid server response"}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
 function show(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className=cls;}
 function authUI(){const ok=!!token;$("saveBeneficiary").disabled=!ok;$("createDraft").disabled=!ok;$("authState").textContent=account?"Signed in as "+account.email+" · "+account.accountId:ok?"Session token loaded.":"Not signed in.";}
-$("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;sessionStorage.setItem("stablex_session_token",token);show("authError","");authUI();await loadPaytrieTestState();}catch(e){show("authError",e.message,"error");}};
+$("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;sessionStorage.setItem("stablex_session_token",token);show("authError","");authUI();await loadPaytrieTestState();await loadSavedTransfers();}catch(e){show("authError",e.message,"error");}};
 $("logout").onclick=async()=>{try{if(token){try{await api("/api/paytrie/customer/auth",{method:"DELETE"});}catch{}await api("/api/auth/logout",{method:"POST"});}}catch{}token="";account=null;paytrieAuthenticated=false;paytrieTestEnabled=false;baseWalletReady=false;paytrieOrderCreated=false;sessionStorage.removeItem("stablex_session_token");authUI();updatePaytrieOrderControls();show("authError","");};
 $("saveBeneficiary").onclick=async()=>{try{const details={name:$("benName").value.trim(),country:$("benCountry").value.trim().toUpperCase(),currency:$("benCurrency").value.trim().toUpperCase(),...( $("benWallet").value.trim()?{walletAddress:$("benWallet").value.trim(),network:$("benNetwork").value.trim()}:{}),...( $("benAccount").value.trim()?{accountNumber:$("benAccount").value.trim()}:{}),...( $("benIban").value.trim()?{iban:$("benIban").value.trim()}:{}),...( $("benBank").value.trim()?{bankName:$("benBank").value.trim()}: {})};const d=await api("/api/transfers/beneficiaries",{method:"POST",body:{details}});beneficiaryId=d.beneficiary.beneficiaryId;show("benState","Saved beneficiary "+beneficiaryId,"success");$("createDraft").disabled=false;}catch(e){show("benState",e.message,"error");}};
-$("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;issuedQuotes=[];paytrieOrderCreated=false;$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";selectedQuoteProvider=null;updatePaytrieOrderControls();}catch(e){show("draftState",e.message,"error");}};
+$("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;sessionStorage.setItem("stablex_active_transfer_id",transferId);issuedQuotes=[];paytrieOrderCreated=false;$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";selectedQuoteProvider=null;updatePaytrieOrderControls();}catch(e){show("draftState",e.message,"error");}};
 $("getQuotes").onclick=async()=>{try{if(!transferId)throw new Error("Create a draft first.");const d=await api("/api/routing/quotes",{method:"POST",body:{from:$("from").value.trim().toUpperCase(),to:$("to").value.trim().toUpperCase(),amount:Number($("amount").value)}});issuedQuotes=d.candidates||[];$("quotes").innerHTML="";if(!issuedQuotes.length){$("quotes").textContent=(d.disclaimer||"No provider quotes returned.")+"\n"+JSON.stringify(d.unavailableProviders||[],null,2);return;}for(const q of issuedQuotes){const card=document.createElement("div");card.className="quote";const title=document.createElement("strong");title.textContent=q.provider+" · "+q.providerClass+" · "+q.quoteType;const details=document.createElement("p");details.textContent=String(q.sourceAmount)+" "+q.from+" → "+(q.destinationAmount??"Not supplied")+" "+q.to+" · rate "+(q.rate??"n/a")+" · expires "+q.expiresAt+" · execution "+(q.executionEnabled?"enabled":"disabled");const button=document.createElement("button");button.textContent="Select this quote";button.onclick=()=>selectQuote(q.quoteId,button);card.append(title,details,button);$("quotes").append(card);}}catch(e){$("quotes").textContent=e.message;}};
-async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);selectedQuoteProvider=(issuedQuotes.find(q=>q.quoteId===quoteId)||{}).provider||null;updatePaytrieOrderControls();show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
+async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);selectedQuoteProvider=(issuedQuotes.find(q=>q.quoteId===quoteId)||{}).provider||null;sessionStorage.setItem("stablex_active_transfer_id",transferId);updatePaytrieOrderControls();show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
+async function loadSavedTransfers(){
+  const select=$("savedTransfers");
+  select.innerHTML="";
+  try{
+    const d=await api("/api/transfers");
+    const transfers=d.transfers||[];
+    if(!transfers.length){select.add(new Option("No saved transfers",""));return;}
+    for(const t of transfers){
+      const label=[t.sourceAmount,t.sourceCurrency,"→",t.destinationCurrency,"·",t.status,"·",t.transferId].join(" ");
+      select.add(new Option(label,t.transferId));
+    }
+    const preferred=transferId&&transfers.some(t=>t.transferId===transferId)?transferId:transfers[0].transferId;
+    select.value=preferred;
+    if(!transferId) $("recoverTransferId").value=preferred;
+    $("loadExistingTransfer").disabled=false;
+    if(transferId) $("recoverTransferId").value=transferId;
+  }catch(e){select.add(new Option("Could not load transfers",""));show("recoveryState",e.message,"error");}
+}
+function addSummaryCard(parent,label,value){
+  const card=document.createElement("div");card.className="quote";
+  const small=document.createElement("div");small.className="muted";small.textContent=label;
+  const strong=document.createElement("strong");strong.textContent=value??"Not supplied";
+  card.append(small,strong);parent.append(card);
+}
+function renderRecoveredTransaction(data){
+  const t=data.transfer||{},o=data.order,summary=$("transactionSummary"),charges=$("chargeSummary");
+  summary.innerHTML="";charges.textContent="";
+  addSummaryCard(summary,"Transfer status",t.status||"Unknown");
+  addSummaryCard(summary,"Paytrie status",o?.providerStatus||"No Paytrie order");
+  addSummaryCard(summary,"Amount paid / source",t.sourceAmount!=null?Number(t.sourceAmount).toFixed(2)+" "+t.sourceCurrency:"Not supplied");
+  addSummaryCard(summary,"Expected / recorded receive",t.destinationAmount!=null?String(t.destinationAmount)+" "+t.destinationCurrency:"Not supplied");
+  addSummaryCard(summary,"Settlement transaction",o?.transactionHash||"Not recorded");
+  const quote=t.quote||{};
+  const provider=o?.providerResponse||{};
+  const feeCandidates=[
+    ["Selected quote fee",quote.fee,quote.feeCurrency||t.destinationCurrency],
+    ["Provider fee",provider.fee??provider.feeAmount??provider.totalFee,provider.feeCurrency||t.sourceCurrency],
+    ["Network fee",provider.networkFee??provider.network_fee,provider.networkFeeCurrency||t.destinationCurrency],
+    ["Service fee",provider.serviceFee??provider.service_fee,provider.serviceFeeCurrency||t.sourceCurrency]
+  ].filter(([,v])=>v!==undefined&&v!==null&&v!==""&&Number.isFinite(Number(v)));
+  const rows=[
+    "Source amount: "+(t.sourceAmount??"Not supplied")+" "+(t.sourceCurrency||""),
+    "Quoted destination: "+(quote.destinationAmount??t.destinationAmount??"Not supplied")+" "+(t.destinationCurrency||""),
+    "Quoted rate: "+(quote.rate??"Not supplied"),
+    ...feeCandidates.map(([label,value,currency])=>label+": "+value+" "+(currency||"")),
+    "Payment method: "+(o?.paymentMethod||"Not supplied"),
+    "Interac reference: "+(o?.paymentDetails?.rmtId||"Not supplied")
+  ];
+  if(!feeCandidates.length) rows.push("Fee disclosure: Paytrie did not return a separately identifiable fee in the saved order response. No fee has been estimated or invented.");
+  charges.textContent=rows.join("\\n");
+  $("result").textContent=JSON.stringify(data,null,2);
+  show("recoveryState",o?"Saved Paytrie order loaded. Use Refresh provider status for the latest provider response.":(data.message||"No Paytrie order is saved for this transfer."),o?"success":"status");
+  paytrieOrderCreated=Boolean(o);
+  transferId=t.transferId||transferId;
+  if(transferId){sessionStorage.setItem("stablex_active_transfer_id",transferId);$("recoverTransferId").value=transferId;}
+  $("refreshRecoveredOrder").disabled=!(o&&paytrieAuthenticated);
+  updatePaytrieOrderControls();
+}
+async function loadExistingTransaction(){
+  try{
+    const id=$("recoverTransferId").value.trim()||$("savedTransfers").value;
+    if(!id)throw new Error("Choose or enter a saved transfer ID.");
+    transferId=id;sessionStorage.setItem("stablex_active_transfer_id",id);
+    const d=await api("/api/paytrie/transfers/"+encodeURIComponent(id)+"/order");
+    renderRecoveredTransaction(d);
+  }catch(e){show("recoveryState",e.message,"error");}
+}
+$("loadExistingTransfer").onclick=loadExistingTransaction;
+$("savedTransfers").onchange=()=>{$("recoverTransferId").value=$("savedTransfers").value;};
+$("refreshRecoveredOrder").onclick=async()=>{
+  try{
+    if(!transferId)throw new Error("Load a saved transfer first.");
+    const d=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/refresh",{method:"POST",body:{}});
+    renderRecoveredTransaction({transfer:d.transfer||{},order:d.order||null,providerStatus:d.providerStatus,settlementVerified:d.settlementVerified,verification:d.verification,message:d.message});
+    show("recoveryState",d.message||"Provider status refreshed.",d.settlementVerified?"success":"status");
+  }catch(e){show("recoveryState",e.message,"error");}
+};
 async function loadPaytrieTestState(){
   paytrieTestEnabled=false;paytrieAuthenticated=false;baseWalletReady=false;paytrieOrderCreated=false;updatePaytrieOrderControls();
   try{
@@ -151,5 +228,5 @@ $("paytrieRefresh").onclick=async()=>{
   }catch(e){show("paytrieState",e.message,"error");}
 };
 authUI();
-if(token){try{const d=await api("/api/auth/session");account=d.account;authUI();await loadPaytrieTestState();}catch{token="";sessionStorage.removeItem("stablex_session_token");authUI();}}
+if(token){try{const d=await api("/api/auth/session");account=d.account;authUI();await loadPaytrieTestState();await loadSavedTransfers();if(transferId){$("recoverTransferId").value=transferId;await loadExistingTransaction();}}catch{token="";sessionStorage.removeItem("stablex_session_token");authUI();}}
 </script></body></html>
