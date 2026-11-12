@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getRoutingQuotes, getRoutingQuote, selectQuoteForTransfer } from "../services/routingService.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 
 export const routingRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
@@ -25,10 +26,10 @@ routingRouter.get("/quotes/:quoteId", async (req, res) => {
   }
 });
 
-routingRouter.post("/select", async (req, res) => {
+routingRouter.post("/select", requireAuth, async (req, res) => {
   try {
     const result = await selectQuoteForTransfer({
-      customerId: req.body?.customerId,
+      customerId: req.account.accountId,
       transferId: req.body?.transferId,
       quoteId: req.body?.quoteId,
     });
