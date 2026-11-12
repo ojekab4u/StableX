@@ -78,12 +78,12 @@ export async function verifyPaytrieLoginCode({ email, code }) {
   return { accessToken: result.accessToken, tokenType: result.tokenType || "Bearer", expiresIn: result.expiresIn || 3600 };
 }
 
-// Customer authentication is bound to the authenticated StableX account email.
+// Customer authentication is bound to the authenticated StableX account ID and the customer's Paytrie-registered email.
 // Paytrie JWTs are encrypted at rest and never returned to the browser.
 export async function requestPaytrieCustomerLoginCode({ customerId, email }) {
   if (!customerId || typeof email !== "string") throw fail("Authenticated StableX customer is required.", 401);
   await requestPaytrieLoginCode(email);
-  return { requested: true, email, message: "Paytrie login code requested for the email registered on this StableX account." };
+  return { requested: true, email, message: "Paytrie login code requested. Verify the code to link this Paytrie customer session to your signed-in StableX account." };
 }
 
 export async function verifyPaytrieCustomerLoginCode({ customerId, email, code }) {
