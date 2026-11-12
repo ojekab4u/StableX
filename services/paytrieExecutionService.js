@@ -1,6 +1,6 @@
-import { isPaytriePlatformExecutionApproved } from "./paytrieService.js";
-
-export { isPaytriePlatformExecutionApproved };
+export function isPaytriePlatformExecutionApproved() {
+  return String(process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED || "").trim().toLowerCase() === "true";
+}
 
 export function getPaytrieExecutionReadiness() {
   const apiKey = String(process.env.PAYTRIE_API_KEY || "").trim();
