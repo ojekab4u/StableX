@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { getPaycrestRate, getPaycrestReadiness } from "../services/providers/paycrestService.js";
 import { getHoneycoinRate, getHoneycoinReadiness } from "../services/providers/honeycoinService.js";
 import { getBridgeRate, getBridgeReadiness, createBridgeOnRampOrder } from "../services/providers/bridgeService.js";
-import { rankRoutingQuotes } from "../services/routingService.js";
+import { rankRoutingQuotes, normalizeProviderResult } from "../services/routingService.js";
 
 test("Paycrest onramp preview requests a one-token indicative rate", async () => {
   const originalFetch = globalThis.fetch;
@@ -299,4 +299,54 @@ test("Honeycoin creates an NGN to Base USDC on-ramp and supports canonical statu
       else process.env[key] = value;
     }
   }
+});
+
+
+test("Paytrie quote normalization preserves fee breakdown and calculates a clearly labelled pricing-rule estimate", () => {
+  const quote = normalizeProviderResult("Paytrie", {
+    from: "CAD", to: "USDC", amount: 10, customerId: "customer-1",
+  }, {
+    quoteType: "LIVE_PROVIDER_QUOTE",
+    raw: {
+      quoteId: 12345,
+      leftSideLabel: "CAD",
+      leftSideValue: 10,
+      rightSideLabel: "USDC-BASE",
+      rightSideValue: 3.52,
+      breakdown: { paytrieFee: 5, gasFee: 0.6, usdToCad: 1.42 },
+    },
+  });
+
+  assert.equal(quote.destinationAmount, 3.52);
+  assert.equal(quote.fee, 5);
+  assert.equal(quote.feeCurrency, null, "Do not invent a fee currency when Paytrie omits it");
+  assert.deepEqual(quote.feeBreakdown, { paytrieFee: 5, gasFee: 0.6, usdToCad: 1.42 });
+  assert.equal(quote.providerData.quoteId, 12345);
+  assert.equal(quote.pricingPolicy.feeRateBps, 60);
+  assert.equal(quote.pricingPolicy.percentageFee, 0.06);
+  assert.equal(quote.pricingPolicy.estimatedFee, 5);
+  assert.equal(quote.pricingPolicy.estimatedNetSourceAmount, 5);
+  assert.equal(quote.pricingPolicy.minimumFeeApplies, true);
+  assert.equal(quote.pricingPolicy.estimateOnly, true);
+});
+
+test("Paytrie pricing-rule estimate switches from the minimum to 60 bps when percentage fee is higher", () => {
+  const quote = normalizeProviderResult("Paytrie", {
+    from: "CAD", to: "USDC", amount: 1000,
+  }, {
+    quoteType: "LIVE_PROVIDER_QUOTE",
+    raw: {
+      quoteId: 12346,
+      leftSideLabel: "CAD",
+      leftSideValue: 1000,
+      rightSideLabel: "USDC-BASE",
+      rightSideValue: 700,
+      breakdown: { paytrieFee: 6, gasFee: 0.2, usdToCad: 1.4 },
+    },
+  });
+
+  assert.equal(quote.pricingPolicy.percentageFee, 6);
+  assert.equal(quote.pricingPolicy.estimatedFee, 6);
+  assert.equal(quote.pricingPolicy.estimatedNetSourceAmount, 994);
+  assert.equal(quote.pricingPolicy.minimumFeeApplies, false);
 });
