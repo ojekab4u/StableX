@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StableX — Bridge onboarding</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#172033;background:#f5f7fb}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:980px;margin:32px auto;padding:0 18px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+a{color:#2456c5}.panel{background:#fff;border:1px solid #dfe5ef;border-radius:14px;padding:22px;margin:16px 0}
+h1{font-size:26px;margin:0 0 6px}h2{font-size:18px;margin:0 0 14px}h3{font-size:15px;margin:18px 0 10px}
+p,.muted{color:#64748b;font-size:14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#475569;margin-bottom:10px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;font:inherit;color:#172033}
+textarea{min-height:76px;resize:vertical}.full{grid-column:1/-1}
+button{border:0;border-radius:8px;background:#2456c5;color:#fff;padding:11px 16px;font-weight:650;cursor:pointer}
+button.secondary{background:#e8edf6;color:#23324c}button:disabled{opacity:.5;cursor:not-allowed}
+.notice{padding:12px;border-radius:8px;background:#eff6ff;color:#1e40af;margin:12px 0;font-size:14px}
+.error{background:#fff1f2;color:#9f1239}.success{background:#ecfdf5;color:#166534}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.hidden{display:none!important}
+.status{display:inline-block;padding:4px 9px;border-radius:20px;background:#eef2ff;font-size:12px;font-weight:700}
+.req{border-left:3px solid #f59e0b;padding:8px 12px;margin:6px 0;background:#fffbeb;font-size:13px}
+small{color:#64748b}.doc{border:1px dashed #cbd5e1;padding:12px;border-radius:8px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}header{align-items:flex-start;gap:10px;flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div><strong>StableX</strong> / Bridge customer onboarding</div><nav><a href="/customer-dashboard.html">Dashboard</a> · <a href="/auth.html">Account</a></nav></header>
+<h1>Bridge onboarding</h1><p>Complete the provider-specific information for your personal or business account. Your registration details are prefilled where available.</p>
+<div id="message" class="notice hidden" role="status"></div>
+<section class="panel">
+<h2>Onboarding status</h2>
+<div class="row"><span>StableX identity: <b id="voveStatus">Loading…</b></span><span>Bridge customer: <b id="bridgeStatus">—</b></span><span>Base: <b id="baseStatus">—</b></span><span>SEPA: <b id="sepaStatus">—</b></span></div>
+<div id="requirements" style="margin-top:12px"></div>
+<div class="row" style="margin-top:16px"><button id="refreshStatus" class="secondary">Refresh Bridge status</button><button id="termsButton">Continue to Bridge Terms</button></div>
+<p id="termsHint">Bridge's terms must be opened and accepted by the customer personally.</p>
+</section>
+<section id="profilePanel" class="panel hidden">
+<h2 id="profileHeading">Bridge profile</h2>
+<p>Complete the fields below. Sensitive information and document images are sent to Bridge over the server-side API and are not stored as a StableX profile record.</p>
+<form id="profileForm">
+<div id="individualFields">
+<h3>Personal details</h3>
+<div class="grid">
+<label>First name *<input name="firstName" id="firstName" required></label>
+<label>Last name *<input name="lastName" id="lastName" required></label>
+<label>Email *<input name="email" id="indEmail" type="email" required></label>
+<label>Phone in international format *<input name="phone" id="indPhone" placeholder="+234..." required></label>
+<label>Date of birth *<input name="birthDate" id="birthDate" type="date" required></label>
+<label>Middle name<input name="middleName" id="middleName"></label>
+</div>
+<h3>Residential address</h3>
+<div class="grid">
+<label class="full">Street address *<input id="indStreet" required></label>
+<label>City *<input id="indCity" required></label>
+<label>State / subdivision<input id="indSubdivision"></label>
+<label>Postal code<input id="indPostal"></label>
+<label>Country (ISO alpha-3) *<input id="indCountry" placeholder="NGA" maxlength="3" required></label>
+</div>
+<h3>Identity document</h3>
+<div class="grid">
+<label>Document type *<select id="idType"><option value="passport">Passport</option><option value="drivers_license">Driver's licence</option><option value="national_id">National ID</option></select></label>
+<label>Issuing country (ISO alpha-3) *<input id="idCountry" placeholder="NGA" maxlength="3" required></label>
+<label>Document number *<input id="idNumber" required></label>
+<label>Front image *<input id="idFront" type="file" accept="image/jpeg,image/png,application/pdf" required></label>
+<label>Back image (if applicable)<input id="idBack" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+</div>
+<h3>Source of funds and account purpose</h3>
+<div class="grid">
+<label>Account purpose<select id="indPurpose"><option value="">Select</option><option value="personal_or_living_expenses">Personal / living expenses</option><option value="purchase_goods_and_services">Purchase goods and services</option><option value="receive_salary">Receive salary</option><option value="operating_a_company">Operating a company</option><option value="investment_purposes">Investment purposes</option><option value="other">Other</option></select></label>
+<label>Source of funds<select id="indFunds"><option value="">Select</option><option value="salary">Salary</option><option value="savings">Savings</option><option value="company_funds">Company funds</option><option value="investments_loans">Investments / loans</option><option value="gifts">Gifts</option><option value="sale_of_assets_real_estate">Sale of assets</option></select></label>
+</div>
+</div>
+<div id="businessFields" class="hidden">
+<h3>Registered business information</h3>
+<div class="grid">
+<label>Legal business name *<input id="bizName" required></label>
+<label>Trading name<input id="bizTrade"></label>
+<label>Business type *<select id="bizType"><option value="">Select</option><option value="corporation">Corporation</option><option value="llc">LLC</option><option value="partnership">Partnership</option><option value="sole_prop">Sole proprietor</option><option value="cooperative">Cooperative</option><option value="trust">Trust</option><option value="other">Other</option></select></label>
+<label>Business email *<input id="bizEmail" type="email" required></label>
+<label>Business phone *<input id="bizPhone" placeholder="+234..." required></label>
+<label>Incorporation date<input id="incorporationDate" type="date"></label>
+<label class="full">Business description *<textarea id="bizDescription" required></textarea></label>
+<label>Primary website<input id="bizWebsite" type="url" placeholder="https://"></label>
+<label>Industry code *<input id="bizIndustry" placeholder="Bridge NAICS/industry code" required></label>
+</div>
+<h3>Registered address</h3>
+<div class="grid">
+<label class="full">Street address *<input id="regStreet" required></label>
+<label>City *<input id="regCity" required></label><label>Subdivision<input id="regSubdivision"></label>
+<label>Postal code<input id="regPostal"></label><label>Country (ISO alpha-3) *<input id="regCountry" maxlength="3" placeholder="NGA" required></label>
+</div>
+<h3>Operating / physical address</h3>
+<div class="grid">
+<label class="full">Street address *<input id="physStreet" required></label>
+<label>City *<input id="physCity" required></label><label>Subdivision<input id="physSubdivision"></label>
+<label>Postal code<input id="physPostal"></label><label>Country (ISO alpha-3) *<input id="physCountry" maxlength="3" placeholder="NGA" required></label>
+</div>
+<h3>Business purpose and source of funds</h3>
+<div class="grid">
+<label>Account purpose *<select id="bizPurpose"><option value="">Select</option><option value="receive_payments_for_goods_and_services">Receive payments for goods/services</option><option value="purchase_goods_and_services">Purchase goods/services</option><option value="payroll">Payroll</option><option value="treasury_management">Treasury management</option><option value="third_party_money_transmission">Third-party money transmission</option><option value="other">Other</option></select></label>
+<label>Source of funds *<select id="bizFunds"><option value="">Select</option><option value="sales_of_goods_and_services">Sales of goods/services</option><option value="owners_capital">Owner capital</option><option value="business_loans">Business loans</option><option value="investment_proceeds">Investment proceeds</option><option value="grants">Grants</option><option value="treasury_reserves">Treasury reserves</option></select></label>
+<label class="full">High-risk activities *<select id="bizRisk"><option value="none_of_the_above">None of the above</option><option value="money_services">Money services</option><option value="third_party_payment_processing">Third-party payment processing</option><option value="operate_foreign_exchange_virtual_currencies_brokerage_otc">FX / virtual currency brokerage / OTC</option><option value="hold_client_funds">Hold client funds</option><option value="investment_services">Investment services</option></select></label>
+<label>Does the business provide money services? *<select id="moneyServices"><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
+<label>Will it use Bridge for those services? *<select id="moneyServicesBridge"><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
+<label class="full">Compliance / AML screening explanation<textarea id="screeningExplanation" placeholder="Describe your actual AML/KYC controls and screening procedures"></textarea></label>
+<label class="full">High-risk activities explanation<textarea id="highRiskExplanation"></textarea></label>
+<label class="full">Source of funds explanation<textarea id="sourceFundsExplanation"></textarea></label>
+<label class="full">Money services description<textarea id="moneyServicesDescription"></textarea></label>
+<label>Other account purpose<input id="bizPurposeOther"></label>
+<label>Estimated annual revenue (USD)<select id="annualRevenue"><option value="">Select</option><option value="0_99999">0–99,999</option><option value="100000_999999">100,000–999,999</option><option value="1000000_9999999">1m–9,999,999</option><option value="10000000_49999999">10m–49,999,999</option><option value="50000000_249999999">50m–249,999,999</option><option value="250000000_plus">250m+</option></select></label>
+<label>Expected monthly payments (USD)<input id="monthlyPayments" type="number" min="0"></label>
+<label>Does the business operate in prohibited countries? *<select id="prohibitedCountries"><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
+<label><span><input id="materialOwnership" type="checkbox" style="width:auto"> Has material intermediary ownership</span></label>
+</div>
+<h3>Tax identification</h3>
+<div class="grid">
+<label>Tax ID type<input id="bizTaxType" placeholder="tin"></label>
+<label>Tax ID issuing country (ISO alpha-3)<input id="bizTaxCountry" maxlength="3" placeholder="NGA"></label>
+<label>Tax identification number<input id="bizTaxNumber"></label>
+</div>
+<h3>Ultimate beneficial owners / control persons</h3>
+<p>Add every person who owns or controls the business. At least one control person and one authorised signer are required.</p>
+<div id="uboContainer"></div>
+<button type="button" id="addUbo" class="secondary">+ Add another owner / control person</button>
+<template id="uboTemplate">
+<div class="panel ubo-card" style="padding:14px;margin:12px 0">
+<div class="row"><b>Associated person</b><button type="button" class="secondary remove-ubo">Remove</button></div>
+<div class="grid">
+<label>First name *<input data-field="firstName" required></label><label>Last name *<input data-field="lastName" required></label>
+<label>Email *<input data-field="email" type="email" required></label><label>Phone<input data-field="phone"></label>
+<label>Date of birth *<input data-field="birthDate" type="date" required></label><label>Title / position<input data-field="title" placeholder="Director / CEO"></label>
+<label>Ownership percentage<input data-field="ownershipPercentage" type="number" min="0" max="100" value="0"></label>
+<label>Nationality (ISO alpha-3)<input data-field="nationality" maxlength="3" placeholder="NGA"></label>
+<label class="full">Residential street *<input data-field="street" required></label><label>City *<input data-field="city" required></label><label>Subdivision<input data-field="subdivision"></label>
+<label>Postal code<input data-field="postal"></label><label>Country (ISO alpha-3) *<input data-field="country" maxlength="3" placeholder="NGA" required></label>
+<label>Government ID type *<select data-field="idType"><option value="passport">Passport</option><option value="national_id">National ID</option><option value="drivers_license">Driver's licence</option></select></label>
+<label>ID issuing country (ISO alpha-3) *<input data-field="idCountry" maxlength="3" required></label>
+<label>ID number *<input data-field="idNumber" required></label><label>ID front image *<input data-field="idFront" type="file" accept="image/jpeg,image/png,application/pdf" required></label>
+</div>
+<label><span><input data-field="hasOwnership" type="checkbox" style="width:auto"> This person owns part of the business</span></label>
+<label><span><input data-field="hasControl" type="checkbox" style="width:auto"> This person is a control person</span></label>
+<label><span><input data-field="isSigner" type="checkbox" style="width:auto"> This person is authorised to sign transactions</span></label>
+<label><span><input data-field="isDirector" type="checkbox" style="width:auto"> This person is a director</span></label>
+<label><span><input data-field="attest" type="checkbox" style="width:auto"> This control person attests that the ownership structure submitted is accurate</span></label>
+</div>
+</template>
+<h3>Business documents</h3>
+<div class="grid">
+<label class="doc">Certificate of incorporation / formation *<input id="docFormation" type="file" accept="image/*,application/pdf" required></label>
+<label class="doc">Ownership information / shareholder register<input id="docOwnership" type="file" accept="image/*,application/pdf"></label>
+<label class="doc">Proof of business address *<input id="docAddress" type="file" accept="image/*,application/pdf" required></label>
+<label class="doc">Proof of nature of business (if no website)<input id="docNature" type="file" accept="image/*,application/pdf"></label>
+<label class="doc">Flow of funds (required if using Bridge for money services)<input id="docFlow" type="file" accept="image/*,application/pdf"></label>
+</div>
+<label><span><input id="isDao" type="checkbox" style="width:auto"> Business is a DAO</span></label>
+</div>
+<div class="row" style="margin-top:20px"><button id="submitProfile" type="submit">Submit Bridge profile</button><span id="submitHint" class="muted"></span></div>
+</form>
+</section>
+</div>
+<script>
+const TOKEN_KEY="stablex_session";
+const $=id=>document.getElementById(id);
+let session=null;
+function token(){return localStorage.getItem(TOKEN_KEY)||""}
+function message(text,kind="notice"){const el=$("message");el.textContent=text;el.className="notice "+(kind==="error"?"error":kind==="success"?"success":"");el.classList.remove("hidden")}
+async function api(path,options={}){const headers={...(options.headers||{}),"Content-Type":"application/json",Authorization:"Bearer "+token()};const response=await fetch(path,{...options,headers});const data=await response.json().catch(()=>({}));if(!response.ok){const error=new Error(data.error||"Request failed");error.data=data;throw error}return data}
+async function fileData(input){const file=input.files?.[0];if(!file)return null;if(file.size>9*1024*1024)throw new Error(file.name+" exceeds 9 MB. Compress it before upload.");return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("Could not read "+file.name));reader.readAsDataURL(file)})}
+function addr(street,city,subdivision,postal,country){return {streetLine1:$(street).value,city:$(city).value,subdivision:$(subdivision).value,postalCode:$(postal).value,country:$(country).value.toUpperCase()}}
+function showStatus(data){$("voveStatus").textContent=data.stablexCompliance?.status||"—";$("bridgeStatus").textContent=data.onboarding?.bridgeStatus||data.onboarding?.onboardingStatus||"Not created";$("baseStatus").textContent=data.onboarding?.baseEndorsementStatus||"—";$("sepaStatus").textContent=data.onboarding?.sepaEndorsementStatus||"—";const approved=data.stablexCompliance?.approved;$("termsButton").disabled=!approved||!!data.onboarding?.signedAgreementId;$("termsHint").textContent=!approved?"Complete and receive StableX identity approval first.":data.onboarding?.signedAgreementId?"Bridge terms acceptance is recorded.": "Bridge's terms must be opened and accepted by the customer personally.";const panel=$("profilePanel");panel.classList.toggle("hidden",!approved||!data.onboarding?.signedAgreementId||!!data.onboarding?.providerCustomerId);const box=$("requirements");box.replaceChildren();for(const endorsement of data.onboarding?.endorsements||[]){const h=document.createElement("p");h.textContent=endorsement.name.toUpperCase()+" — "+endorsement.status;box.append(h);const missing=endorsement.requirements?.missing||{};for(const [key,value] of Object.entries(missing)){const row=document.createElement("div");row.className="req";row.textContent=key.replaceAll("_"," ")+": "+(typeof value==="string"?value:JSON.stringify(value));box.append(row)}for(const issue of endorsement.requirements?.issues||[]){const row=document.createElement("div");row.className="req";row.textContent="Issue: "+(typeof issue==="string"?issue:JSON.stringify(issue));box.append(row)}}if(data.onboarding?.providerCustomerId&&!data.onboarding?.baseEndorsementStatus){const row=document.createElement("p");row.className="muted";row.textContent="Bridge customer created. Refresh status to retrieve endorsement requirements.";box.append(row)}}
+async function load(){if(!token()){location.href="/auth.html";return}try{session=await api("/api/bridge/self/onboarding");showStatus(session);const p=session.accountPrefill||{};const iso3=({NG:"NGA",US:"USA",CA:"CAN",GB:"GBR",FR:"FRA",DE:"DEU",KE:"KEN",GH:"GHA",ZA:"ZAF",UG:"UGA",TZ:"TZA",RW:"RWA",AU:"AUS",NZ:"NZL",IN:"IND"})[String(p.country||"").toUpperCase()]||"";const parts=(p.fullName||"").trim().split(/\s+/);$("firstName").value=parts[0]||"";$("lastName").value=parts.slice(1).join(" ");$("indEmail").value=p.email||"";$("indPhone").value=p.phone||"";$("birthDate").value=p.dateOfBirth||"";$("bizName").value=p.businessName||"";$("bizEmail").value=p.email||"";$("bizPhone").value=p.phone||"";$("indCountry").value=iso3;$("idCountry").value="";$("regCountry").value=iso3;$("physCountry").value=iso3;$("bizTaxCountry").value=iso3;const business=session.accountType==="BUSINESS";$("profileHeading").textContent=business?"Bridge business KYB profile":"Bridge individual KYC profile";const individualSection=$("individualFields");const businessSection=$("businessFields");individualSection.classList.toggle("hidden",business);businessSection.classList.toggle("hidden",!business);individualSection.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=business});businessSection.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=!business}); }catch(e){message(e.message,"error")}}
+$("termsButton").addEventListener("click",async()=>{try{const d=await api("/api/bridge/self/tos-link",{method:"POST",headers:{"Idempotency-Key":"bridge-tos-"+session.customerId},body:"{}"});if(d.tosUrl)window.location.assign(d.tosUrl);message("Bridge Terms opened. Accept them in the Bridge tab, then return here.","notice")}catch(e){message(e.message,"error")}});
+async function handleCallback(){const params=new URLSearchParams(location.search);const signed=params.get("signed_agreement_id");if(!signed)return;try{await api("/api/bridge/self/tos-acceptance",{method:"POST",body:JSON.stringify({signedAgreementId:signed,customerId:params.get("customerId")||""})});history.replaceState({},document.title,location.pathname);message("Bridge Terms acceptance recorded. Continue with your provider profile.","success")}catch(e){message(e.message,"error")}}
+$("profileForm").addEventListener("submit",async event=>{event.preventDefault();const button=$("submitProfile");button.disabled=true;$("submitHint").textContent="Preparing documents and submitting securely…";try{let profile;if(session.accountType==="BUSINESS"){const docs=[];for(const [id,purpose] of [["docFormation","business_formation"],["docOwnership","ownership_information"],["docAddress","proof_of_address"],["docNature","proof_of_nature_of_business"],["docFlow","flow_of_funds"]]){const file=await fileData($(id));if(file)docs.push({purposes:[purpose],file})}const associatedPersons=await Promise.all([...document.querySelectorAll(".ubo-card")].map(async card=>{const val=key=>card.querySelector(`[data-field="${key}"]`);const idFront=await fileData(val("idFront"));return {firstName:val("firstName").value,lastName:val("lastName").value,email:val("email").value,phone:val("phone").value,birthDate:val("birthDate").value,title:val("title").value,ownershipPercentage:Number(val("ownershipPercentage").value),hasOwnership:val("hasOwnership").checked,hasControl:val("hasControl").checked,isSigner:val("isSigner").checked,isDirector:val("isDirector").checked,nationalities:val("nationality").value?[val("nationality").value.toUpperCase()]:undefined,attestedOwnershipStructure:val("attest").checked,residentialAddress:{streetLine1:val("street").value,city:val("city").value,subdivision:val("subdivision").value,postalCode:val("postal").value,country:val("country").value.toUpperCase()},identifyingInformation:[{type:val("idType").value,issuingCountry:val("idCountry").value,number:val("idNumber").value,imageFrontDataUri:idFront}]}}));const taxType=$("bizTaxType").value.trim();const taxNumber=$("bizTaxNumber").value.trim();const taxCountry=$("bizTaxCountry").value.trim().toUpperCase();profile={businessLegalName:$("bizName").value,businessTradeName:$("bizTrade").value,businessType:$("bizType").value,incorporationDate:$("incorporationDate").value,email:$("bizEmail").value,phone:$("bizPhone").value,businessDescription:$("bizDescription").value,primaryWebsite:$("bizWebsite").value,businessIndustry:[$("bizIndustry").value.trim()],registeredAddress:addr("regStreet","regCity","regSubdivision","regPostal","regCountry"),physicalAddress:addr("physStreet","physCity","physSubdivision","physPostal","physCountry"),accountPurpose:$("bizPurpose").value,sourceOfFunds:$("bizFunds").value,highRiskActivities:[$("bizRisk").value],conductsMoneyServices:$("moneyServices").value==="yes",conductsMoneyServicesUsingBridge:$("moneyServicesBridge").value==="yes",complianceScreeningExplanation:$("screeningExplanation").value,conductsMoneyServicesDescription:$("moneyServicesDescription").value,highRiskActivitiesExplanation:$("highRiskExplanation").value,sourceOfFundsDescription:$("sourceFundsExplanation").value,accountPurposeOther:$("bizPurposeOther").value,estimatedAnnualRevenueUsd:$("annualRevenue").value,expectedMonthlyPaymentsUsd:$("monthlyPayments").value?Number($("monthlyPayments").value):undefined,operatesInProhibitedCountries:$("prohibitedCountries").value===""?undefined:$("prohibitedCountries").value==="yes",hasMaterialIntermediaryOwnership:$("materialOwnership").checked,isDao:$("isDao").checked,documents:docs,associatedPersons};if(taxType&&taxNumber&&taxCountry)profile.identifyingInformation=[{type:taxType,issuingCountry:taxCountry,number:taxNumber}];}else{const front=await fileData($("idFront"));const back=await fileData($("idBack"));profile={firstName:$("firstName").value,lastName:$("lastName").value,middleName:$("middleName").value,email:$("indEmail").value,phone:$("indPhone").value,birthDate:$("birthDate").value,residentialAddress:addr("indStreet","indCity","indSubdivision","indPostal","indCountry"),identificationType:$("idType").value,identificationIssuingCountry:$("idCountry").value,identificationNumber:$("idNumber").value,identificationImageFrontDataUri:front,identificationImageBackDataUri:back,accountPurpose:$("indPurpose").value,sourceOfFunds:$("indFunds").value}}if(JSON.stringify(profile).length>10_000_000)throw new Error("The combined document upload is too large. Compress the files and keep the complete submission under 10 MB.");const d=await api("/api/bridge/self/customer",{method:"POST",headers:{"Idempotency-Key":"bridge-customer-"+session.customerId},body:JSON.stringify({profile})});message("Bridge customer created. Refresh the status to retrieve the required endorsements and outstanding items.","success");await load();}catch(e){const missing=e.data?.missingFields||[];const details=e.data?.providerDetails;let explanation=e.message;if(missing.length)explanation+=" Missing fields: "+missing.join(", ");if(details)explanation+=" Bridge details: "+(typeof details==="string"?details:JSON.stringify(details));message(explanation,"error");$("message").scrollIntoView({behavior:"smooth",block:"center"});$("submitHint").textContent="Submission was not completed. Review the error message above."}finally{button.disabled=false}});
+$("refreshStatus").addEventListener("click",async()=>{try{const d=await api("/api/bridge/self/status/refresh",{method:"POST",body:"{}"});message("Bridge status refreshed. Review the outstanding requirements below.","success");await load()}catch(e){message(e.message,"error")}});
+function addUboCard(){const fragment=$("uboTemplate").content.cloneNode(true);const card=fragment.querySelector(".ubo-card");card.querySelector(".remove-ubo").addEventListener("click",()=>{if(document.querySelectorAll(".ubo-card").length>1)card.remove()});for(const key of ["country","idCountry"])card.querySelector(`[data-field="${key}"]`).value="";$("uboContainer").append(fragment)}
+$("addUbo").addEventListener("click",addUboCard);
+(async()=>{addUboCard();await handleCallback();await load()})();
+</script>
+</body></html>

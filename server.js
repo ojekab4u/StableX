@@ -33,6 +33,7 @@ import { baseSettlementRouter } from "./routes/baseSettlementRoutes.js";
 import { customerRouter } from "./routes/customerRoutes.js";
 import { nombaRouter } from "./routes/nombaRoutes.js";
 import { bridgeRouter } from "./routes/bridgeRoutes.js";
+import { bridgeSelfServeRouter } from "./routes/bridgeSelfServeRoutes.js";
 import { honeycoinWebhookRouter } from "./routes/honeycoinWebhookRoutes.js";
 import { paytrieRouter } from "./routes/paytrieRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
@@ -491,6 +492,7 @@ app.use("/api/base/settlement", baseSettlementRouter);
 app.use("/api/customer", customerRouter);
 app.use("/api/nomba", nombaRouter);
 app.use("/api/bridge", bridgeRouter);
+app.use("/api/bridge/self", bridgeSelfServeRouter);
 app.use("/api/webhooks/honeycoin", honeycoinWebhookRouter);
 app.use("/api/paytrie", paytrieRouter);
 
