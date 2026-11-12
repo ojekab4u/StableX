@@ -9,6 +9,7 @@ import {
   refreshPaytrieOrder,
 } from "../services/paytrieExecutionService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { registerExternalWallet, listExternalWallets } from "../services/walletService.js";
 
 export const paytrieRouter = Router();
 const fail = (res, error) => res.status(error.statusCode || 503).json({ error: error.message });
@@ -37,6 +38,26 @@ paytrieRouter.get("/customer/test-readiness", requireAuth, (req, res) => {
     accountType: req.account.accountType,
   });
   return res.json(readiness);
+});
+
+paytrieRouter.get("/customer/base-wallet", requireAuth, async (req, res) => {
+  if (!requirePersonalTestAccount(req, res)) return;
+  try {
+    const wallets = await listExternalWallets(req.account.accountId);
+    return res.json({ wallets: wallets.filter((wallet) => Number(wallet.chainId) === 8453) });
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/base-wallet", requireAuth, async (req, res) => {
+  if (!requirePersonalTestAccount(req, res)) return;
+  try {
+    const wallet = await registerExternalWallet({
+      ...req.body,
+      customerId: req.account.accountId,
+      chainId: 8453,
+    });
+    return res.status(201).json({ wallet });
+  } catch (error) { return fail(res, error); }
 });
 
 paytrieRouter.get("/customer/auth", requireAuth, async (req, res) => {
