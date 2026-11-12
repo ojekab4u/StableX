@@ -107,30 +107,54 @@ function renderRecoveredTransaction(data){
   addSummaryCard(summary,"Transfer status",t.status||"Unknown");
   addSummaryCard(summary,"Paytrie status",o?.providerStatus||"No Paytrie order");
   addSummaryCard(summary,"Amount paid / source",t.sourceAmount!=null?Number(t.sourceAmount).toFixed(2)+" "+t.sourceCurrency:"Not supplied");
-  addSummaryCard(summary,"Expected / recorded receive",t.destinationAmount!=null?String(t.destinationAmount)+" "+t.destinationCurrency:"Not supplied");
-  addSummaryCard(summary,"Settlement hash / Paytrie payment ID",o?.transactionHash||o?.providerResponse?.paymentId||"Not supplied by provider");
-  addSummaryCard(summary,"Base settlement verification",data.settlementVerified===true?"Verified on Base Mainnet":data.verification?.reason||"Not yet independently verified by StableX");
+  addSummaryCard(summary,"Provider-reported amount delivered",o?.providerResponse?.rightSideValue!=null?String(o.providerResponse.rightSideValue)+" "+(o.providerResponse.rightSideLabel||t.destinationCurrency||""):t.destinationAmount!=null?String(t.destinationAmount)+" "+t.destinationCurrency:"Not supplied");
+  addSummaryCard(summary,"Base transaction hash",o?.transactionHash||o?.providerResponse?.paymentId||"Not supplied by provider");
+  addSummaryCard(summary,"Base settlement verification",t.status==="COMPLETED"?"Completed in StableX":data.settlementVerified===true?"Verified on Base Mainnet":data.verification?.reason||o?.failureReason||"Not yet independently verified by StableX");
   const quote=t.quote||{};
   const provider=o?.providerResponse||{};
-  const quoteBreakdown=quote.providerData?.breakdown||quote.raw?.breakdown||{};
-  const feeCandidates=[
-    ["Selected quote fee",quote.fee,quote.feeCurrency||t.destinationCurrency],
-    ["Paytrie fee (quote breakdown)",quoteBreakdown.paytrieFee,"provider did not specify currency unit"],
-    ["Gas fee (quote breakdown)",quoteBreakdown.gasFee,"provider did not specify currency unit"],
-    ["Provider fee",provider.fee??provider.feeAmount??provider.totalFee,provider.feeCurrency||t.sourceCurrency],
-    ["Network fee",provider.networkFee??provider.network_fee,provider.networkFeeCurrency||t.destinationCurrency],
-    ["Service fee",provider.serviceFee??provider.service_fee,provider.serviceFeeCurrency||t.sourceCurrency]
-  ].filter(([,v])=>v!==undefined&&v!==null&&v!==""&&Number.isFinite(Number(v)));
+  const breakdown=quote.feeBreakdown||quote.providerData?.breakdown||quote.raw?.breakdown||{};
+  const policy=quote.pricingPolicy||null;
   const rows=[
-    "Source amount: "+(t.sourceAmount??"Not supplied")+" "+(t.sourceCurrency||""),
+    "Original provider quote ID: "+(quote.providerQuoteId??quote.providerData?.quoteId??"Not retained"),
+    "Original quote timestamp: "+(quote.observedAt??quote.providerData?.timestamp??"Not retained"),
     "Quoted destination: "+(quote.destinationAmount??t.destinationAmount??"Not supplied")+" "+(t.destinationCurrency||""),
-    "Quoted rate: "+(quote.rate??"Not supplied"),
-    "USD/CAD factor from quote: "+(quoteBreakdown.usdToCad??"Not supplied"),
-    ...feeCandidates.map(([label,value,currency])=>label+": "+value+" "+(currency||"")),
-    "Payment method: "+(o?.paymentMethod||"Not supplied"),
-    "Interac reference: "+(o?.paymentDetails?.rmtId||"Not supplied")
+    "Provider-reported completed amount: "+(provider.rightSideValue??"Not supplied")+" "+(provider.rightSideLabel||""),
+    "Effective rate on full source amount: "+(quote.rate??(Number(t.sourceAmount)>0&&Number(quote.destinationAmount??provider.rightSideValue)>0?(Number(quote.destinationAmount??provider.rightSideValue)/Number(t.sourceAmount)).toFixed(8):"Not supplied")),
+    "USD/CAD factor from original quote: "+(breakdown.usdToCad??"Not supplied")
   ];
-  if(!feeCandidates.length) rows.push("Fee disclosure: Paytrie did not return a separately identifiable fee in the saved order response. No fee has been estimated or invented.");
+  const actualPaytrieFee=breakdown.paytrieFee;
+  const actualGasFee=breakdown.gasFee;
+  if(actualPaytrieFee!==undefined&&actualPaytrieFee!==null){
+    rows.push("Paytrie fee reported in original quote: "+actualPaytrieFee+" "+(breakdown.paytrieFeeCurrency||breakdown.feeCurrency||"currency/unit not specified by Paytrie"));
+  }
+  if(actualGasFee!==undefined&&actualGasFee!==null){
+    rows.push("Gas/network fee reported in original quote: "+actualGasFee+" "+(breakdown.gasFeeCurrency||breakdown.feeCurrency||"currency/unit not specified by Paytrie"));
+  }
+  if(quote.fee!==undefined&&quote.fee!==null){
+    rows.push("Normalized quote fee: "+quote.fee+" "+(quote.feeCurrency||"currency/unit not specified by provider"));
+  }
+  if(policy){
+    rows.push(
+      "",
+      "PAYTRIE PRICING-RULE RECONCILIATION (estimate, not a substitute for the original quote breakdown)",
+      "Support-confirmed rate: "+policy.feeRateBps+" bps ("+policy.feeRatePercent+"%)",
+      "Minimum fee used for this CAD-funded estimate: "+policy.minimumFee+" "+policy.minimumFeeCurrency,
+      "Percentage calculation: "+t.sourceCurrency+" "+t.sourceAmount+" × 0.006 = "+policy.percentageFee+" "+policy.minimumFeeCurrency,
+      "Fee selected by rule: "+policy.estimatedFee+" "+policy.minimumFeeCurrency+(policy.minimumFeeApplies?" (minimum applies)":" (percentage fee applies)"),
+      "Estimated source amount remaining for FX: "+policy.estimatedNetSourceAmount+" "+t.sourceCurrency,
+      "Implied rate on estimated net amount: "+(Number(policy.estimatedNetSourceAmount)>0&&Number(provider.rightSideValue??quote.destinationAmount)>0?(Number(provider.rightSideValue??quote.destinationAmount)/Number(policy.estimatedNetSourceAmount)).toFixed(8)+" "+t.destinationCurrency+"/"+t.sourceCurrency:"Not calculable"),
+      policy.note||""
+    );
+  }
+  rows.push(
+    "",
+    "Payment method: "+(o?.paymentMethod||"Not supplied"),
+    "Interac reference: "+(o?.paymentDetails?.rmtId||"Not supplied"),
+    "Fee interpretation: the provider's rightSideValue is the quoted/delivered destination amount. Do not subtract the Paytrie fee from that USDC amount again; use the original quote breakdown to identify deductions."
+  );
+  if(actualPaytrieFee===undefined&&actualGasFee===undefined){
+    rows.push("Historical fee evidence: no separate paytrieFee/gasFee values are present in the saved original quote breakdown. The pricing-rule calculation above is an estimate; the exact historical charge cannot be proven from the order response alone.");
+  }
   charges.textContent=rows.join("\n");
   $("result").textContent=JSON.stringify(data,null,2);
   show("recoveryState",o?"Saved Paytrie order loaded. Use Refresh provider status for the latest provider response.":(data.message||"No Paytrie order is saved for this transfer."),o?"success":"status");
