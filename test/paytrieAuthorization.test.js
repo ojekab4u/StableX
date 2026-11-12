@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getPaytrieExecutionReadiness, isPaytriePlatformExecutionApproved } from "../services/paytrieExecutionService.js";
+import { getPaytrieExecutionReadiness, isPaytriePlatformExecutionApproved, createPaytrieOrder } from "../services/paytrieExecutionService.js";
 import { getPaytrieReadiness } from "../services/paytrieService.js";
 
 test("Paytrie execution remains disabled when platform approval is absent, even with an API key", () => {
@@ -32,6 +32,19 @@ test("Paytrie platform approval flag accepts only the literal true value", () =>
     }
     process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED = "true";
     assert.equal(isPaytriePlatformExecutionApproved(), true);
+  } finally {
+    if (oldApproval === undefined) delete process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED; else process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED = oldApproval;
+  }
+});
+
+test("Paytrie order creation fails closed before touching transfers when platform approval is absent", async () => {
+  const oldApproval = process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED;
+  try {
+    delete process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED;
+    await assert.rejects(
+      createPaytrieOrder({ transferId: "00000000-0000-4000-8000-000000000001", customerId: "customer-test", confirm: true }),
+      error => error.statusCode === 403 && /platform execution is disabled/i.test(error.message)
+    );
   } finally {
     if (oldApproval === undefined) delete process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED; else process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED = oldApproval;
   }
