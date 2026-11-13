@@ -40,8 +40,8 @@ function profile() {
     province: $("province").value,
     postalCode: $("postalCode").value.trim(),
     occupation: $("occupation").value.trim(),
-    notPepConfirmed: $("notPepConfirmed").checked,
-    notThirdPartyConfirmed: $("notThirdPartyConfirmed").checked,
+    pep: $("pep").value === "" ? null : $("pep").value === "true",
+    tpd: $("tpd").value === "" ? null : $("tpd").value === "true",
   };
 }
 function labelFor(path) {
