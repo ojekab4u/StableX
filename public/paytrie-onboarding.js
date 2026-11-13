@@ -29,6 +29,7 @@ function show(id, text, kind = "") {
 }
 function profile() {
   return {
+    paytrieEmail: $("paytrieEmail").value.trim(),
     firstName: $("firstName").value.trim(),
     lastName: $("lastName").value.trim(),
     dateOfBirth: $("dateOfBirth").value,
@@ -173,6 +174,7 @@ async function boot() {
     state.account = session.account;
     const account = state.account || {};
     $("customerEmail").value = account.email || "";
+    $("paytrieEmail").value = account.email || "";
     show("accountStatus",
       `${account.fullName || "StableX customer"} · ${account.email || ""} · ${account.accountType || ""} · ${account.country || ""} · ${account.status || ""}`,
       account.accountType === "PERSONAL" && account.country === "CA" && account.status === "ACTIVE" ? "good" : "bad"
