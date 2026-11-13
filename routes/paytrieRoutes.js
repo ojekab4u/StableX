@@ -64,7 +64,7 @@ paytrieRouter.get("/customer/onboarding", requireAuth, async (req, res) => {
 
 paytrieRouter.post("/customer/onboarding/register", requireAuth, async (req, res) => {
   try {
-    const result = await registerOrLinkPaytrieCustomer({ account: req.account, profile: req.body || {} });
+    const result = await registerOrLinkPaytrieCustomer({ account: req.account, profile: req.body || {}, paytrieEmail: req.body?.paytrieEmail });
     return res.status(result.created ? 201 : 200).json(result);
   } catch (error) { return fail(res, error); }
 });
