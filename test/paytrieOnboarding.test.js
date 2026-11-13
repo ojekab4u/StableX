@@ -20,8 +20,8 @@ const validProfile = {
   province: "on",
   postalCode: "M5V 1A1",
   occupation: "Software Engineer",
-  notPepConfirmed: true,
-  notThirdPartyConfirmed: true,
+  pep: false,
+  tpd: false,
 };
 
 test("Paytrie registration profile accepts Canadian identity/address fields and clear declarations", () => {
@@ -33,20 +33,26 @@ test("Paytrie registration profile accepts Canadian identity/address fields and 
   assert.equal(payload.postalCode, "M5V1A1");
   assert.equal(payload.pep, false);
   assert.equal(payload.tpd, false);
+  const declared = buildPaytrieUserPayload({
+    email: "person@example.com",
+    profile: { ...validProfile, pep: true, tpd: true },
+  });
+  assert.equal(declared.pep, true);
+  assert.equal(declared.tpd, true);
 });
 
-test("Paytrie registration refuses missing self-attestations and invalid Canadian details", () => {
+test("Paytrie registration requires actual PEP/third-party answers and validates Canadian details", () => {
   const invalid = {
     ...validProfile,
-    notPepConfirmed: false,
-    notThirdPartyConfirmed: false,
+    pep: null,
+    tpd: null,
     phone: "+14165551234",
     province: "zz",
     postalCode: "12345",
   };
   const problems = validatePaytrieRegistrationProfile(invalid);
-  assert.ok(problems.some((item) => item.includes("not a politically exposed person")));
-  assert.ok(problems.some((item) => item.includes("not for a third party")));
+  assert.ok(problems.some((item) => item.includes("whether you are a politically exposed person")));
+  assert.ok(problems.some((item) => item.includes("whether you are registering or acting on behalf of a third party")));
   assert.ok(problems.some((item) => item.includes("10-digit Canadian mobile")));
   assert.ok(problems.some((item) => item.includes("province or territory")));
   assert.ok(problems.some((item) => item.includes("postal code")));
