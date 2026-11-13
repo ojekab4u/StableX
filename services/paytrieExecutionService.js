@@ -9,6 +9,7 @@ import {
 } from "../repositories/providerOrderRepository.js";
 import { decryptBeneficiaryDetails, encryptBeneficiaryDetails } from "./beneficiaryCrypto.js";
 import { savePaytrieCustomerSession, getPaytrieCustomerSession, deletePaytrieCustomerSession } from "../repositories/paytrieCustomerRepository.js";
+import { getPaytrieCustomerByStableXId } from "../repositories/paytrieOnboardingRepository.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 
 const API_BASE = "https://api.paytrie.com/v2";
@@ -188,6 +189,21 @@ export async function createPaytrieOrder({ transferId, customerId, accountType, 
   if (confirm !== true) throw fail("Explicit confirmation is required before submitting a real Paytrie transaction.");
   apiKey(); // Fail before reserving an order if the provider credential is missing.
   const customerJwt = typeof jwt === "string" && jwt.trim().length >= 20 ? jwt.trim() : await getStoredPaytrieCustomerJwt(customerId);
+  if (platformApproved) {
+    const [paytrieCustomer, storedSession] = await Promise.all([
+      getPaytrieCustomerByStableXId(customerId),
+      getPaytrieCustomerSession(customerId),
+    ]);
+    if (!paytrieCustomer || String(paytrieCustomer.providerStatus || "").toLowerCase() !== "verified") {
+      throw fail("This StableX customer must complete Paytrie registration and KYC verification before platform transactions are enabled.", 403);
+    }
+    const sessionData = storedSession?.encryptedToken
+      ? decryptBeneficiaryDetails(storedSession.encryptedToken)
+      : null;
+    if (!sessionData?.accessToken || String(sessionData.email || "").toLowerCase() !== String(paytrieCustomer.email || "").toLowerCase()) {
+      throw fail("The authenticated Paytrie session does not match this customer's linked Paytrie identity. Authenticate again.", 401);
+    }
+  }
   const transfer = await readTransfer(transferId, customerId);
   if (!transfer) throw fail("Transfer not found for this customer.", 404);
   if (transfer.status !== "QUOTED") throw fail(`Only a QUOTED transfer can be submitted. Current status: ${transfer.status}.`, 409);
