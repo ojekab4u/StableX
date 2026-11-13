@@ -83,8 +83,10 @@
       </div>
       <div class="paytrie-field"><label>Postal code</label><input id="postalCode" autocomplete="postal-code" placeholder="M5V 1A1"></div>
     </div>
-    <label class="paytrie-check"><input id="notPepConfirmed" type="checkbox"><span>I confirm that I am not a politically exposed person (PEP).</span></label>
-    <label class="paytrie-check"><input id="notThirdPartyConfirmed" type="checkbox"><span>I am opening and using this Paytrie account for myself, not on behalf of another person or entity.</span></label>
+    <div class="paytrie-grid" style="margin-top:14px">
+      <div class="paytrie-field"><label>Are you a politically exposed person (PEP)?</label><select id="pep"><option value="">Select Yes or No</option><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="paytrie-field"><label>Are you registering or acting on behalf of a third party?</label><select id="tpd"><option value="">Select Yes or No</option><option value="false">No</option><option value="true">Yes</option></select></div>
+    </div>
     <div class="paytrie-actions"><button id="connectPaytrie">Check and connect Paytrie</button></div>
     <p id="registrationMessage" class="paytrie-status" aria-live="polite">No Paytrie account has been linked yet.</p>
   </section>
