@@ -69,6 +69,33 @@ paytrieRouter.post("/customer/onboarding/register", requireAuth, async (req, res
   } catch (error) { return fail(res, error); }
 });
 
+
+paytrieRouter.get("/customer/onboarding/base-wallet", requireAuth, async (req, res) => {
+  try {
+    const readiness = await getPaytrieCustomerOnboardingReadiness(req.account);
+    if (!readiness.enabled || !readiness.eligibleStableXAccount) {
+      return res.status(403).json({ error: "Paytrie wallet linking is available only for eligible customers in an enabled onboarding environment." });
+    }
+    const wallets = await listExternalWallets(req.account.accountId);
+    return res.json({ wallets: wallets.filter((wallet) => Number(wallet.chainId) === 8453) });
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/base-wallet", requireAuth, async (req, res) => {
+  try {
+    const readiness = await getPaytrieCustomerOnboardingReadiness(req.account);
+    if (!readiness.enabled || !readiness.eligibleStableXAccount) {
+      return res.status(403).json({ error: "Paytrie wallet linking is available only for eligible customers in an enabled onboarding environment." });
+    }
+    const wallet = await registerExternalWallet({
+      ...req.body,
+      customerId: req.account.accountId,
+      chainId: 8453,
+    });
+    return res.status(201).json({ wallet });
+  } catch (error) { return fail(res, error); }
+});
+
 paytrieRouter.post("/customer/onboarding/login-code", requireAuth, async (req, res) => {
   try {
     return res.status(202).json(await requestPaytrieOnboardingLoginCode({ account: req.account }));
