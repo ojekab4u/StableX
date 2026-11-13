@@ -59,6 +59,31 @@ export const PARTNER_CATALOG = [
     ],
   },
   {
+    name: "Netcoins",
+    role: "CAD/USD crypto trading rail — CAD↔USDC quotes, execution and cross-border settlement",
+    corridors: ["CAD", "USD", "USDC"],
+    docsUrl: "https://netcoins.com/crypto-api-trading",
+    docsNote: "API spec is private; endpoint documentation is provided with the credential package (Bitwarden send). Regulated platform: FINTRAC MSB M15560893, BCSC-registered.",
+    requiredCredentials: [
+      "NETCOINS_ENVIRONMENT",
+      "NETCOINS_API_BASE_URL",
+      "NETCOINS_API_KEY",
+      "NETCOINS_API_SECRET",
+    ],
+    capabilities: ["CAD_ONRAMP", "CAD_OFFRAMP", "USD_ONRAMP", "USD_OFFRAMP", "CUSTODY"],
+    capabilitiesPlanned: ["LIVE_QUOTE", "ORDER_EXECUTION", "WEBHOOK_STATUS"],
+    configurationTasks: [
+      "Retrieve staging + production credentials from the Bitwarden sends (account email + 2FA)",
+      "Obtain the private API specification (auth scheme, endpoints, rate limits, webhooks)",
+      "Confirm the whitelisted public IP matches the machine running StableX (403 'IP Address not whitelisted' otherwise)",
+      "Confirm sandbox behaviour: whether staging orders move real funds or are simulated",
+    ],
+    openQuestions: [
+      "Does the staging environment fully simulate funding + settlement?",
+      "Are crypto withdrawals to arbitrary Base addresses supported via API?",
+    ],
+  },
+  {
     name: "Circle",
     role: "USDC mint / redemption and programmatic wallet infrastructure",
     corridors: ["USD", "USDC"],
