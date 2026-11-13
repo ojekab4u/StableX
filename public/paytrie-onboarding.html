@@ -57,10 +57,11 @@
 
   <section class="paytrie-panel">
     <h2>1 · Create or connect your Paytrie identity</h2>
-    <p class="muted">StableX checks Paytrie for an account registered with your verified StableX email. If one already exists, we connect it after you verify the email code. Otherwise, the details below create a new Paytrie individual profile.</p>
+    <p class="muted">Enter the email address on your Paytrie account. It can differ from your StableX email; Paytrie will send an OTP to that address, proving you control the account. StableX checks whether it already exists before creating a new individual profile.</p>
     <p class="paytrie-note">Paytrie currently supports this API onboarding path for Canadian individual customers. You need your own eligible Canadian banking/Interac access to fund a CAD purchase. Business onboarding is a separate Paytrie process and is not enabled here.</p>
     <div class="paytrie-grid">
-      <div class="paytrie-field"><label>Verified email (from StableX)</label><input id="customerEmail" type="email" readonly></div>
+      <div class="paytrie-field"><label>Verified StableX email</label><input id="customerEmail" type="email" readonly></div>
+      <div class="paytrie-field"><label>Email registered with Paytrie</label><input id="paytrieEmail" type="email" autocomplete="email"></div>
       <div class="paytrie-field"><label>Mobile phone (10-digit Canadian number)</label><input id="phone" inputmode="numeric" placeholder="4165551234" autocomplete="tel-national"></div>
       <div class="paytrie-field"><label>First name</label><input id="firstName" autocomplete="given-name"></div>
       <div class="paytrie-field"><label>Last name</label><input id="lastName" autocomplete="family-name"></div>
