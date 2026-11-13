@@ -14,6 +14,8 @@ import {
   getPaytrieCustomerByStableXId,
   getPaytrieCustomerByProviderUserId,
   getPaytrieCustomerByEmail,
+  getPaytrieWebhookConfig,
+  savePaytrieWebhookConfig,
   upsertPaytrieCustomer,
 } from "../repositories/paytrieOnboardingRepository.js";
 
@@ -427,6 +429,61 @@ export async function refreshPaytrieOnboardingStatus(account) {
     message: status.toLowerCase() === "verified"
       ? "Paytrie reports this customer as KYC verified."
       : `Paytrie customer status: ${status}. Complete any outstanding requirements and refresh again.`,
+  };
+}
+
+
+export async function getPaytrieWebhookSigningSecret() {
+  const envSecret = String(process.env.PAYTRIE_WEBHOOK_SECRET || "").trim();
+  if (envSecret) return envSecret;
+  const saved = await getPaytrieWebhookConfig();
+  if (!saved?.encryptedSecret) return null;
+  const decrypted = decryptBeneficiaryDetails(saved.encryptedSecret);
+  return decrypted?.signingSecret || null;
+}
+
+export async function configurePaytrieWebhook({ webhookUrl } = {}) {
+  paytrieApiKey();
+  const urlValue = String(webhookUrl || process.env.PAYTRIE_WEBHOOK_PUBLIC_URL || "").trim();
+  if (!urlValue) throw fail("Set PAYTRIE_WEBHOOK_PUBLIC_URL or supply the public HTTPS webhook URL.", 400);
+  let parsed;
+  try { parsed = new URL(urlValue); }
+  catch { throw fail("Provide a valid absolute webhook URL.", 400); }
+  if (parsed.protocol !== "https:" || !parsed.pathname.endsWith("/api/paytrie/webhook")) {
+    throw fail("The webhook URL must use HTTPS and end with /api/paytrie/webhook.", 400);
+  }
+
+  const existing = await getPaytrieWebhookConfig();
+  const configured = await paytrieRequest("/webhook-configurations", {
+    method: "PUT",
+    body: { url: parsed.toString() },
+  });
+  let signingSecret = configured.signingSecret || null;
+  if (!signingSecret && existing?.encryptedSecret) {
+    const prior = decryptBeneficiaryDetails(existing.encryptedSecret);
+    signingSecret = prior?.signingSecret || null;
+  }
+  if (!signingSecret) {
+    const rotated = await paytrieRequest("/webhook-configurations/signing-secret/rotate", { method: "POST" });
+    signingSecret = rotated.signingSecret || null;
+  }
+  if (typeof signingSecret !== "string" || signingSecret.length < 16) {
+    throw fail("Paytrie configured the webhook URL but did not return a usable signing secret. Rotate the secret in Paytrie and configure it again.", 502);
+  }
+
+  const encryptedSecret = encryptBeneficiaryDetails({ signingSecret });
+  const saved = await savePaytrieWebhookConfig({ webhookUrl: parsed.toString(), encryptedSecret });
+  const verified = await paytrieRequest("/webhook-configurations");
+  if (verified.url && verified.url !== parsed.toString()) {
+    throw fail("Paytrie did not retain the requested webhook URL. Check the provider configuration.", 502);
+  }
+  return {
+    configured: true,
+    webhookUrl: saved.webhookUrl,
+    secretStoredEncrypted: true,
+    signingSecretReturnedToBrowser: false,
+    providerConfiguration: verified,
+    message: "Paytrie v2 webhooks are configured. StableX stores the signing secret encrypted in PostgreSQL and never returns it to the browser.",
   };
 }
 
