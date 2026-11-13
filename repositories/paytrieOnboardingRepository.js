@@ -106,3 +106,31 @@ export async function markPaytrieWebhookEvent({ eventId, status, errorMessage = 
     [eventId, status, errorMessage ? String(errorMessage).slice(0, 1000) : null]
   );
 }
+
+
+export async function getPaytrieWebhookConfig() {
+  const result = await getPool().query(
+    `SELECT webhook_url AS "webhookUrl",
+       encrypted_secret AS "encryptedSecret",
+       created_at AS "createdAt",
+       updated_at AS "updatedAt"
+     FROM paytrie_webhook_config WHERE config_id='default' LIMIT 1`
+  );
+  return result.rows[0] || null;
+}
+
+export async function savePaytrieWebhookConfig({ webhookUrl, encryptedSecret }) {
+  const result = await getPool().query(
+    `INSERT INTO paytrie_webhook_config(config_id,webhook_url,encrypted_secret)
+     VALUES('default',$1,$2::jsonb)
+     ON CONFLICT(config_id) DO UPDATE SET
+       webhook_url=EXCLUDED.webhook_url,
+       encrypted_secret=EXCLUDED.encrypted_secret,
+       updated_at=NOW()
+     RETURNING webhook_url AS "webhookUrl",
+       created_at AS "createdAt",
+       updated_at AS "updatedAt"`,
+    [webhookUrl, JSON.stringify(encryptedSecret)]
+  );
+  return result.rows[0];
+}
