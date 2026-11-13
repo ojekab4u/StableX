@@ -6,6 +6,7 @@ import {
 } from "../repositories/paytrieOnboardingRepository.js";
 import { readProviderOrderByPaytrieTransactionId } from "../repositories/providerOrderRepository.js";
 import { refreshPaytrieOrder } from "./paytrieExecutionService.js";
+import { getPaytrieWebhookSigningSecret } from "./paytrieOnboardingService.js";
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
@@ -90,7 +91,7 @@ export async function processPaytrieWebhookEvent(event) {
 }
 
 export async function receivePaytrieWebhook({ rawBody, signature, timestamp }) {
-  const secret = String(process.env.PAYTRIE_WEBHOOK_SECRET || "").trim();
+  const secret = String(await getPaytrieWebhookSigningSecret() || "").trim();
   if (!secret) throw fail("Paytrie webhook signing secret is not configured on StableX.", 503);
   if (!verifyPaytrieWebhookSignature({ rawBody, signature, timestamp, secret })) {
     throw fail("Paytrie webhook signature is invalid or the timestamp is outside the five-minute replay window.", 401);
