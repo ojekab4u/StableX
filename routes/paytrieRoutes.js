@@ -25,6 +25,7 @@ import {
   getPaytrieKycLink,
   refreshPaytrieOnboardingStatus,
   unlinkPaytrieCustomer,
+  configurePaytrieWebhook,
 } from "../services/paytrieOnboardingService.js";
 import { receivePaytrieWebhook } from "../services/paytrieWebhookService.js";
 
@@ -147,6 +148,19 @@ paytrieRouter.post("/customer/onboarding/refresh", requireAuth, async (req, res)
 paytrieRouter.delete("/customer/onboarding", requireAuth, async (req, res) => {
   try {
     return res.json(await unlinkPaytrieCustomer(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+
+paytrieRouter.post("/integration/webhook/configure", async (req, res) => {
+  const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+  if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+    return res.status(401).json({ error: "Unauthorized operator action." });
+  }
+  try {
+    return res.status(200).json(await configurePaytrieWebhook({
+      webhookUrl: req.body?.webhookUrl,
+    }));
   } catch (error) { return fail(res, error); }
 });
 
