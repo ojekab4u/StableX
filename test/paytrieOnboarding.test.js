@@ -46,7 +46,7 @@ test("Paytrie registration refuses missing self-attestations and invalid Canadia
   };
   const problems = validatePaytrieRegistrationProfile(invalid);
   assert.ok(problems.some((item) => item.includes("not a politically exposed person")));
-  assert.ok(problems.some((item) => item.includes("not on behalf of another person")));
+  assert.ok(problems.some((item) => item.includes("not for a third party")));
   assert.ok(problems.some((item) => item.includes("10-digit Canadian mobile")));
   assert.ok(problems.some((item) => item.includes("province or territory")));
   assert.ok(problems.some((item) => item.includes("postal code")));
