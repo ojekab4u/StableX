@@ -247,7 +247,14 @@ const schemaStatements = [
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     processed_at TIMESTAMPTZ
   )`,
-  `CREATE INDEX IF NOT EXISTS paytrie_webhook_events_received_idx ON paytrie_webhook_events (received_at DESC)`
+  `CREATE INDEX IF NOT EXISTS paytrie_webhook_events_received_idx ON paytrie_webhook_events (received_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_webhook_config (
+    config_id VARCHAR(32) PRIMARY KEY CHECK (config_id='default'),
+    webhook_url TEXT NOT NULL,
+    encrypted_secret JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`
 
 ];
 
@@ -260,7 +267,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
