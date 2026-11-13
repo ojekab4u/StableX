@@ -12,6 +12,23 @@ import {
 import { requireAuth } from "../middleware/requireAuth.js";
 import { registerExternalWallet, listExternalWallets } from "../services/walletService.js";
 
+import {
+  getPaytrieCustomerOnboardingReadiness,
+  getPaytrieCustomerOnboardingState,
+  registerOrLinkPaytrieCustomer,
+  requestPaytrieOnboardingLoginCode,
+  verifyPaytrieOnboardingLoginCode,
+  getPaytrieOnboardingRequirements,
+  submitPaytrieOnboardingRequirements,
+  requestPaytriePhoneVerification,
+  verifyPaytriePhoneVerification,
+  getPaytrieKycLink,
+  refreshPaytrieOnboardingStatus,
+  unlinkPaytrieCustomer,
+} from "../services/paytrieOnboardingService.js";
+import { receivePaytrieWebhook } from "../services/paytrieWebhookService.js";
+
+
 export const paytrieRouter = Router();
 const fail = (res, error) => res.status(error.statusCode || 503).json({ error: error.message });
 
@@ -32,6 +49,92 @@ function requirePersonalTestAccount(req, res) {
   }
   return true;
 }
+
+
+/*
+ * Customer-facing Paytrie onboarding. Identity is always taken from the
+ * authenticated StableX account; the browser never supplies a customer ID,
+ * provider user ID, Paytrie JWT or API key.
+ */
+paytrieRouter.get("/customer/onboarding", requireAuth, async (req, res) => {
+  try {
+    return res.json(await getPaytrieCustomerOnboardingState(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/register", requireAuth, async (req, res) => {
+  try {
+    const result = await registerOrLinkPaytrieCustomer({ account: req.account, profile: req.body || {} });
+    return res.status(result.created ? 201 : 200).json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/login-code", requireAuth, async (req, res) => {
+  try {
+    return res.status(202).json(await requestPaytrieOnboardingLoginCode({ account: req.account }));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/verify", requireAuth, async (req, res) => {
+  try {
+    return res.json(await verifyPaytrieOnboardingLoginCode({ account: req.account, code: req.body?.code }));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.get("/customer/onboarding/requirements", requireAuth, async (req, res) => {
+  try {
+    return res.json(await getPaytrieOnboardingRequirements(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.patch("/customer/onboarding/requirements", requireAuth, async (req, res) => {
+  try {
+    return res.json(await submitPaytrieOnboardingRequirements({ account: req.account, values: req.body?.values || {} }));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/phone-code", requireAuth, async (req, res) => {
+  try {
+    return res.status(202).json(await requestPaytriePhoneVerification({ account: req.account, phone: req.body?.phone }));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/phone-verify", requireAuth, async (req, res) => {
+  try {
+    return res.json(await verifyPaytriePhoneVerification({ account: req.account, code: req.body?.code }));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/kyc-link", requireAuth, async (req, res) => {
+  try {
+    return res.json(await getPaytrieKycLink(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.post("/customer/onboarding/refresh", requireAuth, async (req, res) => {
+  try {
+    return res.json(await refreshPaytrieOnboardingStatus(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+paytrieRouter.delete("/customer/onboarding", requireAuth, async (req, res) => {
+  try {
+    return res.json(await unlinkPaytrieCustomer(req.account));
+  } catch (error) { return fail(res, error); }
+});
+
+// Paytrie sends signed v2 events to this public endpoint. Express JSON
+// verification preserves the exact body in req.rawBody for HMAC validation.
+paytrieRouter.post("/webhook", async (req, res) => {
+  try {
+    const result = await receivePaytrieWebhook({
+      rawBody: req.rawBody,
+      signature: req.get("X-Paytrie-Signature"),
+      timestamp: req.get("X-Paytrie-Timestamp"),
+    });
+    return res.status(200).json(result);
+  } catch (error) { return fail(res, error); }
+});
 
 paytrieRouter.get("/customer/test-readiness", requireAuth, (req, res) => {
   const readiness = getPaytrieExecutionReadiness({
