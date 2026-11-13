@@ -115,6 +115,22 @@ function renderRequirements(data) {
   $("getKycLink").disabled = !state.authenticated || blocking || !kycPending;
   $("refreshStatus").disabled = !state.authenticated;
 }
+
+async function loadBaseWallet() {
+  try {
+    const data = await api("/api/paytrie/customer/onboarding/base-wallet");
+    const wallet = (data.wallets || []).find((item) => Number(item.chainId) === 8453);
+    show("walletStatus", wallet
+      ? `Base Mainnet wallet linked: ${wallet.address} (${wallet.walletProvider || "EVM wallet"}).`
+      : "No Base Mainnet wallet linked. Connect the wallet that should receive your USDC.",
+      wallet ? "good" : "");
+    $("connectBaseWallet").disabled = !state.readiness?.enabled || !state.readiness?.eligibleStableXAccount;
+  } catch (error) {
+    show("walletStatus", error.message, "bad");
+    $("connectBaseWallet").disabled = true;
+  }
+}
+
 async function refreshState() {
   const data = await api("/api/paytrie/customer/onboarding");
   state.customer = data.customer;
@@ -145,6 +161,7 @@ async function refreshState() {
     $("refreshStatus").disabled = true;
   }
   updateFundingAndExecution();
+  await loadBaseWallet();
 }
 async function boot() {
   if (!localStorage.getItem(TOKEN_KEY)) {
@@ -277,4 +294,49 @@ $("refreshStatus").addEventListener("click", async () => {
   } catch (error) { show("kycMessage", error.message, "bad"); }
   finally { $("refreshStatus").disabled = false; }
 });
+
+$("connectBaseWallet").addEventListener("click", async () => {
+  try {
+    if (!window.ethereum) throw new Error("Install or enable MetaMask or another EVM wallet first.");
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    if (!accounts?.length) throw new Error("No wallet account was selected.");
+    const address = accounts[0];
+    let chain = String(await window.ethereum.request({ method: "eth_chainId" })).toLowerCase();
+    if (chain !== "0x2105") {
+      try {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x2105" }],
+        });
+      } catch (error) {
+        if (error.code !== 4902) throw error;
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: "0x2105", chainName: "Base",
+            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"],
+          }],
+        });
+      }
+      chain = String(await window.ethereum.request({ method: "eth_chainId" })).toLowerCase();
+    }
+    if (chain !== "0x2105") throw new Error("Switch your wallet to Base Mainnet (chain ID 8453).");
+    const message = "StableX wallet connection\\nCustomer: " + state.account.accountId +
+      "\\nAddress: " + address.toLowerCase() + "\\nChain ID: 8453";
+    const signature = await window.ethereum.request({ method: "personal_sign", params: [message, address] });
+    const result = await api("/api/paytrie/customer/onboarding/base-wallet", {
+      method: "POST",
+      body: {
+        address, chainId: 8453,
+        walletProvider: window.ethereum.isMetaMask ? "MetaMask" : "EVM Wallet",
+        message, signature,
+      },
+    });
+    show("walletStatus", "Base Mainnet wallet linked: " + result.wallet.address, "good");
+  } catch (error) {
+    show("walletStatus", error.message, "bad");
+  }
+});
+
 boot();
