@@ -228,11 +228,11 @@ export async function getPaytrieCustomerOnboardingState(account) {
   };
 }
 
-export async function registerOrLinkPaytrieCustomer({ account, profile }) {
+export async function registerOrLinkPaytrieCustomer({ account, profile, paytrieEmail }) {
   assertOnboardingEnabled();
   assertStableXCustomer(account);
-  const email = normalizedEmail(account.email);
-  if (!email) throw fail("A verified StableX email is required.", 400);
+  const email = normalizedEmail(paytrieEmail || account.email);
+  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw fail("Enter the email address registered with your Paytrie account.", 400);
 
   const existingMapping = await getMappedCustomer(account.accountId);
   if (existingMapping) {
@@ -295,9 +295,6 @@ export async function requestPaytrieOnboardingLoginCode({ account }) {
   assertStableXCustomer(account);
   const mapping = await getMappedCustomer(account.accountId);
   if (!mapping) throw fail("Connect or register your Paytrie account first.", 409);
-  if (normalizedEmail(mapping.email) !== normalizedEmail(account.email)) {
-    throw fail("The Paytrie email does not match your verified StableX email.", 409);
-  }
   await paytrieRequest("/auth/login-codes", { method: "POST", body: { email: mapping.email } });
   return { requested: true, email: mapping.email, message: "A new 4-digit Paytrie sign-in code has been sent to your email." };
 }
