@@ -120,8 +120,8 @@ export function validatePaytrieRegistrationProfile(profile = {}) {
   if (profile.postalCode && !POSTAL_CODE.test(profile.postalCode.replace(/\s/g, ""))) {
     issues.push("Enter a valid Canadian postal code.");
   }
-  if (profile.notPepConfirmed !== true) issues.push("Confirm that you are not a politically exposed person (PEP).");
-  if (profile.notThirdPartyConfirmed !== true) issues.push("Confirm that you are opening and using this account for yourself, not for a third party.");
+  if (typeof profile.pep !== "boolean") issues.push("Select whether you are a politically exposed person (PEP).");
+  if (typeof profile.tpd !== "boolean") issues.push("Select whether you are registering or acting on behalf of a third party.");
   return issues;
 }
 
@@ -141,9 +141,9 @@ export function buildPaytrieUserPayload({ email, profile = {} }) {
     province: profile.province.trim().toLowerCase(),
     postalCode: profile.postalCode.replace(/\s/g, "").toUpperCase(),
     occupation: profile.occupation.trim(),
-    // The Paytrie API only accepts API-created signups that self-attest false.
-    pep: false,
-    tpd: false,
+    // Pass the customer's actual declarations to Paytrie; never infer or hardcode them.
+    pep: profile.pep,
+    tpd: profile.tpd,
   };
 }
 
