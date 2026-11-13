@@ -247,7 +247,6 @@ paytrieRouter.post("/transfers/:id/order", requireAuth, async (req, res) => {
 
 paytrieRouter.get("/transfers/:id/order", requireAuth, async (req, res) => {
   try {
-    if (!requirePersonalTestAccount(req, res)) return;
     return res.json(await getPaytrieOrderForTransfer({
       transferId: req.params.id,
       customerId: req.account.accountId,
