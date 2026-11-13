@@ -133,6 +133,13 @@
   </section>
 
   <section class="paytrie-panel">
+    <h2>5 · Link your Base Mainnet wallet</h2>
+    <p class="muted">Paytrie sends the purchased USDC to this wallet. Connect your own EVM wallet, switch to Base Mainnet (chain ID 8453), and sign a message proving that you control the address. StableX never receives your seed phrase or private key.</p>
+    <div class="paytrie-actions"><button id="connectBaseWallet" disabled>Connect MetaMask / EVM wallet</button></div>
+    <p id="walletStatus" class="paytrie-status">No Base wallet linked yet.</p>
+  </section>
+
+  <section class="paytrie-panel">
     <h2>How funding works</h2>
     <p>For a CAD purchase, Paytrie creates an Interac payment request. StableX will display Paytrie's payment reference when a transaction is created. You complete the e-Transfer yourself through your Canadian bank using Paytrie's instructions. StableX does not debit your bank account and will never ask for your online banking credentials.</p>
     <p class="paytrie-note">KYC verification does not by itself authorize StableX to create live Paytrie orders. Live platform transactions remain disabled until Paytrie has approved StableX's platform integration. Your Paytrie account can be linked and verified in advance.</p>
