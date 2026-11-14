@@ -472,3 +472,316 @@ test("Netcoins readiness reports missing credentials and staging default", async
     if (originalEnvironment === undefined) delete process.env.NETCOINS_ENVIRONMENT; else process.env.NETCOINS_ENVIRONMENT = originalEnvironment;
   }
 });
+
+test("Linkio B2B onramp preview returns the provider payout amount", async () => {
+  const originalFetch = globalThis.fetch;
+  const originals = {
+    key: process.env.LINKIO_SECRET_KEY,
+    base: process.env.LINKIO_API_BASE_URL,
+  };
+  process.env.LINKIO_SECRET_KEY = "test-linkio-key";
+  process.env.LINKIO_API_BASE_URL = "https://linkio.test";
+  let requestedUrl = "";
+  let requestHeaders = null;
+  globalThis.fetch = async (url, init) => {
+    requestedUrl = String(url);
+    requestHeaders = init.headers;
+    return {
+      ok: true,
+      json: async () => ({
+        message: "Current Rate Quote",
+        data: {
+          trx_type: "onramp",
+          rate: 1.0095,
+          payout_amount: "990.59",
+          payment_asset: "USDT/USDC",
+          paymentMethod: "ACH",
+        },
+      }),
+    };
+  };
+
+  try {
+    const { getLinkioRate } = await import("../services/providers/linkioService.js");
+    const quote = await getLinkioRate({ from: "USD", to: "USDC", amount: 1000 });
+    assert.match(requestedUrl, /^https:\/\/linkio\.test\/otc\/rate_quote\?/);
+    assert.match(requestedUrl, /currency=USD/);
+    assert.match(requestedUrl, /trx_type=onramp/);
+    assert.equal(requestHeaders["ngnc-sec-key"], "test-linkio-key");
+    assert.equal(quote.direction, "ONRAMP");
+    assert.equal(quote.destinationAmount, 990.59);
+    assert.equal(quote.rate, 1.0095);
+    assert.equal(quote.quoteType, "B2B_RATE_QUOTE");
+    assert.equal(quote.paymentMethod, "ACH");
+    assert.equal(quote.executionEnabled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originals.key === undefined) delete process.env.LINKIO_SECRET_KEY; else process.env.LINKIO_SECRET_KEY = originals.key;
+    if (originals.base === undefined) delete process.env.LINKIO_API_BASE_URL; else process.env.LINKIO_API_BASE_URL = originals.base;
+  }
+});
+
+test("Linkio B2B offramp preview converts the stablecoin amount to fiat", async () => {
+  const originalFetch = globalThis.fetch;
+  process.env.LINKIO_SECRET_KEY = "test-linkio-key";
+  delete process.env.LINKIO_API_BASE_URL;
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return {
+      ok: true,
+      json: async () => ({
+        data: {
+          trx_type: "offramp",
+          rate: 1432.5,
+          payout_amount: "3581250",
+          payment_asset: "USDT/USDC",
+          paymentMethod: "LOCAL_BANK_TRANSFER",
+        },
+      }),
+    };
+  };
+
+  try {
+    const { getLinkioRate } = await import("../services/providers/linkioService.js");
+    const quote = await getLinkioRate({ from: "USDC", to: "NGN", amount: 2500 });
+    assert.match(requestedUrl, /trx_type=offramp/);
+    assert.match(requestedUrl, /currency=NGN/);
+    assert.equal(quote.direction, "OFFRAMP");
+    assert.equal(quote.destinationAmount, 3581250);
+    assert.equal(quote.stableLeg, "USDC");
+    assert.equal(quote.fiatLeg, "NGN");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Linkio rejects CAD and stable-stable pairs without calling the API", async () => {
+  let fetchCalled = false;
+  const originalFetch = globalThis.fetch;
+  process.env.LINKIO_SECRET_KEY = "test-linkio-key";
+  globalThis.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
+
+  try {
+    const { getLinkioRate } = await import("../services/providers/linkioService.js");
+    await assert.rejects(
+      () => getLinkioRate({ from: "CAD", to: "USDC", amount: 100 }),
+      (error) => error.statusCode === 400 && /fiat currencies/i.test(error.message)
+    );
+    await assert.rejects(
+      () => getLinkioRate({ from: "USDC", to: "USDT", amount: 10 }),
+      (error) => error.statusCode === 400 && /stablecoin/i.test(error.message)
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Linkio B2B transaction requests validate network per stablecoin before calling the API", async () => {
+  let fetchCalled = false;
+  const originalFetch = globalThis.fetch;
+  process.env.LINKIO_SECRET_KEY = "test-linkio-key";
+  globalThis.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
+
+  try {
+    const { requestLinkioB2BOnramp } = await import("../services/providers/linkioService.js");
+    await assert.rejects(
+      () => requestLinkioB2BOnramp({
+        customerId: "customer-1",
+        currency: "NGN",
+        amount: "500000",
+        stables: "USDC",
+        walletAddress: "0xabc",
+        network: "TRON", // TRON is USDT-only
+        paymentDetails: { accountNumber: "1234567890", accountName: "Test", bankName: "Test Bank" },
+      }),
+      (error) => error.statusCode === 400 && /network TRON/i.test(error.message)
+    );
+    await assert.rejects(
+      () => requestLinkioB2BOnramp({ customerId: "customer-1" }),
+      (error) => error.statusCode === 400 && /requires:/i.test(error.message)
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Linkio readiness reports missing credentials and the no-CAD scope note", async () => {
+  const originalKey = process.env.LINKIO_SECRET_KEY;
+  delete process.env.LINKIO_SECRET_KEY;
+
+  try {
+    const { getLinkioReadiness } = await import("../services/providers/linkioService.js");
+    const readiness = getLinkioReadiness();
+    assert.equal(readiness.name, "Linkio");
+    assert.equal(readiness.configured, false);
+    assert.deepEqual(readiness.missingVariables, ["LINKIO_SECRET_KEY"]);
+    assert.equal(readiness.executionEnabled, false);
+    assert.ok(readiness.scopeNotes.some((note) => /no CAD/i.test(note)));
+  } finally {
+    if (originalKey === undefined) delete process.env.LINKIO_SECRET_KEY; else process.env.LINKIO_SECRET_KEY = originalKey;
+  }
+});
+
+test("Nomba authenticates via OAuth2 client-credentials and caches the token", async () => {
+  const originalFetch = globalThis.fetch;
+  const originals = {
+    base: process.env.NOMBA_API_BASE_URL,
+    clientId: process.env.NOMBA_CLIENT_ID,
+    secret: process.env.NOMBA_CLIENT_SECRET,
+    privateKey: process.env.NOMBA_PRIVATE_KEY,
+    accountId: process.env.NOMBA_ACCOUNT_ID,
+  };
+  process.env.NOMBA_API_BASE_URL = "https://nomba.test";
+  process.env.NOMBA_CLIENT_ID = "test-client-id";
+  process.env.NOMBA_CLIENT_SECRET = "test-client-secret";
+  process.env.NOMBA_ACCOUNT_ID = "test-account-id";
+  delete process.env.NOMBA_PRIVATE_KEY;
+
+  const calls = [];
+  let tokenCount = 0;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    const target = String(url);
+    if (target.endsWith("/v1/auth/token/issue")) {
+      tokenCount += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          code: "00",
+          data: { access_token: `token-${tokenCount}`, expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() },
+        }),
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        code: "00",
+        data: { accountNumber: "0554728140", accountName: "M.A Test" },
+      }),
+    };
+  };
+
+  try {
+    const { lookupNombaBankAccount, invalidateNombaToken } = await import("../services/nombaService.js");
+    await invalidateNombaToken();
+    const first = await lookupNombaBankAccount("0554728140", "058");
+    const second = await lookupNombaBankAccount("0554728141", "058");
+    assert.equal(first.accountName, "M.A Test");
+    assert.equal(second.accountName, "M.A Test");
+
+    const issueCalls = calls.filter((c) => c.url.endsWith("/v1/auth/token/issue"));
+    assert.equal(issueCalls.length, 1, "token must be issued once and reused for the second call");
+    assert.deepEqual(issueCalls[0].init.headers, {
+      "Content-Type": "application/json",
+      accountId: "test-account-id",
+    });
+    assert.equal(JSON.parse(issueCalls[0].init.body).client_id, "test-client-id");
+    assert.equal(JSON.parse(issueCalls[0].init.body).client_secret, "test-client-secret");
+
+    const lookupCalls = calls.filter((c) => c.url.endsWith("/v1/transfers/bank/lookup"));
+    assert.equal(lookupCalls.length, 2);
+    assert.equal(lookupCalls[0].init.headers.Authorization, "Bearer token-1");
+    assert.equal(lookupCalls[1].init.headers.Authorization, "Bearer token-1", "second lookup must reuse the cached token");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await (await import("../services/nombaService.js")).invalidateNombaToken();
+    if (originals.base === undefined) delete process.env.NOMBA_API_BASE_URL; else process.env.NOMBA_API_BASE_URL = originals.base;
+    if (originals.clientId === undefined) delete process.env.NOMBA_CLIENT_ID; else process.env.NOMBA_CLIENT_ID = originals.clientId;
+    if (originals.secret === undefined) delete process.env.NOMBA_CLIENT_SECRET; else process.env.NOMBA_CLIENT_SECRET = originals.secret;
+    if (originals.privateKey === undefined) delete process.env.NOMBA_PRIVATE_KEY; else process.env.NOMBA_PRIVATE_KEY = originals.privateKey;
+    if (originals.accountId === undefined) delete process.env.NOMBA_ACCOUNT_ID; else process.env.NOMBA_ACCOUNT_ID = originals.accountId;
+  }
+});
+
+test("Nomba rejects invalid bank account numbers without calling the API", async () => {
+  let fetchCalled = false;
+  const originalFetch = globalThis.fetch;
+  process.env.NOMBA_CLIENT_ID = "test-client-id";
+  process.env.NOMBA_CLIENT_SECRET = "test-client-secret";
+  process.env.NOMBA_ACCOUNT_ID = "test-account-id";
+  globalThis.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
+
+  try {
+    const { lookupNombaBankAccount } = await import("../services/nombaService.js");
+    await assert.rejects(
+      () => lookupNombaBankAccount("12345", "058"),
+      (error) => error.statusCode === 400 && /10 digits/i.test(error.message)
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Nomba bank transfer carries the merchant reference and recipient details", async () => {
+  const originalFetch = globalThis.fetch;
+  const originals = { base: process.env.NOMBA_API_BASE_URL };
+  process.env.NOMBA_API_BASE_URL = "https://nomba.test";
+  process.env.NOMBA_CLIENT_ID = "test-client-id";
+  process.env.NOMBA_CLIENT_SECRET = "test-client-secret";
+  process.env.NOMBA_ACCOUNT_ID = "test-account-id";
+  let sentBody = null;
+  let sentUrl = "";
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith("/v1/auth/token/issue")) {
+      return {
+        ok: true,
+        json: async () => ({ code: "00", data: { access_token: "token-1", expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() } }),
+      };
+    }
+    sentUrl = String(url);
+    sentBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      json: async () => ({ code: "00", data: { id: "txn_1", status: "PENDING_BILLING", amount: 3500 } }),
+    };
+  };
+
+  try {
+    const { transferToNigerianBank, invalidateNombaToken } = await import("../services/nombaService.js");
+    await invalidateNombaToken();
+    const result = await transferToNigerianBank({
+      amount: 3500,
+      accountNumber: "0554728140",
+      accountName: "Test Recipient",
+      bankCode: "058",
+      merchantTxRef: "stablex_test_ref",
+    });
+    assert.match(sentUrl, /^https:\/\/nomba\.test\/v2\/transfers\/bank$/);
+    assert.equal(sentBody.amount, 3500);
+    assert.equal(sentBody.merchantTxRef, "stablex_test_ref");
+    assert.equal(result.status, "PENDING_BILLING");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await (await import("../services/nombaService.js")).invalidateNombaToken();
+    if (originals.base === undefined) delete process.env.NOMBA_API_BASE_URL; else process.env.NOMBA_API_BASE_URL = originals.base;
+  }
+});
+
+test("Nomba readiness reports missing OAuth2 credentials", async () => {
+  const originals = {
+    clientId: process.env.NOMBA_CLIENT_ID,
+    secret: process.env.NOMBA_CLIENT_SECRET,
+    privateKey: process.env.NOMBA_PRIVATE_KEY,
+    accountId: process.env.NOMBA_ACCOUNT_ID,
+  };
+  delete process.env.NOMBA_CLIENT_ID;
+  delete process.env.NOMBA_CLIENT_SECRET;
+  delete process.env.NOMBA_PRIVATE_KEY;
+  delete process.env.NOMBA_ACCOUNT_ID;
+
+  try {
+    const { getNombaReadiness } = await import("../services/nombaService.js");
+    const readiness = getNombaReadiness();
+    assert.equal(readiness.configured, false);
+    assert.deepEqual(readiness.missingVariables, ["NOMBA_CLIENT_ID", "NOMBA_CLIENT_SECRET", "NOMBA_ACCOUNT_ID"]);
+  } finally {
+    if (originals.clientId === undefined) delete process.env.NOMBA_CLIENT_ID; else process.env.NOMBA_CLIENT_ID = originals.clientId;
+    if (originals.secret === undefined) delete process.env.NOMBA_CLIENT_SECRET; else process.env.NOMBA_CLIENT_SECRET = originals.secret;
+    if (originals.privateKey === undefined) delete process.env.NOMBA_PRIVATE_KEY; else process.env.NOMBA_PRIVATE_KEY = originals.privateKey;
+    if (originals.accountId === undefined) delete process.env.NOMBA_ACCOUNT_ID; else process.env.NOMBA_ACCOUNT_ID = originals.accountId;
+  }
+});

@@ -7,11 +7,21 @@ import {
   getNombaAccountsByCustomer,
   applyNombaWebhook,
   verifyNombaWebhookSignature,
+  lookupNombaBankAccount,
+  transferToNigerianBank,
 } from "../services/nombaService.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
 
 export const nombaRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
+
+function requireOperator(req, res, next) {
+  const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+  if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+    return res.status(401).json({ error: "Unauthorized operator action." });
+  }
+  return next();
+}
 
 // Readiness
 nombaRouter.get("/readiness", (_req, res) => {
@@ -54,6 +64,38 @@ nombaRouter.get("/virtual-accounts/:refId/details", async (_req, res) => {
       return res.status(404).json({ error: "Virtual account not found." });
     }
     return res.json({ account });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+// Verify a recipient bank account before payout (returns the holder's name).
+nombaRouter.post("/bank-lookup", async (req, res) => {
+  try {
+    const result = await lookupNombaBankAccount(req.body?.accountNumber, req.body?.bankCode);
+    return res.json({ lookup: result });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+// Payout NGN to a Nigerian bank from the Nomba business account.
+// Operator-only: this moves real funds in production.
+nombaRouter.post("/transfers/bank", requireOperator, async (req, res) => {
+  try {
+    const result = await transferToNigerianBank({
+      amount: req.body?.amount,
+      accountNumber: req.body?.accountNumber,
+      accountName: req.body?.accountName,
+      bankCode: req.body?.bankCode,
+      merchantTxRef: req.body?.merchantTxRef,
+      senderName: req.body?.senderName,
+      narration: req.body?.narration,
+    });
+    return res.status(201).json({
+      transfer: result,
+      note: "Final status arrives via webhook or the requery endpoint.",
+    });
   } catch (e) {
     return fail(res, e);
   }

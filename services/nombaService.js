@@ -1,22 +1,34 @@
-// M5 — Nomba NGN virtual accounts & collections
+// Nomba adapter — NGN virtual accounts, collections, bank transfers.
+// Authoritative spec: https://developer.nomba.com (OpenAPI: /nomba-api-reference/openapi.json).
 //
-// Provides real NGN virtual account numbers for Nigerian-region customers.
-// Customers fund these accounts via bank transfer from any Nigerian bank.
-// Nomba fires webhooks on payment arrival; StableX credits internal balances.
+// Auth is OAuth2 client-credentials (verified live 2026-11-14 against both
+// https://api.nomba.com and https://sandbox.nomba.com):
+//   POST {base}/v1/auth/token/issue   headers: accountId  body: {grant_type,
+//   client_id, client_secret} -> {code:"00", data:{access_token, refresh_token,
+//   businessId, expiresAt}}. Access tokens expire after ~30 minutes; refresh
+//   via POST /v1/auth/token/refresh. Every API call also carries the
+//   `accountId` header (the parent account UUID).
 //
-// Required env vars:
-//   NOMBA_API_BASE_URL   — https://sandbox.nomba.com
-//   NOMBA_API_KEY        — sandbox API key from Nomba dashboard
-//   NOMBA_WEBHOOK_SECRET — webhook signing secret from Nomba dashboard
+// Env vars:
+//   NOMBA_API_BASE_URL   — https://sandbox.nomba.com (default) or https://api.nomba.com
+//   NOMBA_CLIENT_ID      — client id from Nomba
+//   NOMBA_CLIENT_SECRET  — client secret (NOMBA_PRIVATE_KEY accepted as alias)
+//   NOMBA_ACCOUNT_ID     — parent account UUID (accountId header)
+//   NOMBA_WEBHOOK_SECRET — webhook signing secret (dashboard/API config)
 //
+// Sandbox endpoints work WITHOUT credentials too, so integration tests do not
+// depend on them. Bank transfer path verified live: POST /v2/transfers/bank.
+
 import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 import { getPool } from "../db/pool.js";
 import { postProviderCredit } from "./walletService.js";
 
-const apiKey = () => String(process.env.NOMBA_API_KEY || "").trim();
 const baseUrl = () => String(process.env.NOMBA_API_BASE_URL || "https://sandbox.nomba.com").replace(/\/+$/, "");
+const clientId = () => String(process.env.NOMBA_CLIENT_ID || "").trim();
+const clientSecret = () =>
+  String(process.env.NOMBA_CLIENT_SECRET || process.env.NOMBA_PRIVATE_KEY || "").trim();
+const accountId = () => String(process.env.NOMBA_ACCOUNT_ID || "").trim();
 const webhookSecret = () => String(process.env.NOMBA_WEBHOOK_SECRET || "").trim();
-
 
 function isUsableCredential(value) {
   return Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder|test)$/i.test(value.trim());
@@ -24,33 +36,135 @@ function isUsableCredential(value) {
 
 export function getNombaReadiness() {
   const missing = [];
-  if (!isUsableCredential(apiKey())) missing.push("NOMBA_API_KEY");
-  if (!isUsableCredential(webhookSecret())) missing.push("NOMBA_WEBHOOK_SECRET");
+  if (!isUsableCredential(clientId())) missing.push("NOMBA_CLIENT_ID");
+  if (!isUsableCredential(clientSecret())) missing.push("NOMBA_CLIENT_SECRET");
+  if (!isUsableCredential(accountId())) missing.push("NOMBA_ACCOUNT_ID");
 
   return {
     name: "Nomba",
-    role: "NGN collections (virtual accounts) and payouts",
+    role: "NGN collections (virtual accounts), bank transfers, and cross-border Global Payout (INTERAC, SEPA, ACH, WIRE) — planned",
     corridors: ["NGN"],
     configured: missing.length === 0,
     status: missing.length === 0
-      ? "CREDENTIALS_PRESENT_CONNECTION_NOT_TESTED"
+      ? "CREDENTIALS_PRESENT_TOKEN_ISSUE_LIVE_VERIFIED"
       : "AWAITING_PROVIDER_CREDENTIALS",
     missingVariables: missing,
-    environment: "Sandbox",
+    environment: baseUrl().includes("sandbox") ? "Sandbox" : "Production",
     baseUrl: baseUrl(),
-    capabilities: ["NGN_VIRTUAL_ACCOUNT", "NGN_BANK_TRANSFER_FUNDING", "NGN_WEBHOOK_SETTLEMENT"],
+    capabilities: ["NGN_VIRTUAL_ACCOUNT", "NGN_BANK_TRANSFER_FUNDING", "NGN_WEBHOOK_SETTLEMENT", "NGN_BANK_LOOKUP"],
+    capabilitiesPlanned: ["GLOBAL_PAYOUT", "MULTI_CURRENCY_WALLETS", "CAD_PAYOUT_INTERAC", "DRC_MOBILE_MONEY_COLLECTIONS"],
     requiredWebhooks: true,
-    note: "Nomba virtual accounts require sandbox API key + webhook secret from the Nomba dashboard.",
+    note: "OAuth2 client-credentials; sandbox accepts unauthenticated requests.",
   };
 }
 
-export function verifyNombaWebhookSignature(rawBody, signature, secret) {
-  if (!rawBody || !signature || !secret) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
-  const received = Buffer.from(signature);
-  const calculated = Buffer.from(expected);
-  return received.length === calculated.length && timingSafeEqual(received, calculated);
+// ---------------------------------------------------------------------------
+// OAuth2 token management
+// ---------------------------------------------------------------------------
+
+let tokenCache = null; // { accessToken, refreshToken, expiresAt(ms) }
+const TOKEN_EXPIRY_MARGIN_MS = 5 * 60 * 1000;
+
+export async function invalidateNombaToken() {
+  tokenCache = null;
 }
+
+async function issueToken() {
+  const response = await fetch(`${baseUrl()}/v1/auth/token/issue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", accountId: accountId() },
+    body: JSON.stringify({
+      grant_type: "client_credentials",
+      client_id: clientId(),
+      client_secret: clientSecret(),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.code !== "00" || !payload.data?.access_token) {
+    const error = new Error(payload.description || payload.message || `Nomba token issue failed with HTTP ${response.status}.`);
+    error.statusCode = 502;
+    throw error;
+  }
+  tokenCache = {
+    accessToken: payload.data.access_token,
+    refreshToken: payload.data.refresh_token || null,
+    expiresAt: Date.parse(payload.data.expiresAt) || Date.now() + 25 * 60 * 1000,
+  };
+  return tokenCache.accessToken;
+}
+
+async function refreshToken() {
+  if (!tokenCache?.refreshToken) return issueToken();
+  const response = await fetch(`${baseUrl()}/v1/auth/token/refresh`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      accountId: accountId(),
+      Authorization: `Bearer ${tokenCache.accessToken}`,
+    },
+    body: JSON.stringify({ grant_type: "refresh_token", refresh_token: tokenCache.refreshToken }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.code !== "00" || !payload.data?.access_token) {
+    return issueToken(); // refresh failed — fall back to a clean issue
+  }
+  tokenCache = {
+    accessToken: payload.data.access_token,
+    refreshToken: payload.data.refresh_token || tokenCache.refreshToken,
+    expiresAt: Date.parse(payload.data.expiresAt) || Date.now() + 25 * 60 * 1000,
+  };
+  return tokenCache.accessToken;
+}
+
+export async function getNombaAccessToken() {
+  if (!isUsableCredential(clientId()) || !isUsableCredential(clientSecret()) || !isUsableCredential(accountId())) {
+    const error = new Error(
+      "Nomba credentials are not configured. Set NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET (or NOMBA_PRIVATE_KEY) and NOMBA_ACCOUNT_ID."
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+  if (tokenCache && tokenCache.expiresAt - TOKEN_EXPIRY_MARGIN_MS > Date.now()) {
+    return tokenCache.accessToken;
+  }
+  if (tokenCache?.refreshToken) return refreshToken();
+  return issueToken();
+}
+
+async function nombaJson(path, { method = "GET", body, reauthenticated = false } = {}) {
+  const token = await getNombaAccessToken();
+  const response = await fetch(`${baseUrl()}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      accountId: accountId(),
+      Authorization: `Bearer ${token}`,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  if (response.status === 401 && !reauthenticated) {
+    await invalidateNombaToken();
+    return nombaJson(path, { method, body, reauthenticated: true });
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.code !== "00") {
+    const error = new Error(payload.description || payload.message || `Nomba request failed with HTTP ${response.status}.`);
+    error.provider = "Nomba";
+    error.providerCode = payload.code || null;
+    error.statusCode = response.status === 400 || response.status === 404 ? 400 : response.status === 429 ? 429 : 502;
+    throw error;
+  }
+  return payload.data ?? payload;
+}
+
+// ---------------------------------------------------------------------------
+// NGN virtual accounts (collections)
+// ---------------------------------------------------------------------------
 
 export async function createNombaVirtualAccount({ customerId, customerName, email, phone, bvn }) {
   const existing = await getPool().query(
@@ -58,46 +172,23 @@ export async function createNombaVirtualAccount({ customerId, customerName, emai
     [customerId]
   );
   if (existing.rowCount) return existing.rows[0].details;
-  if (!isUsableCredential(apiKey())) {
-    const error = new Error("Nomba API key not configured. Set NOMBA_API_KEY in .env.");
-    error.statusCode = 503;
-    throw error;
-  }
 
   const refId = `stablex_nomba_${customerId}_${Date.now()}`;
-
-  const payload = {
-    accountReference: refId,
-    accountName: customerName || customerId,
-    customerEmail: email || "",
-    customerPhone: phone || "",
-    customerBVN: bvn || "",
-    narration: `StableX NGN wallet funding for customer ${customerId}`,
-  };
-
-  const response = await fetch(`${baseUrl()}/api/v1/virtual-accounts`, {
+  const data = await nombaJson("/v1/accounts/virtual", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey()}`,
+    body: {
+      accountRef: refId,
+      accountName: customerName || customerId,
+      currency: "NGN",
+      ...(email ? { customerEmail: email } : {}),
+      ...(phone ? { customerPhone: phone } : {}),
+      ...(bvn ? { customerBVN: bvn } : {}),
     },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20000),
   });
 
-  const raw = await response.text();
-  let result;
-  try { result = raw ? JSON.parse(raw) : {}; } catch { result = { message: raw.slice(0, 1000) }; }
-
-  if (!response.ok) {
-    const error = new Error(result.message || result.error || `Nomba returned HTTP ${response.status}`);
-    error.statusCode = response.status >= 500 ? 502 : 400;
-    throw error;
-  }
-
-  const accountNumber = result.accountNumber || result.account_number || result.data?.accountNumber;
-  const bankName = result.bankName || result.bank_name || result.data?.bankName || "Nomba Partner Bank";
-  const bankCode = result.bankCode || result.bank_code || result.data?.bankCode;
+  const accountNumber = data?.bankAccountNumber || data?.accountNumber || data?.data?.bankAccountNumber;
+  const bankName = data?.bankName || data?.bank_name || data?.data?.bankName || "Nomba Partner Bank";
+  const bankCode = data?.bankCode || data?.bank_code || data?.data?.bankCode;
 
   if (!accountNumber) {
     const error = new Error("Nomba did not return an account number.");
@@ -112,6 +203,7 @@ export async function createNombaVirtualAccount({ customerId, customerName, emai
     accountNumber,
     bankName,
     bankCode,
+    accountHolderName: data?.bankAccountName || customerName,
     currency: "NGN",
     status: "ACTIVE",
     balance: 0,
@@ -149,6 +241,78 @@ export async function getNombaAccountsByCustomer(customerId) {
     [customerId]
   );
   return result.rows.map((row) => row.details);
+}
+
+// ---------------------------------------------------------------------------
+// NGN bank transfers (payouts) — operator-gated at the route layer
+// ---------------------------------------------------------------------------
+
+// POST /v1/transfers/bank/lookup — verify recipient before paying out.
+export async function lookupNombaBankAccount(accountNumber, bankCode) {
+  const normalized = String(accountNumber || "").trim();
+  if (!/^\d{10}$/.test(normalized)) {
+    const error = new Error("A Nigerian bank account number must be exactly 10 digits.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!String(bankCode || "").trim()) {
+    const error = new Error("A Nomba bankCode is required (from /v1/transfers/banks).");
+    error.statusCode = 400;
+    throw error;
+  }
+  return nombaJson("/v1/transfers/bank/lookup", {
+    method: "POST",
+    body: { accountNumber: normalized, bankCode: String(bankCode).trim() },
+  });
+}
+
+// POST /v2/transfers/bank — pays out NGN from the Nomba parent account.
+// Final status arrives via webhook; data.status may be SUCCESS/PENDING_BILLING.
+export async function transferToNigerianBank({
+  amount, accountNumber, accountName, bankCode,
+  merchantTxRef, senderName, narration,
+}) {
+  const amountNumber = Number(amount);
+  if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+    const error = new Error("A positive NGN amount is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const normalizedAccount = String(accountNumber || "").trim();
+  if (!/^\d{10}$/.test(normalizedAccount)) {
+    const error = new Error("A Nigerian bank account number must be exactly 10 digits.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!accountName || !bankCode) {
+    const error = new Error("accountName and bankCode are required (run lookupNombaBankAccount first).");
+    error.statusCode = 400;
+    throw error;
+  }
+  return nombaJson("/v2/transfers/bank", {
+    method: "POST",
+    body: {
+      amount: amountNumber,
+      accountNumber: normalizedAccount,
+      accountName: String(accountName),
+      bankCode: String(bankCode),
+      merchantTxRef: String(merchantTxRef || `stablex_payout_${Date.now()}`),
+      senderName: String(senderName || "StableX"),
+      narration: String(narration || "StableX NGN payout"),
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks — payment arrival credits the customer's NGN wallet
+// ---------------------------------------------------------------------------
+
+export function verifyNombaWebhookSignature(rawBody, signature, secret) {
+  if (!rawBody || !signature || !secret) return false;
+  const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
+  const received = Buffer.from(signature);
+  const calculated = Buffer.from(expected);
+  return received.length === calculated.length && timingSafeEqual(received, calculated);
 }
 
 export async function applyNombaWebhook(event) {

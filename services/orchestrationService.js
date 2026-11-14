@@ -4,6 +4,8 @@ import { getVoveKybReadiness } from "./voveKybService.js";
 import { getHoneycoinReadiness } from "./providers/honeycoinService.js";
 import { getPaycrestReadiness } from "./providers/paycrestService.js";
 import { getNetcoinsReadiness } from "./providers/netcoinsService.js";
+import { getLinkioReadiness } from "./providers/linkioService.js";
+import { getNombaReadiness } from "./nombaService.js";
 import { getPartnerReadiness } from "./providers/partnerCatalog.js";
 import { saveOrchestrationIntent, findOrchestrationIntent } from "../repositories/orchestrationRepository.js";
 
@@ -34,6 +36,8 @@ export function getOrchestrationOverview() {
       { name: "Honeycoin", role: "African fiat on/off-ramp and payouts", ...getHoneycoinReadiness() },
       { name: "Paycrest", role: "Stablecoin / local fiat routing", ...getPaycrestReadiness() },
       { name: "Netcoins", role: "CAD / USD trading rail (USDC quotes, trades, withdrawals)", ...getNetcoinsReadiness() },
+      { name: "Linkio", role: "Global FX engine — B2B fiat↔stablecoin ramps (25 fiat currencies) + retail Direct FX", ...getLinkioReadiness() },
+      { name: "Nomba", role: "NGN virtual accounts, collections and bank transfers", ...getNombaReadiness() },
     ],
     safety: "StableX coordinates providers; it is not itself a bank, stablecoin issuer or liquidity provider. No real transfer is executed by this prototype.",
   };
