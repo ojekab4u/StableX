@@ -433,16 +433,6 @@ export function linkioEventsForReference(reference) {
 // ---------------------------------------------------------------------------
 const onrampSessions = new Map();
 
-export async function startLinkioCustomerOnramp({
-  customerId, amount, network = "Base", walletAddress,
-}) {
-  const response = await requestLinkioRetailOnramp({
-    currency: "NGN",
-    amount,
-    stables: "USDC",
-    walletAddress,
-    network,
-  });
 function unwrapLinkioTransaction(response) {
   let value = response;
   for (let depth = 0; depth < 4 && value && typeof value === "object"; depth += 1) {
