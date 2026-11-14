@@ -118,14 +118,9 @@
       <!-- Step 5 -->
       <section class="step">
         <h2><span class="num">5</span> Real settlement — NGN → USDC (Linkio)</h2>
-        <p class="hint">Creates a real Linkio onramp. Linkio sends a real NGN account to pay into; you pay from your bank app; USDC lands in your wallet. Fees are baked into the rate (~0.5%).</p>
+        <p class="hint">Creates a real onramp. Linkio shows you a bank account to pay into; you pay from your bank app; USDC lands in your wallet. Fee is baked into the rate.</p>
         <div class="row">
-          <input id="l-amount" placeholder="NGN amount (e.g. 5000)" style="width:11rem" />
-        </div>
-        <div class="row" style="margin-top:0.4rem">
-          <input id="l-bank" placeholder="Your bank name (e.g. GTBank)" style="width:11rem" />
-          <input id="l-acctnum" placeholder="Your account number" style="width:11rem" />
-          <input id="l-acctname" placeholder="Your account name" style="width:14rem" />
+          <input id="l-amount" placeholder="NGN amount (e.g. 2000)" style="width:11rem" />
         </div>
         <div class="row" style="margin-top:0.4rem">
           <input id="l-wallet" placeholder="Your Base USDC wallet address (0x…)" style="flex:1;min-width:16rem" />
@@ -299,24 +294,27 @@
     function renderSession(data) {
       const s = data.session;
       let html = "<table><tr><th>Reference</th><td class='mono'>" + (s.reference || "-") + "</td></tr>" +
-        "<tr><th>You pay</th><td>" + Number(s.amount).toLocaleString() + " " + s.currency + "</td></tr>" +
-        "<tr><th>Rate</th><td class='mono'>" + (s.rate || "-") + " " + s.currency + " per USDC</td></tr>" +
-        "<tr><th>You receive</th><td class='mono'>" + (s.payoutAmount || "-") + " USDC</td></tr>" +
+        "<tr><th>You pay</th><td>" + s.amount + "</td></tr>" +
+        "<tr><th>Rate</th><td class='mono'>" + (s.rate || "-") + " NGN per USDC</td></tr>" +
+        "<tr><th>You receive</th><td class='mono'>" + (s.payoutAmount || "-") + "</td></tr>" +
         "<tr><th>Status</th><td>" + statusBadge(s.status) + "</td></tr></table>";
 
       const done = ["successful", "completed", "cancelled", "failed"].includes(String(s.status).toLowerCase());
 
-      // Settlement details extracted from webhook events
+      // LINK's payment account (from the onramp response or webhook events)
       let details = [];
-      for (const ev of data.events || []) {
-        details = findBankDetails(ev.payload, details);
+      if (s.settlement) {
+        for (const [k, v] of Object.entries(s.settlement)) {
+          if (v) details.push({ k, v });
+        }
       }
+      for (const ev of data.events || []) details = findBankDetails(ev.payload, details);
       if (details.length) {
         html += "<p class='hint' style='margin-top:0.6rem'><strong>Pay into this account:</strong></p><table>";
-        for (const d of details) html += "<tr><th>" + d.k.replace(/_/g, " ") + "</th><td class='mono'>" + d.v + "</td></tr>";
-        html += "</table>";
+        for (const d of details) html += "<tr><th>" + d.k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()) + "</th><td class='mono'>" + d.v + "</td></tr>";
+        html += "</table><p class='hint'>After paying, the status below updates automatically.</p>";
       } else if (!done) {
-        html += "<p class='hint' style='margin-top:0.6rem'>Waiting for Linkio to send the payment account details…</p>";
+        html += "<p class='hint' style='margin-top:0.6rem'>Waiting for the payment account…</p>";
       }
 
       // Event timeline
@@ -357,11 +355,6 @@
         const body = {
           amount: Number(el("l-amount").value),
           walletAddress: el("l-wallet").value.trim(),
-          bankDetails: {
-            bankName: el("l-bank").value.trim(),
-            accountNumber: el("l-acctnum").value.trim(),
-            accountName: el("l-acctname").value.trim(),
-          },
         };
         const d = await api("/api/linkio/onramp-sessions", { method: "POST", body });
         activeReference = d.session.reference;

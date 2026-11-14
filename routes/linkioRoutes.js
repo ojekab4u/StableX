@@ -191,22 +191,18 @@ linkioRouter.get("/webhooks", requireOperator, (_req, res) => {
   return res.json({ provider: "Linkio", events: listLinkioEvents() });
 });
 
-// Customer test flow: signed-in customers create a real NGN→USDC onramp and
-// follow its progress (webhook events + live transaction status) by reference.
+// Customer test flow: signed-in customers create a real NGN→USDC onramp
+// (Linkio Retail Direct FX) and follow its progress by reference.
 linkioRouter.post("/onramp-sessions", requireAuth, async (req, res) => {
   try {
-    const bankDetails = req.body?.bankDetails;
-    if (!bankDetails?.bankName || !bankDetails?.accountNumber || !bankDetails?.accountName) {
-      return res.status(400).json({ error: "bankDetails requires bankName, accountNumber and accountName (the account you will pay FROM)." });
+    if (!req.body?.walletAddress || !String(req.body.walletAddress).startsWith("0x")) {
+      return res.status(400).json({ error: "A Base wallet address (0x…) is required to receive the USDC." });
     }
     const session = await startLinkioCustomerOnramp({
       customerId: req.account.accountId,
-      currency: req.body?.currency || "NGN",
       amount: req.body?.amount,
-      stables: req.body?.stables || "USDC",
-      network: req.body?.network || "BASE",
+      network: req.body?.network || "Base",
       walletAddress: req.body?.walletAddress,
-      bankDetails,
     });
     return res.status(201).json({ provider: "Linkio", session });
   } catch (error) { return fail(res, error); }

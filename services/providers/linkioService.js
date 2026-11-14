@@ -426,40 +426,42 @@ export function linkioEventsForReference(reference) {
 }
 
 // ---------------------------------------------------------------------------
-// Customer onramp sessions (signed-in customers only). A session wraps one
-// Linkio B2B onramp: the customer supplies their payout wallet and the NGN bank
-// account they will pay FROM, the server creates the onramp, and the fiat
-// settlement account details arrive via the banking_details_received webhook.
+// Customer onramp sessions (signed-in customers only). Uses the Linkio Retail
+// Direct FX corridor (NGN -> USDC): no customer registration needed — LINK
+// handles the end user. The response carries the LINK account the user pays
+// into; webhooks then report payment received / processing / completed.
 // ---------------------------------------------------------------------------
 const onrampSessions = new Map();
 
 export async function startLinkioCustomerOnramp({
-  customerId, currency, amount, stables, network, walletAddress, bankDetails,
+  customerId, amount, network = "Base", walletAddress,
 }) {
-  const quote = await getLinkioB2BRateQuote({ currency, trxType: "onramp", amount });
-  const transaction = await requestLinkioB2BOnramp({
-    customerId,
-    currency,
+  const response = await requestLinkioRetailOnramp({
+    currency: "NGN",
     amount,
-    stables,
+    stables: "USDC",
     walletAddress,
     network,
-    paymentDetails: bankDetails,
   });
-  const reference = transaction?.reference || transaction?.data?.reference || null;
+  const t = response?.transaction || response?.data?.transaction || response?.data || {};
+  const reference = t.reference || null;
   const session = {
     reference,
-    transactionId: transaction?.transaction_id || transaction?.data?.transaction_id || null,
+    transactionId: t.transaction_id || null,
     customerId,
-    currency,
-    amount,
-    stables,
+    currency: "NGN",
+    amount: t.amount || `${amount} NGN`,
+    stables: "USDC",
     network,
     walletAddress,
-    rate: transaction?.rate ?? quote?.rate ?? null,
-    payoutAmount: transaction?.payout_amount ?? quote?.payout_amount ?? null,
-    paymentMethod: quote?.paymentMethod || null,
-    status: transaction?.transaction_status || transaction?.data?.transaction_status || "pending",
+    rate: t.onramp_rate || null,
+    payoutAmount: t.payout_amount || null,
+    settlement: {
+      bankName: t.link_bank_name || null,
+      accountNumber: t.link_account_number || null,
+      accountName: t.link_account_name || null,
+    },
+    status: t.transaction_status || "Pending",
     startedAt: new Date().toISOString(),
   };
   if (reference) onrampSessions.set(reference, session);
