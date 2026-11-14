@@ -344,7 +344,7 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
   }
 
   const updated = await updateProviderOrder({
-    orderId: order.orderId, customerId, providerTransactionId,
+    orderId: order.orderId, customerId, providerTransactionId, paymentDetails,
     status: provider.stepRequired === "redirect" ? "ACTION_REQUIRED" : "AWAITING_PAYMENT",
     providerStatus, failureReason: null,
   });
