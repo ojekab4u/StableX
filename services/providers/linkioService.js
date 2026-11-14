@@ -398,11 +398,18 @@ export async function getLinkioPayoutStatus(reference) {
 const WEBHOOK_EVENT_LIMIT = 100;
 const linkioEvents = [];
 
+// Linkio envelope: { event: "bridge.events.transaction_request.updated"|"...successful",
+// payload: { reference, payment_type, transaction_status, Notification?, ... } }.
 export function recordLinkioEvent(event) {
+  const payload = event?.payload || {};
   const record = {
     receivedAt: new Date().toISOString(),
     event: event?.event || event?.type || "unknown",
-    reference: event?.trx_reference || event?.reference || event?.data?.trx_reference || null,
+    reference: payload.reference || event?.trx_reference || event?.reference || null,
+    paymentType: payload.payment_type || null,
+    status: payload.transaction_status || null,
+    notification: payload.Notification || null,
+    signaturePresent: Boolean(event?._signatureHeader),
     payload: event,
   };
   linkioEvents.unshift(record);

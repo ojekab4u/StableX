@@ -169,9 +169,16 @@ linkioRouter.get("/payout-status/:reference", requireOperator, async (req, res) 
 // Inbound Linkio webhooks. This endpoint must stay public (Linkio's servers
 // authenticate by knowing the URL; events are logged verbatim for audit).
 linkioRouter.post("/webhooks", (req, res) => {
+  const signatureHeaders = Object.keys(req.headers).filter((h) => h.includes("sign"));
   const event = req.body || {};
+  if (signatureHeaders.length) event._signatureHeader = signatureHeaders.join(",");
   const record = recordLinkioEvent(event);
-  console.log(`[linkio] webhook received: ${record.event}${record.reference ? ` (${record.reference})` : ""}`);
+  console.log(
+    `[linkio] webhook: ${record.event}` +
+      `${record.reference ? ` ref=${record.reference}` : ""}` +
+      `${record.status ? ` status=${record.status}` : ""}` +
+      `${record.notification ? ` | ${record.notification}` : ""}`
+  );
   return res.json({ received: true, event: record.event });
 });
 
