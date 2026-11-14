@@ -10,7 +10,7 @@ import {
 } from "../repositories/providerOrderRepository.js";
 import { readTransfer, readBeneficiaries, updateTransferStatus } from "../repositories/transferRepository.js";
 import { decryptBeneficiaryDetails, encryptBeneficiaryDetails } from "./beneficiaryCrypto.js";
-import { getCustomerGateStatus } from "./complianceService.js";
+import { getCustomerGateStatus, getCustomerEmailForProvider } from "./complianceService.js";
 import { createHoneycoinOnrampOrder, getHoneycoinTransaction } from "./providers/honeycoinService.js";
 
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -27,15 +27,46 @@ function fail(message, statusCode = 400) {
 }
 
 function publicOrder(order) {
-  const details = order.paymentDetails
-    ? decryptBeneficiaryDetails(order.paymentDetails)
-    : {};
+  const details = order.paymentDetails ? decryptBeneficiaryDetails(order.paymentDetails) : {};
+  const financials = details.transactionFinancials || null;
   return {
     ...order,
     paymentDetails: details.virtualAccount || null,
     redirectUrl: details.redirectUrl || null,
     stepRequired: details.stepRequired || null,
+    receiverAmount: financials?.receiverAmount ?? null,
+    receiverCurrency: financials?.receiverCurrency ?? null,
+    cryptoAmount: financials?.cryptoAmount ?? null,
+    feeBreakdown: financials?.fee || { status: "NOT_RETURNED", amount: null, currency: null },
+    feeDisclosure: financials?.fee?.status === "RETURNED"
+      ? "Honeycoin returned this fee in its transaction details."
+      : "Honeycoin has not returned a fee amount for this transaction. This must not be interpreted as zero fees.",
   };
+}
+
+export function normalizeHoneycoinFinancials(provider = {}) {
+  const feeObject = provider.fee && typeof provider.fee === "object" ? provider.fee
+    : provider.fees && typeof provider.fees === "object" ? provider.fees : null;
+  const rawFee = feeObject?.feeAmount ?? feeObject?.amount ??
+    (typeof provider.fee === "number" || typeof provider.fee === "string" ? provider.fee : null) ??
+    provider.feeAmount ?? provider.totalFee;
+  const parsedFee = rawFee === null || rawFee === undefined || rawFee === "" ? null : Number(rawFee);
+  const fee = Number.isFinite(parsedFee) && parsedFee >= 0
+    ? { status: "RETURNED", amount: parsedFee, currency: feeObject?.currency || provider.feeCurrency || null }
+    : { status: "NOT_RETURNED", amount: null, currency: null };
+  const receiverAmount = provider.receiverAmount ?? null;
+  const cryptoAmount = provider.cryptoAmount ?? null;
+  return {
+    receiverAmount: receiverAmount !== null && Number.isFinite(Number(receiverAmount)) ? Number(receiverAmount) : null,
+    receiverCurrency: provider.receiverCurrency || null,
+    cryptoAmount: cryptoAmount !== null && Number.isFinite(Number(cryptoAmount)) ? String(cryptoAmount) : null,
+    fee,
+  };
+}
+
+function mergeEncryptedOrderDetails(order, patch) {
+  const existing = order.paymentDetails ? decryptBeneficiaryDetails(order.paymentDetails) : {};
+  return encryptBeneficiaryDetails({ ...existing, ...patch });
 }
 
 function normalizeProviderStatus(value) {
@@ -82,7 +113,7 @@ async function verifyBaseUsdcTransfer({ transactionHash, recipientAddress, crypt
 }
 
 export async function createHoneycoinOrderForTransfer({
-  transferId, customerId, paymentMethod, email,
+  transferId, customerId, paymentMethod,
 }) {
   if (typeof customerId !== "string" || !/^[A-Za-z0-9._:-]{2,128}$/.test(customerId)) {
     throw fail("A valid customerId is required.");
@@ -135,10 +166,7 @@ export async function createHoneycoinOrderForTransfer({
   if (beneficiaryNetwork && !["BASE", "BASEMAINNET"].includes(beneficiaryNetwork)) {
     throw fail("The selected beneficiary is not registered for Base Mainnet.", 409);
   }
-  const customerEmail = String(email || details.email || "").trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
-    throw fail("A valid customer email is required for Honeycoin OPay/bank payment instructions.");
-  }
+  const customerEmail = await getCustomerEmailForProvider(customerId);
 
   // Validate encryption configuration before making the external provider request.
   // Fail before the provider request if the encryption key is missing or invalid.
@@ -188,6 +216,7 @@ export async function createHoneycoinOrderForTransfer({
     virtualAccount: providerOrder.virtualAccount || null,
     redirectUrl: providerOrder.redirectUrl || null,
     stepRequired: providerOrder.stepRequired || null,
+    transactionFinancials: normalizeHoneycoinFinancials(providerOrder.providerData || {}),
   });
   const saved = await updateProviderOrder({
     orderId: inserted.order.orderId,
@@ -228,12 +257,15 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
     : await getHoneycoinTransaction(order.providerTransactionId || order.externalReference);
   const providerTransactionId = String(provider.transactionId || order.providerTransactionId || "");
   const providerStatus = normalizeProviderStatus(provider.status);
+  const paymentDetails = mergeEncryptedOrderDetails(order, {
+    transactionFinancials: normalizeHoneycoinFinancials(provider),
+  });
   const chargeStatus = String(provider.chargeStatus || "").toLowerCase();
   const txHash = provider.txId || provider.transactionHash || null;
 
   if (providerStatus === "FAILED" || chargeStatus === "failed") {
     const updated = await updateProviderOrder({
-      orderId: order.orderId, customerId, providerTransactionId, status: "FAILED",
+      orderId: order.orderId, customerId, providerTransactionId, paymentDetails, status: "FAILED",
       providerStatus, failureReason: provider.failureReason || "Honeycoin reports the on-ramp failed.",
     });
     const transfer = await readTransfer(transferId, customerId);
@@ -260,7 +292,7 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
       const expectedAmount = provider.cryptoAmount;
       if (chain !== "base" || receiver !== order.recipientAddress.toLowerCase()) {
         const updated = await updateProviderOrder({
-          orderId: order.orderId, customerId, providerTransactionId, status: "REVIEW_REQUIRED",
+          orderId: order.orderId, customerId, providerTransactionId, paymentDetails, status: "REVIEW_REQUIRED",
           providerStatus, transactionHash: txHash,
           failureReason: "Provider settlement metadata does not match the saved Base beneficiary.",
         });
@@ -286,13 +318,13 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
           });
         }
         const updated = await updateProviderOrder({
-          orderId: order.orderId, customerId, providerTransactionId, status: "COMPLETED",
+          orderId: order.orderId, customerId, providerTransactionId, paymentDetails, status: "COMPLETED",
           providerStatus, transactionHash: txHash, failureReason: null,
         });
         return { order: publicOrder(updated), providerStatus, settlementVerified: true, verification, refreshed: true };
       }
       const updated = await updateProviderOrder({
-        orderId: order.orderId, customerId, providerTransactionId, status: "SETTLEMENT_PENDING",
+        orderId: order.orderId, customerId, providerTransactionId, paymentDetails, status: "SETTLEMENT_PENDING",
         providerStatus, transactionHash: txHash, failureReason: verification.reason,
       });
       const current = await readTransfer(transferId, customerId);
@@ -305,14 +337,14 @@ export async function refreshHoneycoinOrder({ transferId, customerId, providerPa
       return { order: publicOrder(updated), providerStatus, settlementVerified: false, verification, refreshed: true };
     }
     const updated = await updateProviderOrder({
-      orderId: order.orderId, customerId, providerTransactionId, status: "FUNDED",
+      orderId: order.orderId, customerId, providerTransactionId, paymentDetails, status: "FUNDED",
       providerStatus, failureReason: null,
     });
     return { order: publicOrder(updated), providerStatus, settlementVerified: false, refreshed: true };
   }
 
   const updated = await updateProviderOrder({
-    orderId: order.orderId, customerId, providerTransactionId,
+    orderId: order.orderId, customerId, providerTransactionId, paymentDetails,
     status: provider.stepRequired === "redirect" ? "ACTION_REQUIRED" : "AWAITING_PAYMENT",
     providerStatus, failureReason: null,
   });

@@ -75,10 +75,14 @@ function renderQuotes(data){
     const card=document.createElement("article");card.className="quote-card";
     const kind=q.providerClass||q.quoteType||"UNCLASSIFIED";
     const output=q.destinationAmount==null?"—":money(q.destinationAmount,q.to);
+    const feeLabel=q.fee!=null ? money(q.fee,q.feeCurrency) : (q.feeStatus==="NOT_RETURNED"?"Not returned for this preview":"Not provided");
+    const expiryLabel=q.expiresAt ? new Date(q.expiresAt).toLocaleString()+" (local preview window)" : "Not supplied";
     const fields=[
-      ["Quote class",kind],["Rate",q.rate??"—"],["Fee",q.fee==null?"Not supplied":money(q.fee,q.feeCurrency)],["Expires",q.expiresAt?new Date(q.expiresAt).toLocaleString():"Not supplied"],["Execution",q.executionEnabled?"Enabled by adapter":"Not enabled"]
+      ["Quote class",kind],["Rate",q.rate??"—"],["Fee",feeLabel],["Environment",q.providerEnvironment||"Not identified"],
+      ["Observed",q.observedAt?new Date(q.observedAt).toLocaleString():"Not recorded"],
+      ["Preview record expires",expiryLabel],["Execution",q.executionEnabled?"Enabled by adapter":"Not enabled"]
     ];
-    card.innerHTML=`<div class="quote-top"><span class="eyebrow">#${i+1} · ${esc(kind)}</span><span class="pill">${q.executionEnabled?"EXECUTABLE":"PREVIEW ONLY"}</span></div><h3>${esc(q.provider)}</h3><strong class="output">${esc(output)}</strong><div class="quote-meta">${fields.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div><button type="button" class="choose" data-quote="${esc(q.quoteId)}" ${!q.quoteId||!$("beneficiary-select").value?"disabled":""}>Create draft &amp; select quote</button>`;
+    card.innerHTML=`<div class="quote-top"><span class="eyebrow">#${i+1} · ${esc(kind)}</span><span class="pill">${q.executionEnabled?"EXECUTABLE":"PREVIEW ONLY"}</span></div><h3>${esc(q.provider)}</h3><strong class="output">${esc(output)}</strong><div class="quote-meta">${fields.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div>${q.feeNote?`<p class="muted small">${esc(q.feeNote)}</p>`:""}<p class="muted small">An indicative preview is not a reserved execution price. Request quotes again to refresh provider pricing.</p><button type="button" class="choose" data-quote="${esc(q.quoteId)}" ${!q.quoteId||!$("beneficiary-select").value?"disabled":""}>Create draft &amp; select quote</button>`;
     host.append(card);
   });
   if(data.unavailableProviders?.length){

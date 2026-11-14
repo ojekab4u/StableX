@@ -85,6 +85,11 @@ export async function getHoneycoinRate({ from, to, amount }) {
     throw error;
   }
 
+  const configuredBase = getBaseUrl().toLowerCase();
+  const environment = configuredBase.includes("/sandbox/") ? "Sandbox"
+    : configuredBase.includes("/b2b") ? "Production" : "Custom endpoint";
+  const observedAt = new Date().toISOString();
+
   return {
     provider: "Honeycoin",
     quoteType: "INDICATIVE_RATE_PREVIEW",
@@ -92,8 +97,10 @@ export async function getHoneycoinRate({ from, to, amount }) {
     to,
     amount,
     providerData: payload.data ?? payload,
+    providerEnvironment: environment,
+    observedAt,
     executionEnabled: false,
-    note: "Read-only FX preview. This is not a reserved quote and does not initiate a payment or crypto settlement.",
+    note: "Indicative Honeycoin FX preview. Honeycoin has not reserved this rate; order pricing is confirmed when an on-ramp order is created.",
   };
 }
 

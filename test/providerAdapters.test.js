@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { getPaycrestRate, getPaycrestReadiness } from "../services/providers/paycrestService.js";
 import { getHoneycoinRate, getHoneycoinReadiness } from "../services/providers/honeycoinService.js";
 import { getBridgeRate, getBridgeReadiness, createBridgeOnRampOrder } from "../services/providers/bridgeService.js";
-import { rankRoutingQuotes } from "../services/routingService.js";
+import { rankRoutingQuotes, extractProviderFee } from "../services/routingService.js";
+import { normalizeHoneycoinFinancials } from "../services/providerOrderService.js";
 
 test("Paycrest onramp preview requests a one-token indicative rate", async () => {
   const originalFetch = globalThis.fetch;
@@ -76,6 +77,8 @@ test("Honeycoin uses the preferred B2B base URL and authenticates server-side", 
     assert.equal(calls[1].options.headers.Authorization, "Bearer test-bearer");
     assert.equal(quote.quoteType, "INDICATIVE_RATE_PREVIEW");
     assert.equal(quote.executionEnabled, false);
+    assert.equal(quote.providerEnvironment, "Sandbox");
+    assert.ok(quote.observedAt);
   } finally {
     globalThis.fetch = originalFetch;
     for (const [key, value] of [
@@ -172,6 +175,19 @@ test("Bridge order creation is explicitly disabled rather than calling an unveri
     assert.equal(error.statusCode, 501);
     return /not implemented/.test(error.message);
   });
+});
+
+test("Honeycoin preview fee extraction distinguishes missing from explicit zero", () => {
+  assert.deepEqual(extractProviderFee({ fee: { feeAmount: "0", currency: "NGN" } }), { amount: 0, currency: "NGN" });
+  assert.deepEqual(extractProviderFee({ conversionRate: "0.0007", convertedAmount: "7" }), { amount: null, currency: null });
+});
+
+test("Honeycoin transaction financials preserve nested fees and never infer zero", () => {
+  assert.deepEqual(normalizeHoneycoinFinancials({ receiverAmount: "7.25", receiverCurrency: "USDC", cryptoAmount: "7.25", fee: { feeAmount: "0.05", currency: "USDC" } }), {
+    receiverAmount: 7.25, receiverCurrency: "USDC", cryptoAmount: "7.25", fee: { status: "RETURNED", amount: 0.05, currency: "USDC" },
+  });
+  assert.deepEqual(normalizeHoneycoinFinancials({ cryptoAmount: "7.25" }).fee, { status: "NOT_RETURNED", amount: null, currency: null });
+  assert.deepEqual(normalizeHoneycoinFinancials({ fee: { feeAmount: "0", currency: "NGN" } }).fee, { status: "RETURNED", amount: 0, currency: "NGN" });
 });
 
 test("routing ranks executable quotes before read-only previews", () => {

@@ -48,6 +48,21 @@ function pickNumber(source, keys) {
   return null;
 }
 
+export function extractProviderFee(raw, result = {}) {
+  const feeObject = raw?.fee && typeof raw.fee === "object" ? raw.fee
+    : raw?.fees && typeof raw.fees === "object" ? raw.fees : null;
+  const rawFee = feeObject?.feeAmount ?? feeObject?.amount ?? feeObject?.value ??
+    (typeof raw?.fee === "number" || typeof raw?.fee === "string" ? raw.fee : null) ??
+    raw?.feeAmount ?? raw?.totalFee ?? result.fee;
+  const amount = extractNumeric(rawFee);
+  return {
+    amount: amount !== null && amount >= 0 ? amount : null,
+    currency: amount !== null && amount >= 0
+      ? (feeObject?.currency || raw?.feeCurrency || raw?.fee_currency || result.feeCurrency || null)
+      : null,
+  };
+}
+
 function classify(quoteType) {
   if (quoteType === "LIVE_PROVIDER_QUOTE") return "LIVE";
   if (quoteType === "LIVE_ONCHAIN_QUOTE") return "ONCHAIN";
@@ -101,6 +116,10 @@ function normalizeProviderResult(provider, request, result) {
     normalizedRate = normalizedDestination / request.amount;
   }
 
+  const feeDetails = extractProviderFee(raw, result);
+  const observedAt = result.observedAt || result.timestamp || new Date().toISOString();
+  const providerUpdatedAt = raw?.updatedAt || raw?.updated_at || raw?.timestamp || null;
+
   return {
     quoteId: randomUUID(),
     provider,
@@ -110,12 +129,17 @@ function normalizeProviderResult(provider, request, result) {
     sourceAmount: request.amount,
     destinationAmount: normalizedDestination ?? null,
     rate: normalizedRate ?? null,
-    fee: pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]),
-    feeCurrency: result.feeCurrency || raw?.feeCurrency || raw?.fee_currency || request.to,
+    fee: feeDetails.amount,
+    feeCurrency: feeDetails.currency,
+    feeStatus: feeDetails.amount === null ? "NOT_RETURNED" : "RETURNED",
+    feeNote: feeDetails.amount === null ? "No fee was included in this provider response; this does not mean the transaction is free." : null,
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
     expiresAt: result.expiresAt || new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
+    expiryType: result.expiresAt ? "PROVIDER_EXPIRY" : "LOCAL_PREVIEW_WINDOW",
     raw,
-    observedAt: result.observedAt || result.timestamp || raw?.updated_at || new Date().toISOString(),
+    observedAt,
+    providerUpdatedAt,
+    providerEnvironment: result.providerEnvironment || null,
     network: result.network || null,
     chainId: result.chainId || null,
     executionEnabled: result.executionEnabled === true,

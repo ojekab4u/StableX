@@ -47,7 +47,6 @@ transferRouter.post("/:id/provider-order",async(req,res)=>{
    transferId:req.params.id,
    customerId:String(req.body?.customerId||""),
    paymentMethod:req.body?.paymentMethod,
-   email:req.body?.email,
   });
   return res.status(result.created?201:200).json({
    message:result.created?"Honeycoin order created. Complete the payment action and refresh status; funds are not considered settled until provider and Base verification succeed.":result.message,
