@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feature/honeycoin-onramp-orders
+      - feature/honeycoin-quote-fee-customer-flow
   pull_request:
     branches:
       - feature/customer-routing-interface
+      - feature/honeycoin-onramp-orders
       - main
 
 jobs:

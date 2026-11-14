@@ -264,7 +264,7 @@ export async function getCustomerEmailForProvider(customerId) {
   const cases = await readComplianceCasesForCustomer(customerId);
   const approved = cases.find((item) => item.status === "APPROVED" && item.subjectType === "INDIVIDUAL" &&
     typeof item.subject?.email === "string" &&
-    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(item.subject.email.trim()));
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.subject.email.trim()));
   if (!approved) {
     const error = new Error("An approved individual KYC profile with a valid email is required. Update the customer compliance profile before creating a Honeycoin order.");
     error.statusCode = 409;
