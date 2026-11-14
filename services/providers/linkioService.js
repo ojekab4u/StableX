@@ -443,29 +443,82 @@ export async function startLinkioCustomerOnramp({
     walletAddress,
     network,
   });
-  const t = response?.transaction || response?.data?.transaction || response?.data || {};
-  const reference = t.reference || null;
-  const session = {
-    reference,
-    transactionId: t.transaction_id || null,
+function unwrapLinkioTransaction(response) {
+  let value = response;
+  for (let depth = 0; depth < 4 && value && typeof value === "object"; depth += 1) {
+    if (value.transaction && typeof value.transaction === "object") {
+      value = value.transaction;
+      continue;
+    }
+    if (value.data && typeof value.data === "object") {
+      value = value.data;
+      continue;
+    }
+    break;
+  }
+  return value && typeof value === "object" ? value : {};
+}
+
+function linkioSettlementDetails(transaction) {
+  const value = (...candidates) => candidates.find((item) =>
+    item !== undefined && item !== null && String(item).trim() !== ""
+  ) ?? null;
+  return {
+    bankName: value(transaction.link_bank_name, transaction.bank_name, transaction.bankName),
+    accountNumber: value(transaction.link_account_number, transaction.account_number, transaction.accountNumber),
+    accountName: value(transaction.link_account_name, transaction.account_name, transaction.accountName),
+    vendorDetails: value(transaction.vendorDetails, transaction.vendor_details),
+  };
+}
+
+function mergeLinkioTransactionIntoSession(session, response) {
+  const transaction = unwrapLinkioTransaction(response);
+  session.transactionId = transaction.transaction_id || session.transactionId || null;
+  session.amount = transaction.amount ?? session.amount;
+  session.rate = transaction.onramp_rate ?? transaction.rate ?? session.rate;
+  session.payoutAmount = transaction.payout_amount ?? transaction.payoutAmount ?? session.payoutAmount;
+  session.status = transaction.transaction_status || transaction.status || session.status;
+  const incoming = linkioSettlementDetails(transaction);
+  session.settlement = Object.fromEntries(
+    Object.entries({ ...(session.settlement || {}), ...incoming })
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+  );
+  return session;
+}
+
+export async function startLinkioCustomerOnramp({
+  customerId, amount, network = "Base", walletAddress,
+}) {
+  const response = await requestLinkioRetailOnramp({
+    currency: "NGN",
+    amount,
+    stables: "USDC",
+    walletAddress,
+    network,
+  });
+  const session = mergeLinkioTransactionIntoSession({
+    reference: null,
+    transactionId: null,
     customerId,
     currency: "NGN",
-    amount: t.amount || `${amount} NGN`,
+    amount: `${amount} NGN`,
     stables: "USDC",
     network,
     walletAddress,
-    rate: t.onramp_rate || null,
-    payoutAmount: t.payout_amount || null,
-    settlement: {
-      bankName: t.link_bank_name || null,
-      accountNumber: t.link_account_number || null,
-      accountName: t.link_account_name || null,
-    },
-    status: t.transaction_status || "Pending",
+    rate: null,
+    payoutAmount: null,
+    settlement: {},
+    status: "Pending",
     startedAt: new Date().toISOString(),
-  };
-  if (reference) onrampSessions.set(reference, session);
+  }, response);
+  session.reference = session.reference || unwrapLinkioTransaction(response).reference || null;
+  if (session.reference) onrampSessions.set(session.reference, session);
   return session;
+}
+
+export function mergeLinkioOnrampSessionTransaction(reference, response) {
+  const session = getLinkioOnrampSession(reference);
+  return session ? mergeLinkioTransactionIntoSession(session, response) : null;
 }
 
 export function getLinkioOnrampSession(reference) {
