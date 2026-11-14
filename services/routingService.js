@@ -4,6 +4,7 @@ import { getPaytrieQuote } from "./paytrieService.js";
 import { getHoneycoinRate } from "./providers/honeycoinService.js";
 import { getPaycrestRate } from "./providers/paycrestService.js";
 import { getBridgeRate } from "./providers/bridgeService.js";
+import { getNetcoinsRate } from "./providers/netcoinsService.js";
 import { getAerodromeQuote } from "./providers/aerodromeService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { readTransfer, applyQuoteSelection } from "../repositories/transferRepository.js";
@@ -175,6 +176,9 @@ async function collectSingleHopCandidates(request) {
     getBridgeRate(request)
       .then((result) => normalizeProviderResult("Bridge", request, result))
       .catch((error) => ({ provider: "Bridge", available: false, reason: error.message })),
+    getNetcoinsRate(request)
+      .then((result) => normalizeProviderResult("Netcoins", request, result))
+      .catch((error) => ({ provider: "Netcoins", available: false, reason: error.message })),
     getAerodromeQuote(request)
       .then((result) => normalizeProviderResult("Aerodrome Slipstream", request, result))
       .catch((error) => ({ provider: "Aerodrome Slipstream", available: false, reason: error.message })),
