@@ -253,6 +253,26 @@ export async function getCustomerGateStatus(customerId) {
   return { customerId, gate: evaluateGate(cases), caseCount: cases.length };
 }
 
+// Resolve the email already collected in the approved individual KYC profile.
+// Provider charge details are populated server-side, never from a browser field.
+export async function getCustomerEmailForProvider(customerId) {
+  if (typeof customerId !== "string" || !customerIdRegex.test(customerId)) {
+    const error = new Error("A valid customerId is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const cases = await readComplianceCasesForCustomer(customerId);
+  const approved = cases.find((item) => item.status === "APPROVED" && item.subjectType === "INDIVIDUAL" &&
+    typeof item.subject?.email === "string" &&
+    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(item.subject.email.trim()));
+  if (!approved) {
+    const error = new Error("An approved individual KYC profile with a valid email is required. Update the customer compliance profile before creating a Honeycoin order.");
+    error.statusCode = 409;
+    throw error;
+  }
+  return approved.subject.email.trim();
+}
+
 export function normalizeVoveOutcome(event, result) {
   const data = event?.data || {};
   const eventType = String(event?.type || "").toLowerCase();

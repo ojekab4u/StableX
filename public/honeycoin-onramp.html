@@ -84,6 +84,10 @@
     if (order.providerTransactionId) lines.push("Provider reference: " + order.providerTransactionId);
     if (order.paymentMethod) lines.push("Payment method: " + order.paymentMethod);
     if (order.paymentDetails) lines.push("Payment instructions: " + JSON.stringify(order.paymentDetails, null, 2));
+    if (order.cryptoAmount !== null && order.cryptoAmount !== undefined) lines.push("Honeycoin-reported crypto amount: " + order.cryptoAmount + " USDC");
+    if (order.receiverAmount !== null && order.receiverAmount !== undefined) lines.push("Honeycoin-reported gross receiver amount: " + order.receiverAmount + " " + (order.receiverCurrency || ""));
+    if (order.feeBreakdown?.status === "RETURNED") lines.push("Honeycoin fee: " + order.feeBreakdown.amount + " " + (order.feeBreakdown.currency || ""));
+    else lines.push("Honeycoin fee: Not returned in transaction details (not equivalent to zero).");
     if (order.failureReason) lines.push("Issue: " + order.failureReason);
     if (value.verification?.reason) lines.push("Base verification: " + value.verification.reason);
     if (value.settlementVerified === true) lines.push("Base USDC settlement: verified");
@@ -176,7 +180,7 @@
       currentOrder = null;
       $("refresh").disabled = true;
       $("create").disabled = false;
-      show("Transfer " + transferId + " is ready. Choose a payment method, enter the customer's email, then create the Honeycoin order.");
+      show("Transfer " + transferId + " is ready. Choose a payment method, then create the Honeycoin order. StableX supplies the email from the approved KYC profile.");
     } catch (e) {
       show(e.message);
     } finally {
