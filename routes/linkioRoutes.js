@@ -19,6 +19,7 @@ import {
   linkioEventsForReference,
   startLinkioCustomerOnramp,
   getLinkioOnrampSession,
+  mergeLinkioOnrampSessionTransaction,
 } from "../services/providers/linkioService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
@@ -214,11 +215,20 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
     return res.status(404).json({ error: "Onramp session not found. Sessions are cleared when the server restarts." });
   }
   let transaction = null;
-  try { transaction = await getLinkioTransaction(req.params.reference); } catch { /* keep webhook events as the source of truth */ }
+  let transactionRefreshError = null;
+  try {
+    transaction = await getLinkioTransaction(req.params.reference);
+    mergeLinkioOnrampSessionTransaction(req.params.reference, transaction);
+  } catch (error) {
+    // Keep the customer session available, but report why live transaction
+    // reconciliation did not return details instead of silently hiding it.
+    transactionRefreshError = error.message;
+  }
   return res.json({
     provider: "Linkio",
-    session,
+    session: getLinkioOnrampSession(req.params.reference),
     events: linkioEventsForReference(req.params.reference),
     transaction,
+    transactionRefreshError,
   });
 });
