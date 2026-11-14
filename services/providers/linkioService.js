@@ -387,3 +387,29 @@ export async function getLinkioPayoutStatus(reference) {
     query: { trx_reference: normalized },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Inbound webhook events from Linkio (registered in the Linkio dashboard).
+// The most important event is `banking_details_received`: after a B2B onramp is
+// created, Linkio pushes the fiat settlement account details the payer must
+// transfer into. Events are kept in a bounded in-memory buffer and exposed to
+// the operator via GET /api/linkio/webhooks.
+// ---------------------------------------------------------------------------
+const WEBHOOK_EVENT_LIMIT = 100;
+const linkioEvents = [];
+
+export function recordLinkioEvent(event) {
+  const record = {
+    receivedAt: new Date().toISOString(),
+    event: event?.event || event?.type || "unknown",
+    reference: event?.trx_reference || event?.reference || event?.data?.trx_reference || null,
+    payload: event,
+  };
+  linkioEvents.unshift(record);
+  if (linkioEvents.length > WEBHOOK_EVENT_LIMIT) linkioEvents.pop();
+  return record;
+}
+
+export function listLinkioEvents() {
+  return linkioEvents;
+}

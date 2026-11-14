@@ -14,6 +14,8 @@ import {
   requestLinkioRetailOfframp,
   getLinkioTransaction,
   getLinkioPayoutStatus,
+  recordLinkioEvent,
+  listLinkioEvents,
 } from "../services/providers/linkioService.js";
 
 export const linkioRouter = Router();
@@ -162,4 +164,18 @@ linkioRouter.get("/payout-status/:reference", requireOperator, async (req, res) 
       payoutStatus: await getLinkioPayoutStatus(req.params.reference),
     });
   } catch (error) { return fail(res, error); }
+});
+
+// Inbound Linkio webhooks. This endpoint must stay public (Linkio's servers
+// authenticate by knowing the URL; events are logged verbatim for audit).
+linkioRouter.post("/webhooks", (req, res) => {
+  const event = req.body || {};
+  const record = recordLinkioEvent(event);
+  console.log(`[linkio] webhook received: ${record.event}${record.reference ? ` (${record.reference})` : ""}`);
+  return res.json({ received: true, event: record.event });
+});
+
+// Operator view of the last events received (banking_details_received etc.).
+linkioRouter.get("/webhooks", requireOperator, (_req, res) => {
+  return res.json({ provider: "Linkio", events: listLinkioEvents() });
 });
