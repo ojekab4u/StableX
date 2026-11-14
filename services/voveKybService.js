@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 
 const SANDBOX_URL = "https://api.voveid.net/v2";
 
@@ -13,13 +12,53 @@ function config() {
     throw error;
   }
   return {
-    apiKey,
-    publicKey,
-    webhookSecret,
+    apiKey, publicKey, webhookSecret,
     baseUrl: process.env.VOVE_ID_API_BASE_URL || SANDBOX_URL,
     environment: process.env.VOVE_ID_ENVIRONMENT || "Sandbox",
-    flowId: process.env.VOVE_ID_KYB_FLOW_ID || undefined,
+    kycFlowId: process.env.VOVE_ID_KYC_FLOW_ID || undefined,
+    kybFlowId: process.env.VOVE_ID_KYB_FLOW_ID || undefined,
   };
+}
+
+async function voveRequest(path, { method = "GET", body } = {}) {
+  const settings = config();
+  const response = await fetch(`${settings.baseUrl}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "x-api-key": settings.apiKey,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(15000),
+  });
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { payload = { message: raw.slice(0, 500) }; }
+  if (!response.ok) {
+    const error = new Error(payload.message || payload.error || `VOVE request failed (${response.status})`);
+    error.statusCode = response.status === 401 || response.status === 403 ? 502 : response.status >= 500 ? 502 : 400;
+    error.providerStatus = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function buildKycLink(token, settings) {
+  const url = new URL("https://web.voveid.com/");
+  url.searchParams.set("authToken", token);
+  url.searchParams.set("publicKey", settings.publicKey);
+  url.searchParams.set("environment", settings.environment);
+  return url.toString();
+}
+
+function buildKybLink(token, settings) {
+  const url = new URL("https://web.voveid.com/kyb/");
+  url.searchParams.set("authToken", token);
+  url.searchParams.set("publicKey", settings.publicKey);
+  url.searchParams.set("environment", settings.environment);
+  return url.toString();
 }
 
 export function getVoveKybReadiness() {
@@ -34,120 +73,91 @@ export function getVoveKybReadiness() {
     status: configured ? "CREDENTIALS_PRESENT_CONNECTION_NOT_TESTED" : "AWAITING_SANDBOX_CREDENTIALS",
     missing: configured ? [] : ["VOVE_API_KEY / VOVE_ID_API_KEY", "VOVE_PUBLIC_KEY / VOVE_ID_PUBLIC_KEY"],
     executionEnabled: false,
-    note: "VOVE verification can be tested in sandbox. KYC via /v2/sessions, KYB via /v2/sessions with KYB flowId.",
+    note: "KYC uses POST /sessions and GET /users/{refId}; KYB uses POST /kyb/case and GET /kyb/case?search={refId}&limit=1. Hosted-flow completion is not automatically an internal approval.",
   };
 }
 
-export async function createVoveKycCase({ fullName, country, dateOfBirth, email, phone, type = "INDIVIDUAL", registrationNumber, city, address }) {
+export async function createVoveKycCase({ fullName, country, dateOfBirth, email, phone }) {
   const settings = config();
-  const refId = `stablex_${type === "BUSINESS" ? "kyb" : "kyc"}_${randomUUID()}`;
+  const refId = `stablex_kyc_${randomUUID()}`;
   const payload = {
     refId,
-    ...(settings.flowId ? { flowId: settings.flowId } : {}),
-    fullName,
-    country,
+    ...(settings.kycFlowId ? { flowId: settings.kycFlowId } : {}),
+    fullName, country,
     ...(dateOfBirth ? { dateOfBirth } : {}),
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
-    ...(type === "BUSINESS" ? { type: "BUSINESS" } : {}),
-    ...(registrationNumber ? { registrationNumber } : {}),
-    ...(city ? { city } : {}),
-    ...(address ? { address } : {}),
   };
-
-  const response = await fetch(`${settings.baseUrl}/sessions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": settings.apiKey,
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20000),
-  });
-
-  const raw = await response.text();
-  let result;
-  try { result = raw ? JSON.parse(raw) : {}; } catch { result = { message: raw.slice(0, 1000) }; }
-
-  if (!response.ok) {
-    const error = new Error(result.message || result.error || `VOVE returned HTTP ${response.status}`);
-    error.statusCode = response.status >= 500 ? 502 : 400;
-    error.providerStatus = response.status;
-    throw error;
-  }
-
+  const result = await voveRequest("/sessions", { method: "POST", body: payload });
   const token = result.token || result.sessionToken;
-  if (!token) {
-    throw new Error("VOVE response did not include a session token.");
-  }
-
-  const link = new URL("https://web.voveid.net/");
-  link.searchParams.set("authToken", token);
-  link.searchParams.set("publicKey", settings.publicKey);
-  link.searchParams.set("environment", settings.environment);
-
-  const record = {
-    provider: "VOVE ID",
-    refId,
-    fullName,
-    country,
-    status: "NOT_STARTED",
-    flow: settings.flowId || null,
-    verificationUrl: link.toString(),
+  if (!token) throw new Error("VOVE KYC session response did not include a session token.");
+  return {
+    provider: "VOVE ID", refId, fullName, country,
+    status: result.status || "NOT_STARTED",
+    flow: settings.kycFlowId || null,
+    verificationUrl: buildKycLink(token, settings),
     createdAt: new Date().toISOString(),
     lastUpdatedAt: new Date().toISOString(),
     environment: settings.environment,
-    providerResponse: {
-      refId,
-      status: "NOT_STARTED",
-      flow: settings.flowId || null,
-      token,
+    providerResponse: { refId, status: result.status || "NOT_STARTED", flow: settings.kycFlowId || null },
+  };
+}
+
+export async function createVoveKybCase({ businessName, country, registrationNumber, city, address }) {
+  const settings = config();
+  const refId = `stablex_kyb_${randomUUID()}`;
+  const payload = {
+    businessName,
+    refId,
+    ...(settings.kybFlowId ? { flow: settings.kybFlowId } : {}),
+    formData: {
+      ...(registrationNumber ? { registrationNumber } : {}),
+      ...(country ? { country } : {}),
+      ...(city ? { city } : {}),
+      ...(address ? { address } : {}),
     },
   };
+  const result = await voveRequest("/kyb/case", { method: "POST", body: payload });
+  const kybCase = result.kybCase || result.data?.kybCase || result.data || {};
+  const token = result.token || result.sessionToken;
+  const providerRef = kybCase.refId || refId;
+  if (!token) throw new Error("VOVE KYB case response did not include a hosted-flow token.");
+  return {
+    provider: "VOVE ID",
+    refId: providerRef,
+    fullName: businessName,
+    country,
+    status: kybCase.status || "NOT_STARTED",
+    flow: kybCase.flow || settings.kybFlowId || null,
+    verificationUrl: buildKybLink(token, settings),
+    createdAt: new Date().toISOString(),
+    lastUpdatedAt: new Date().toISOString(),
+    environment: settings.environment,
+    providerResponse: { refId: providerRef, status: kybCase.status || "NOT_STARTED", flow: kybCase.flow || settings.kybFlowId || null },
+  };
+}
+
+export async function getVoveKycResult(refId) {
+  return await voveRequest(`/users/${encodeURIComponent(refId)}`);
+}
+
+export async function getVoveKybResult(refId) {
+  const query = new URLSearchParams({ search: refId, limit: "1" });
+  const payload = await voveRequest(`/kyb/case?${query.toString()}`);
+  const records = Array.isArray(payload.data) ? payload.data : [];
+  const record = records.find((item) => item.refId === refId) ||
+    (payload.kybCase?.refId === refId ? payload.kybCase : null) ||
+    (payload.refId === refId ? payload : null);
+  if (!record) {
+    const error = new Error(`VOVE KYB record not found for refId ${refId}.`);
+    error.statusCode = 404;
+    throw error;
+  }
   return record;
 }
 
-export async function getVoveKycResult(refId, { subjectType = "INDIVIDUAL" } = {}) {
-  const settings = config();
-
-  if (subjectType === "BUSINESS") {
-    const url = new URL(`${settings.baseUrl}/kyb/case`);
-    url.searchParams.set("search", refId);
-    url.searchParams.set("limit", "1");
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "x-api-key": settings.apiKey },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (response.ok) {
-      const payload = await response.json();
-      const records = Array.isArray(payload.data) ? payload.data : [];
-      const record = records.find((item) => item.refId === refId) ||
-        (payload.kybCase?.refId === refId ? payload.kybCase : null);
-      if (record) return record;
-    } else if (response.status >= 500) {
-      const error = new Error(`VOVE KYB result retrieval failed (${response.status})`);
-      error.statusCode = 502;
-      throw error;
-    }
-    // Older hosted-session configurations may expose the result through /users.
-  }
-
-  const response = await fetch(`${settings.baseUrl}/users/${encodeURIComponent(refId)}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": settings.apiKey,
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-
-  if (!response.ok) {
-    const error = new Error(`VOVE result retrieval failed (${response.status})`);
-    error.statusCode = 502;
-    throw error;
-  }
-  return await response.json();
+export async function getVoveVerificationResult(refId, { subjectType = "INDIVIDUAL" } = {}) {
+  return subjectType === "BUSINESS" ? getVoveKybResult(refId) : getVoveKycResult(refId);
 }
 
 export function verifyVoveWebhookSignature(rawBody, signature, secret) {

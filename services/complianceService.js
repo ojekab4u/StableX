@@ -10,8 +10,9 @@ import {
 } from "../repositories/complianceRepository.js";
 import {
   createVoveKycCase,
+  createVoveKybCase,
   getVoveKybReadiness,
-  getVoveKycResult,
+  getVoveVerificationResult,
 } from "./voveKybService.js";
 
 const customerIdRegex = /^[A-Za-z0-9._:-]{2,128}$/;
@@ -28,8 +29,8 @@ export function getComplianceReadiness() {
     realProviderConnected: voveConfigured,
     autoApprove: false,
     checks: [
-      { requirement: "KYC", subject: "INDIVIDUAL", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_HOSTED_SESSION" : "NOT_CONFIGURED" },
-      { requirement: "KYB", subject: "BUSINESS", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_HOSTED_SESSION_REQUIRES_FLOW_VALIDATION" : "NOT_CONFIGURED" },
+      { requirement: "KYC", subject: "INDIVIDUAL", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_KYC_SESSION_AND_RESULT_LOOKUP" : "NOT_CONFIGURED" },
+      { requirement: "KYB", subject: "BUSINESS", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_KYB_CASE_AND_RESULT_LOOKUP" : "NOT_CONFIGURED" },
     ],
     note: voveConfigured
       ? "Hosted VOVE verification sessions are enabled. Case creation is not approval; final status is tracked from VOVE results and authorized review."
@@ -85,19 +86,21 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   }
 
   const requirement = subjectType === "INDIVIDUAL" ? "KYC" : "KYB";
-  const voveResult = await createVoveKycCase({
-    fullName: subjectType === "BUSINESS" ? businessName : name,
-    country: cleanSubject.country,
-    dateOfBirth: cleanSubject.dateOfBirth || "",
-    email: cleanSubject.email || "",
-    phone: cleanSubject.phone || "",
-    ...(subjectType === "BUSINESS" ? {
-      type: "BUSINESS",
-      registrationNumber: cleanSubject.registrationNumber || "",
-      city: cleanSubject.city || "",
-      address: cleanSubject.address || "",
-    } : {}),
-  });
+  const voveResult = subjectType === "BUSINESS"
+    ? await createVoveKybCase({
+        businessName,
+        country: cleanSubject.country,
+        registrationNumber: cleanSubject.registrationNumber || "",
+        city: cleanSubject.city || "",
+        address: cleanSubject.address || "",
+      })
+    : await createVoveKycCase({
+        fullName: name,
+        country: cleanSubject.country,
+        dateOfBirth: cleanSubject.dateOfBirth || "",
+        email: cleanSubject.email || "",
+        phone: cleanSubject.phone || "",
+      });
 
   const caseId = randomUUID();
   const created = await saveComplianceCase({
@@ -145,6 +148,51 @@ export async function getComplianceCase(caseId) {
     throw error;
   }
   return readComplianceCase(caseId);
+}
+
+export async function refreshVoveComplianceCase(caseId) {
+  const caseRecord = await getComplianceCase(caseId);
+  if (!caseRecord) {
+    const error = new Error("Compliance case not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (caseRecord.status === "APPROVED" || caseRecord.status === "REJECTED") {
+    return {
+      refreshed: false,
+      reason: "This case already has a final StableX compliance decision.",
+      case: caseRecord,
+    };
+  }
+  const refId = caseRecord.providerReference || caseRecord.screening?.voveRefId;
+  if (!refId) {
+    const error = new Error("This compliance case has no mapped VOVE refId.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const providerResult = await getVoveVerificationResult(refId, { subjectType: caseRecord.subjectType });
+  if (providerResult?.refId && providerResult.refId !== refId) {
+    const error = new Error("VOVE returned a different refId; refusing to update this compliance case.");
+    error.statusCode = 502;
+    throw error;
+  }
+  const outcome = normalizeVoveOutcome(null, providerResult);
+  const updated = await updateComplianceProviderStatus({
+    caseId,
+    providerStatus: outcome.providerStatus,
+    status: outcome.status,
+    eventType: "operator_requested_status_refresh",
+  });
+  return {
+    refreshed: true,
+    refId,
+    caseId,
+    subjectType: caseRecord.subjectType,
+    providerStatus: updated.providerStatus,
+    complianceStatus: updated.status,
+    providerUpdatedAt: providerResult.updatedAt || null,
+    // Deliberately omit document, biometric, and registry PII from this response.
+  };
 }
 
 export async function listComplianceCases(customerId) {
@@ -213,10 +261,18 @@ export function normalizeVoveOutcome(event, result) {
       eventType.endsWith(".completed") ? "COMPLETED" : "UNKNOWN");
   const providerStatus = String(rawStatus).trim().toUpperCase();
 
-  if (["VERIFIED", "APPROVED"].includes(providerStatus)) return { providerStatus, status: "APPROVED" };
+  // KYC's documented "successful" result is a positive provider outcome.
+  // KYB's "COMPLETED" means evidence collection/checks are complete and must
+  // still go through StableX's internal compliance review.
+  if (["VERIFIED", "APPROVED", "SUCCESSFUL"].includes(providerStatus) && result?.refId) {
+    return { providerStatus, status: "APPROVED" };
+  }
   if (providerStatus === "REJECTED") return { providerStatus, status: "REJECTED" };
-  if (["COMPLETED", "IN_REVIEW", "IN_PROGRESS", "PENDING_REVIEW"].includes(providerStatus)) {
+  if (["COMPLETED", "IN_REVIEW", "SUSPECTED", "PENDING_REVIEW"].includes(providerStatus)) {
     return { providerStatus, status: "IN_REVIEW" };
+  }
+  if (["IN_PROGRESS", "PENDING", "NOT_STARTED", "UNKNOWN"].includes(providerStatus)) {
+    return { providerStatus, status: "SUBMITTED" };
   }
   return { providerStatus, status: "SUBMITTED" };
 }
@@ -286,7 +342,7 @@ export async function processVoveWebhook(event) {
 
   // Fetch the latest provider record rather than trusting an unsigned status field
   // or treating a hosted-flow completion as a compliance approval.
-  const result = await getVoveKycResult(String(refId), { subjectType: caseRecord.subjectType });
+  const result = await getVoveVerificationResult(String(refId), { subjectType: caseRecord.subjectType });
   const outcome = normalizeVoveOutcome(event, result);
   const updated = await updateComplianceProviderStatus({
     caseId: caseRecord.caseId,

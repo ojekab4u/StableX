@@ -3,6 +3,7 @@ import {
   getComplianceReadiness,
   submitComplianceCase,
   getComplianceCase,
+  refreshVoveComplianceCase,
   listComplianceCases,
   decideComplianceCase,
   getCustomerGateStatus,
@@ -46,6 +47,18 @@ complianceRouter.get("/cases/all", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized operator action." });
     }
     return res.json(await listAllComplianceCases());
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+complianceRouter.post("/cases/:caseId/refresh", async (req, res) => {
+  try {
+    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
+    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
+      return res.status(401).json({ error: "Unauthorized operator action." });
+    }
+    return res.json(await refreshVoveComplianceCase(req.params.caseId));
   } catch (e) {
     return fail(res, e);
   }
