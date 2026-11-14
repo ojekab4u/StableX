@@ -68,8 +68,6 @@ async function getBearerToken() {
 }
 
 export async function getHoneycoinRate({ from, to, amount }) {
-  const observedAt = new Date().toISOString();
-  const environment = String(process.env.HONEYCOIN_ENVIRONMENT || "Sandbox");
   const token = await getBearerToken();
   const url = new URL(`${getBaseUrl()}/utilities/rates`);
   url.searchParams.set("from", from);
@@ -86,6 +84,11 @@ export async function getHoneycoinRate({ from, to, amount }) {
     error.statusCode = 502;
     throw error;
   }
+
+  const configuredBase = getBaseUrl().toLowerCase();
+  const environment = configuredBase.includes("/sandbox/") ? "Sandbox"
+    : configuredBase.includes("/b2b") ? "Production" : "Custom endpoint";
+  const observedAt = new Date().toISOString();
 
   return {
     provider: "Honeycoin",
