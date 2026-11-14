@@ -4,13 +4,14 @@ import { getPaytrieQuote } from "./paytrieService.js";
 import { getHoneycoinRate } from "./providers/honeycoinService.js";
 import { getPaycrestRate } from "./providers/paycrestService.js";
 import { getBridgeRate } from "./providers/bridgeService.js";
+import { getNetcoinsRate } from "./providers/netcoinsService.js";
 import { getAerodromeQuote } from "./providers/aerodromeService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { readTransfer, applyQuoteSelection } from "../repositories/transferRepository.js";
 import { saveRoutingQuote, readRoutingQuote } from "../repositories/routingQuoteRepository.js";
 
 // Quotes are persisted so selection survives server restarts and multiple instances.
-// They remain provider previews/offers; persistence does not reserve liquidity or enable execution.
+// Persistence does not reserve liquidity or enable execution.
 const QUOTE_TTL_MS = Math.max(10, Number(process.env.ROUTING_QUOTE_TTL_SECONDS || 120)) * 1000;
 
 function normalizeAmount(value) {
@@ -55,22 +56,29 @@ function classify(quoteType) {
   return "INDICATIVE";
 }
 
-function normalizeProviderResult(provider, request, result) {
+export function normalizeProviderResult(provider, request, result) {
   const raw = result.providerData ?? result.raw ?? result;
 
-  // Paycrest nests rates under buy/sell
+  // Paycrest nests direction-specific rates under buy/sell.
   let nestedRate = null;
   if (raw?.buy?.rate !== undefined || raw?.sell?.rate !== undefined) {
     nestedRate = result.direction === "OFFRAMP" ? raw.sell?.rate : raw.buy?.rate;
   }
 
   const destinationAmount =
+    extractNumeric(result.destinationAmount) ??
     extractNumeric(result.toAmount) ??
-    pickNumber(raw, ["toAmount", "netAmount", "amountReturned", "destinationAmount", "receivedAmount", "amount", "convertedAmount"]);
+    pickNumber(raw, [
+      "toAmount", "rightSideValue", "netAmount", "amountReturned",
+      "destinationAmount", "receivedAmount", "amount", "convertedAmount",
+    ]);
   const rate =
     extractNumeric(result.rate) ??
     extractNumeric(nestedRate) ??
-    pickNumber(raw, ["rate", "unitRate", "fxRate", "exchangeRate", "perUnitRate", "conversionRate"]);
+    pickNumber(raw, [
+      "rate", "unitRate", "fxRate", "exchangeRate", "perUnitRate",
+      "conversionRate", "sell_rate",
+    ]);
 
   let normalizedDestination = destinationAmount;
   let normalizedRate = rate;
@@ -94,8 +102,35 @@ function normalizeProviderResult(provider, request, result) {
     normalizedRate = normalizedDestination / request.amount;
   }
 
+  const explicitFee = pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]);
+  const paytrieBreakdown = provider === "Paytrie" && raw?.breakdown && typeof raw.breakdown === "object"
+    ? raw.breakdown
+    : null;
+  const paytrieBreakdownFee = extractNumeric(paytrieBreakdown?.paytrieFee);
+  const fee = explicitFee ?? paytrieBreakdownFee;
+  const feeCurrency = result.feeCurrency || raw?.feeCurrency || raw?.fee_currency ||
+    (provider === "Paytrie"
+      ? (paytrieBreakdown?.paytrieFeeCurrency || paytrieBreakdown?.feeCurrency || null)
+      : request.to);
+  const paytriePricingPolicy = provider === "Paytrie" && request.from === "CAD" && request.to === "USDC"
+    ? {
+        feeRateBps: 60,
+        feeRatePercent: 0.6,
+        minimumFee: 5,
+        minimumFeeCurrency: "CAD",
+        percentageFee: Number((request.amount * 0.006).toFixed(8)),
+        estimatedFee: Number(Math.max(request.amount * 0.006, 5).toFixed(8)),
+        estimatedNetSourceAmount: Number(Math.max(0, request.amount - Math.max(request.amount * 0.006, 5)).toFixed(8)),
+        minimumFeeApplies: request.amount * 0.006 < 5,
+        estimateOnly: true,
+        source: "Paytrie support pricing confirmation and Paytrie public CAD-to-USDC swap display",
+        note: "Pricing-rule estimate only. The original Paytrie quote breakdown is authoritative for the actual transaction. The $5 minimum is treated as CAD for this CAD-funded route.",
+      }
+    : null;
+
   return {
     quoteId: randomUUID(),
+    customerId: request.customerId || null,
     provider,
     providerClass: classify(result.quoteType),
     from: request.from,
@@ -103,12 +138,18 @@ function normalizeProviderResult(provider, request, result) {
     sourceAmount: request.amount,
     destinationAmount: normalizedDestination ?? null,
     rate: normalizedRate ?? null,
-    fee: pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]),
-    feeCurrency: raw?.feeCurrency || raw?.fee_currency || request.to,
+    fee,
+    feeCurrency,
+    feeBreakdown: paytrieBreakdown,
+    pricingPolicy: paytriePricingPolicy,
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
-    expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
+    expiresAt: result.expiresAt || new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
-    observedAt: result.observedAt || result.timestamp || new Date().toISOString(),
+    providerData: provider === "Paytrie" ? raw : null,
+    providerQuoteId: provider === "Paytrie" ? (raw?.quoteId ?? null) : null,
+    providerLeftSideLabel: provider === "Paytrie" ? (raw?.leftSideLabel ?? null) : null,
+    providerRightSideLabel: provider === "Paytrie" ? (raw?.rightSideLabel ?? null) : null,
+    observedAt: result.observedAt || result.timestamp || raw?.updated_at || new Date().toISOString(),
     network: result.network || null,
     chainId: result.chainId || null,
     executionEnabled: result.executionEnabled === true,
@@ -121,8 +162,6 @@ async function rememberIssued(quote) {
   return quote;
 }
 
-// One call fans out to every candidate liquidity provider.
-// NO SIMULATION FALLBACK — only real provider rates.
 async function collectSingleHopCandidates(request) {
   const attempts = await Promise.allSettled([
     getPaytrieQuote(request)
@@ -137,6 +176,9 @@ async function collectSingleHopCandidates(request) {
     getBridgeRate(request)
       .then((result) => normalizeProviderResult("Bridge", request, result))
       .catch((error) => ({ provider: "Bridge", available: false, reason: error.message })),
+    getNetcoinsRate(request)
+      .then((result) => normalizeProviderResult("Netcoins", request, result))
+      .catch((error) => ({ provider: "Netcoins", available: false, reason: error.message })),
     getAerodromeQuote(request)
       .then((result) => normalizeProviderResult("Aerodrome Slipstream", request, result))
       .catch((error) => ({ provider: "Aerodrome Slipstream", available: false, reason: error.message })),
@@ -158,46 +200,60 @@ async function collectSingleHopCandidates(request) {
   return { candidates, unavailableProviders };
 }
 
-function rankQuotes(quotes) {
-  return quotes.sort(
-    (a, b) => (b.destinationAmount ?? -Infinity) - (a.destinationAmount ?? -Infinity)
-  );
+// Executable offers always rank first. Non-executable provider/on-chain prices
+// are ranked by quote class, then destination amount within that class.
+export function rankRoutingQuotes(quotes) {
+  const priority = { ONCHAIN: 0, LIVE: 1, INDICATIVE: 2, SIMULATION: 3 };
+  return [...quotes].sort((a, b) => {
+    const executableDifference = Number(b.executionEnabled === true) - Number(a.executionEnabled === true);
+    if (executableDifference !== 0) return executableDifference;
+    const classDifference = (priority[a.providerClass] ?? 9) - (priority[b.providerClass] ?? 9);
+    if (classDifference !== 0) return classDifference;
+    return (b.destinationAmount ?? -Infinity) - (a.destinationAmount ?? -Infinity);
+  });
 }
 
-export async function getRoutingQuotes({ from, to, amount }) {
+export async function getRoutingQuotes({ from, to, amount, customerId = null }) {
   const request = {
     ...normalizeRoute(from, to),
     amount: normalizeAmount(amount),
+    customerId,
   };
 
   const direct = await collectSingleHopCandidates(request);
+  const hasExecutableQuotes = direct.candidates.some((quote) => quote.executionEnabled === true);
+  const hasOnchainQuotes = direct.candidates.some((quote) => quote.providerClass === "ONCHAIN");
+  const hasLiveProviderQuotes = direct.candidates.some((quote) => quote.providerClass === "LIVE");
 
-  // ONLY return real provider quotes. No simulation, no synthetic hub routes.
-  // If no provider covers this corridor, return empty candidates.
   return {
     application: "StableX",
     quoteType: direct.candidates.length === 0
       ? "NO_PROVIDER"
-      : direct.candidates.some((quote) => quote.providerClass === "ONCHAIN")
-        ? "LIVE_ONCHAIN_OR_PROVIDER_QUOTES"
-        : direct.candidates.some((quote) => quote.providerClass === "LIVE")
-          ? "LIVE_PROVIDER_QUOTES"
-          : "INDICATIVE_PROVIDER_PREVIEWS",
+      : hasExecutableQuotes
+        ? "EXECUTABLE_PROVIDER_QUOTES"
+        : hasOnchainQuotes
+          ? "LIVE_ONCHAIN_AND_PROVIDER_PREVIEWS"
+          : hasLiveProviderQuotes
+            ? "LIVE_PROVIDER_QUOTES_AND_INDICATIVE_PREVIEWS"
+            : "INDICATIVE_PROVIDER_PREVIEWS",
     from: request.from,
     to: request.to,
     amount: request.amount,
-    executionEnabled: false,
-    candidates: rankQuotes(direct.candidates),
+    executionEnabled: hasExecutableQuotes,
+    hasExecutableQuotes,
+    candidates: rankRoutingQuotes(direct.candidates),
     unavailableProviders: direct.unavailableProviders,
-    disclaimer: direct.candidates.length === 0
-      ? "No provider covers this corridor. Add provider credentials to enable quotes."
-      : "Quotes are offers to compare, not reservations of liquidity.",
+    disclaimer: hasExecutableQuotes
+      ? "Only candidates explicitly marked executionEnabled are eligible for provider execution. Selection alone does not move funds."
+      : direct.candidates.length === 0
+        ? "No provider covers this corridor. Add provider credentials or an eligible provider to enable rate previews."
+        : "No returned candidate is executable. These are live or indicative rate previews only; selecting one records the choice but does not create an order, reserve liquidity, collect funds or settle a transfer.",
   };
 }
 
-export async function getRoutingQuote(quoteId) {
+export async function getRoutingQuote(quoteId, customerId) {
   const quote = await readRoutingQuote(quoteId);
-  if (!quote || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
+  if (!quote || quote.customerId !== customerId || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
   return quote;
 }
 
@@ -214,8 +270,8 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
   }
 
   const quote = await readRoutingQuote(quoteId);
-  if (!quote) {
-    const error = new Error("Quote not found or expired. Request new quotes and select again.");
+  if (!quote || (quote.customerId && quote.customerId !== customerId)) {
+    const error = new Error("Quote not found for this customer or expired. Request new quotes and select again.");
     error.statusCode = 404;
     throw error;
   }
@@ -267,8 +323,14 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
       rate: quote.rate,
       fee: quote.fee,
       feeCurrency: quote.feeCurrency,
+      feeBreakdown: quote.feeBreakdown || quote.providerData?.breakdown || null,
+      pricingPolicy: quote.pricingPolicy || null,
       expiresAt: quote.expiresAt,
       selectedAt: new Date().toISOString(),
+      providerQuoteId: quote.providerQuoteId,
+      providerLeftSideLabel: quote.providerLeftSideLabel,
+      providerRightSideLabel: quote.providerRightSideLabel,
+      providerData: quote.providerData,
     },
   });
   return selection;

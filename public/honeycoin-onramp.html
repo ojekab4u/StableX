@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>StableX · Honeycoin On-ramp</title>
+  <link rel="stylesheet" href="/console.css">
+  <style>
+    body{margin:0;background:#f5f7fb;color:#172033;font:15px/1.5 system-ui,sans-serif}
+    main{max-width:900px;margin:36px auto;padding:0 18px}
+    .panel{background:#fff;border:1px solid #e4e8f0;border-radius:14px;padding:24px;margin:18px 0}
+    h1{margin:0 0 8px;font-size:30px}.muted{color:#667085}
+    label{display:block;font-weight:600;margin:14px 0 6px}
+    input,select{width:100%;padding:12px;border:1px solid #cfd6e2;border-radius:8px;font:inherit}
+    button{padding:12px 18px;border:0;border-radius:8px;background:#1d4ed8;color:white;font-weight:650;cursor:pointer;margin:16px 8px 0 0}
+    button.secondary{background:#e8eefb;color:#1d3c78}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .status{white-space:pre-wrap;background:#f7f9fc;border-radius:8px;padding:14px;margin-top:16px;overflow-wrap:anywhere}
+    a{color:#1d4ed8;overflow-wrap:anywhere}
+    @media(max-width:640px){.grid{grid-template-columns:1fr}.panel{padding:17px}}
+  </style>
+</head>
+<body>
+<main>
+  <p class="muted">STABLEX · PROVIDER EXECUTION WORKSPACE</p>
+  <h1>NGN → USDC · Honeycoin on-ramp</h1>
+  <p class="muted">Create a provider payment order for an existing approved customer transfer, complete the provider payment step, then reconcile Honeycoin and Base Mainnet status.</p>
+  <section class="panel">
+    <div class="grid">
+      <div><label for="customerId">Customer ID</label><input id="customerId" value="customer-001"></div>
+      <div><label for="email">Customer email</label><input id="email" type="email" placeholder="customer@example.com"></div>
+    </div>
+    <label for="transfer">Select an NGN → USDC transfer</label>
+    <select id="transfer"><option value="">Loading transfers…</option></select>
+    <div class="grid">
+      <div><label for="beneficiary">Base wallet beneficiary</label><select id="beneficiary"><option value="">Loading beneficiaries…</option></select></div>
+      <div><label for="amount">NGN amount</label><input id="amount" type="number" min="1" step="1" value="111"></div>
+    </div>
+    <button id="prepare" class="secondary" type="button">Create transfer + select Honeycoin quote</button>
+    <div class="grid">
+      <div><label for="method">Payment method</label><select id="method"><option value="opay">OPay (sandbox redirect flow)</option><option value="bank">Bank transfer</option></select></div>
+      <div><label>Selected provider</label><input value="Honeycoin" disabled></div>
+    </div>
+    <button id="load">Load customer transfers</button>
+    <button id="create" disabled>Create Honeycoin order</button>
+  </section>
+  <section class="panel">
+    <h2>Order and payment status</h2>
+    <div id="order" class="status">No provider order loaded.</div>
+    <p id="redirectWrap" hidden><a id="redirect" href="#" target="_blank" rel="noopener noreferrer">Continue to Honeycoin payment</a></p>
+    <button id="refresh" class="secondary" disabled>Refresh provider + Base status</button>
+  </section>
+  <p class="muted"><a href="/console.html">Back to customer routing console</a> · <a href="/">StableX home</a></p>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let selectedTransfer = null;
+  let currentOrder = null;
+  async function api(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: { "content-type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || data.message || "Request failed.");
+    return data;
+  }
+  function show(value) {
+    if (typeof value === "string") {
+      $("order").textContent = value;
+      return;
+    }
+    const order = value?.order || value;
+    if (!order || typeof order !== "object") {
+      $("order").textContent = "No order information available.";
+      return;
+    }
+    const lines = [];
+    if (value.message) lines.push(value.message);
+    if (order.status) lines.push("Order status: " + order.status);
+    if (order.providerStatus) lines.push("Honeycoin status: " + order.providerStatus);
+    if (order.providerTransactionId) lines.push("Provider reference: " + order.providerTransactionId);
+    if (order.paymentMethod) lines.push("Payment method: " + order.paymentMethod);
+    if (order.paymentDetails) lines.push("Payment instructions: " + JSON.stringify(order.paymentDetails, null, 2));
+    if (order.failureReason) lines.push("Issue: " + order.failureReason);
+    if (value.chargeStatus) lines.push("Fiat charge status: " + value.chargeStatus);
+    if (value.settlement) {
+      lines.push("Blockchain settlement state: " + (value.settlement.state || "unknown"));
+      lines.push("Receiver address returned by Honeycoin: " + (value.settlement.receiverAddress || "NOT RETURNED"));
+      lines.push("USDC amount returned by Honeycoin: " + (value.settlement.cryptoAmount ?? "NOT RETURNED"));
+      lines.push("Settlement chain: " + (value.settlement.chain || "NOT RETURNED"));
+      lines.push("Blockchain transaction hash: " + (value.settlement.transactionHash || "NOT RETURNED"));
+      if (value.settlement.reason) lines.push("Settlement explanation: " + value.settlement.reason);
+    }
+    if (value.verification?.reason) lines.push("Base verification: " + value.verification.reason);
+    if (value.settlementVerified === true) lines.push("Base USDC settlement: verified");
+    if (value.settlementVerified === false) lines.push("Base USDC settlement: not yet verified");
+    $("order").textContent = lines.join("\n") || "Order information loaded.";
+  }
+  function selectedQuote(transfer) {
+    const quote = transfer?.quote;
+    return quote?.quote && typeof quote.quote === "object" ? quote.quote : quote;
+  }
+  async function loadBeneficiaries() {
+    const customerId = $("customerId").value.trim();
+    const data = await api("/api/transfers/beneficiaries?customerId=" + encodeURIComponent(customerId));
+    const eligible = (data.beneficiaries || []).filter((b) => /^0x[a-fA-F0-9]{40}$/.test(b.details?.walletAddress || ""));
+    $("beneficiary").innerHTML = "";
+    $("beneficiary").add(new Option(eligible.length ? "Choose a Base wallet…" : "No Base wallet beneficiary saved", ""));
+    for (const b of eligible) {
+      $("beneficiary").add(new Option(
+        (b.details.name || "Wallet") + " · " + b.details.walletAddress,
+        b.beneficiaryId
+      ));
+    }
+    $("prepare").disabled = eligible.length === 0;
+  }
+  async function loadTransfers() {
+    const customerId = $("customerId").value.trim();
+    if (!customerId) throw new Error("Enter a customer ID.");
+    const data = await api("/api/transfers?customerId=" + encodeURIComponent(customerId));
+    const eligible = (data.transfers || []).filter((t) => {
+      const quote = selectedQuote(t);
+      return ["QUOTED", "AWAITING_FUNDING", "FUNDED", "SETTLEMENT_PENDING"].includes(t.status) &&
+        String(t.sourceCurrency || "").toUpperCase() === "NGN" &&
+        String(t.destinationCurrency || "").toUpperCase() === "USDC" &&
+        String(quote?.provider || "").toLowerCase() === "honeycoin";
+    });
+    $("transfer").innerHTML = "";
+    if (!eligible.length) {
+      $("transfer").add(new Option("No existing Honeycoin transfer — create one below", ""));
+      selectedTransfer = null;
+      $("create").disabled = true;
+      return;
+    }
+    $("transfer").add(new Option("Choose a transfer…", ""));
+    for (const t of eligible) {
+      const quote = selectedQuote(t);
+      const label = t.transferId + " · " + Number(t.sourceAmount) + " NGN · " + (quote?.destinationAmount ?? "indicative") + " USDC";
+      $("transfer").add(new Option(label, t.transferId));
+    }
+    selectedTransfer = eligible;
+    $("create").disabled = true;
+  }
+  $("load").addEventListener("click", async () => {
+    try { await loadBeneficiaries(); await loadTransfers(); show("Loaded beneficiaries and eligible transfers."); }
+    catch (e) { show(e.message); }
+  });
+  $("prepare").addEventListener("click", async () => {
+    const customerId = $("customerId").value.trim();
+    const beneficiaryId = $("beneficiary").value;
+    const amount = Number($("amount").value);
+    if (!customerId || !beneficiaryId || !Number.isFinite(amount) || amount <= 0) {
+      show("Choose a customer, Base beneficiary and valid NGN amount.");
+      return;
+    }
+    $("prepare").disabled = true;
+    try {
+      const quoteSet = await api("/api/routing/quotes", {
+        method: "POST",
+        body: JSON.stringify({ from: "NGN", to: "USDC", amount }),
+      });
+      const honeycoinQuote = (quoteSet.candidates || []).find((q) => q.provider === "Honeycoin");
+      if (!honeycoinQuote) {
+        const reasons = (quoteSet.unavailableProviders || []).map((p) => p.provider + ": " + p.reason).join("\\n");
+        throw new Error("Honeycoin did not return an NGN/USDC quote. " + (reasons || quoteSet.disclaimer || ""));
+      }
+      const draft = await api("/api/transfers", {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ customerId, beneficiaryId, from: "NGN", to: "USDC", amount }),
+      });
+      const transferId = draft.transfer?.transferId || draft.transfer?.id;
+      if (!transferId) throw new Error("StableX created no identifiable draft transfer.");
+      const selected = await api("/api/routing/select", {
+        method: "POST",
+        body: JSON.stringify({ customerId, transferId, quoteId: honeycoinQuote.quoteId }),
+      });
+      await loadTransfers();
+      $("transfer").value = transferId;
+      selectedTransfer = (await api("/api/transfers?customerId=" + encodeURIComponent(customerId)))
+        .transfers?.find((item) => item.transferId === transferId) || null;
+      currentOrder = null;
+      $("refresh").disabled = true;
+      $("create").disabled = false;
+      show("Transfer " + transferId + " is ready. Choose a payment method, enter the customer's email, then create the Honeycoin order.");
+    } catch (e) {
+      show(e.message);
+    } finally {
+      $("prepare").disabled = false;
+    }
+  });
+  $("transfer").addEventListener("change", async () => {
+    const transferId = $("transfer").value;
+    $("create").disabled = !transferId;
+    $("refresh").disabled = true;
+    currentOrder = null;
+    if (!transferId) return;
+    try {
+      const data = await api("/api/transfers/" + encodeURIComponent(transferId) +
+        "/provider-order?customerId=" + encodeURIComponent($("customerId").value.trim()));
+      currentOrder = data.order;
+      show(data);
+      $("refresh").disabled = false;
+      if (currentOrder.redirectUrl) {
+        $("redirect").href = currentOrder.redirectUrl;
+        $("redirectWrap").hidden = false;
+      } else $("redirectWrap").hidden = true;
+    } catch (e) {
+      show("No order exists yet for this transfer. Create one when ready.");
+      $("redirectWrap").hidden = true;
+    }
+  });
+  $("create").addEventListener("click", async () => {
+    const transferId = $("transfer").value;
+    if (!transferId) return;
+    $("create").disabled = true;
+    try {
+      const data = await api("/api/transfers/" + encodeURIComponent(transferId) + "/provider-order", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId: $("customerId").value.trim(),
+          email: $("email").value.trim(),
+          paymentMethod: $("method").value,
+        }),
+      });
+      currentOrder = data.order;
+      show(data);
+      if (currentOrder.redirectUrl) {
+        $("redirect").href = currentOrder.redirectUrl;
+        $("redirectWrap").hidden = false;
+      } else $("redirectWrap").hidden = true;
+      $("refresh").disabled = false;
+      await loadTransfers();
+    } catch (e) { show(e.message); $("create").disabled = false; }
+  });
+  $("refresh").addEventListener("click", async () => {
+    const transferId = $("transfer").value || currentOrder?.transferId;
+    if (!transferId) return;
+    $("refresh").disabled = true;
+    try {
+      const data = await api("/api/transfers/" + encodeURIComponent(transferId) + "/provider-order/refresh", {
+        method: "POST",
+        body: JSON.stringify({ customerId: $("customerId").value.trim() }),
+      });
+      currentOrder = data.order;
+      show(data);
+      if (currentOrder.redirectUrl) {
+        $("redirect").href = currentOrder.redirectUrl;
+        $("redirectWrap").hidden = false;
+      }
+      await loadTransfers();
+    } catch (e) { show(e.message); }
+    finally { $("refresh").disabled = false; }
+  });
+  $("load").click();
+})();
+</script>
+</body>
+</html>

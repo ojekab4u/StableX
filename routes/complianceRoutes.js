@@ -11,12 +11,34 @@ import {
   processVoveWebhook,
 } from "../services/complianceService.js";
 import { verifyVoveWebhookSignature } from "../services/voveKybService.js";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { submitSelfServeComplianceCase } from "../services/complianceService.js";
 
 export const complianceRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
 
 complianceRouter.get("/readiness", (_req, res) => {
   return res.json(getComplianceReadiness());
+});
+
+// Step 2 of the customer flow: the signed-in account starts its own KYC/KYB
+// case. subjectType is derived from the account type and the subject is
+// prefilled from registration data; extras only add fields the account does
+// not store (registrationNumber, city, address).
+complianceRouter.post("/cases/self", requireAuth, async (req, res) => {
+  try {
+    const result = await submitSelfServeComplianceCase({
+      account: req.account,
+      extras: {
+        registrationNumber: req.body?.registrationNumber,
+        city: req.body?.city,
+        address: req.body?.address,
+      },
+    });
+    return res.status(201).json(result);
+  } catch (e) {
+    return fail(res, e);
+  }
 });
 
 complianceRouter.post("/cases", async (req, res) => {
@@ -52,11 +74,14 @@ complianceRouter.get("/cases/all", async (req, res) => {
   }
 });
 
-complianceRouter.post("/cases/:caseId/refresh", async (req, res) => {
+complianceRouter.post("/cases/:caseId/refresh", requireAuth, async (req, res) => {
   try {
-    const operatorToken = process.env.STABLEX_OPERATOR_TOKEN;
-    if (!operatorToken || req.get("Authorization") !== `Bearer ${operatorToken}`) {
-      return res.status(401).json({ error: "Unauthorized operator action." });
+    const caseRecord = await getComplianceCase(req.params.caseId);
+    if (!caseRecord) {
+      return res.status(404).json({ error: "Compliance case not found." });
+    }
+    if (caseRecord.customerId !== req.account.accountId) {
+      return res.status(403).json({ error: "You can only refresh your own compliance case." });
     }
     return res.json(await refreshVoveComplianceCase(req.params.caseId));
   } catch (e) {
@@ -101,12 +126,16 @@ complianceRouter.post("/cases/:caseId/decision", async (req, res) => {
 
 complianceRouter.post("/webhook", async (req, res) => {
   try {
-    const signature = req.get("svix-signature");
+    const svixHeaders = {
+      id: req.get("svix-id"),
+      timestamp: req.get("svix-timestamp"),
+      signature: req.get("svix-signature"),
+    };
     const secret = process.env.VOVE_WEBHOOK_SECRET || process.env.VOVE_ID_WEBHOOK_SECRET;
-    if (!req.rawBody || !signature || !secret) {
-      return res.status(400).json({ error: "Missing VOVE webhook signature, signing secret or raw request body." });
+    if (!req.rawBody || !svixHeaders.id || !svixHeaders.timestamp || !svixHeaders.signature || !secret) {
+      return res.status(400).json({ error: "Missing Svix webhook headers, signing secret or raw request body." });
     }
-    if (!verifyVoveWebhookSignature(req.rawBody, signature, secret)) {
+    if (!verifyVoveWebhookSignature(req.rawBody, svixHeaders, secret)) {
       return res.status(401).json({ error: "Invalid VOVE webhook signature." });
     }
 

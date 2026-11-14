@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StableX — Account</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#1e293b;margin:0}
+    .auth-wrap{max-width:640px;margin:40px auto;padding:0 20px}
+    .auth-panel{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px;margin:20px 0}
+    .auth-tabs{display:flex;gap:8px;margin-bottom:20px}
+    .auth-tabs button{flex:1;padding:11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;color:#334155}
+    .auth-tabs button.active{background:#2563eb;color:#fff;border-color:#2563eb}
+    .auth-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .auth-field{display:flex;flex-direction:column;gap:6px}
+    .auth-field.full{grid-column:1/-1}
+    .auth-field input,.auth-field select{padding:11px;border:1px solid #cbd5e1;border-radius:8px;font-size:.95rem}
+    .auth-btn{padding:12px 18px;border:0;border-radius:8px;cursor:pointer;background:#2563eb;color:#fff;font-weight:600;font-size:.95rem}
+    .auth-btn.secondary{background:#e2e8f0;color:#334155}
+    .auth-btn:disabled{opacity:.55;cursor:not-allowed}
+    .type-toggle{display:flex;gap:8px;margin-bottom:4px}
+    .type-toggle button{flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;color:#334155}
+    .type-toggle button.active{background:#0f172a;color:#fff;border-color:#0f172a}
+    .msg{padding:12px;border-radius:8px;margin:12px 0;display:none}
+    .msg.show{display:block}
+    .msg.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .msg.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+    .msg.success{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+    .msg.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+    .code-pill{display:inline-block;background:#0f172a;color:#fff;border-radius:6px;padding:2px 10px;font-family:monospace;font-size:1rem;letter-spacing:.12em}
+    .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:700}
+    .badge.ok{background:#dcfce7;color:#166534}.badge.wait{background:#fef9c3;color:#854d0e}.badge.bad{background:#fee2e2;color:#991b1b}
+    .step-row{display:flex;align-items:center;justify-content:space-between;padding:14px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#f8fafc}
+    .step-row strong{font-size:.95rem}
+    .step-row small{color:#64748b;display:block;margin-top:2px}
+    .hidden{display:none}
+    .hint{color:#64748b;font-size:.85rem}
+    @media(max-width:600px){.auth-grid{grid-template-columns:1fr}.auth-field.full{grid-column:auto}}
+  </style>
+  <script src="/auth.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav><a href="/send.html">Send &amp; Settle</a><a href="/customer-dashboard.html">Dashboard</a></nav>
+    <div class="network-label">Account &amp; verification</div>
+  </header>
+
+  <main class="auth-wrap">
+    <p class="eyebrow">STABLEX / CREATE ACCOUNT</p>
+    <h1 id="page-title">Your StableX account</h1>
+    <p class="hint">Sign up, verify your email (and phone if provided), then complete KYC or KYB. Registration data prefills verification.</p>
+
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+
+    <!-- 1. Sign in / Sign up choice -->
+    <section id="view-auth" class="auth-panel hidden">
+      <div class="auth-tabs">
+        <button id="tab-signin" type="button">Sign in</button>
+        <button id="tab-signup" type="button">Create account</button>
+      </div>
+
+      <form id="form-signin" class="hidden">
+        <div class="auth-grid">
+          <label class="auth-field full"><span>Email *</span><input name="email" type="email" required autocomplete="email"></label>
+          <label class="auth-field full"><span>Password *</span><input name="password" type="password" required autocomplete="current-password"></label>
+        </div>
+        <p><button class="auth-btn" type="submit">Sign in</button></p>
+      </form>
+
+      <form id="form-signup" class="hidden">
+        <div class="type-toggle">
+          <button type="button" id="type-personal" class="active">👤 Personal</button>
+          <button type="button" id="type-business">🏢 Business</button>
+        </div>
+        <div class="auth-grid">
+          <label class="auth-field full"><span>Full legal name *</span><input name="fullName" required minlength="2" placeholder="As shown on your ID"></label>
+          <label class="auth-field full hidden" id="field-business-name"><span>Business legal name *</span><input name="businessName" placeholder="Registered company name"></label>
+          <label class="auth-field"><span>Email *</span><input name="email" type="email" required autocomplete="email"></label>
+          <label class="auth-field"><span>Phone (optional)</span><input name="phone" placeholder="+2348012345678"></label>
+          <label class="auth-field"><span>Country (ISO-2) *</span><input name="country" required maxlength="2" placeholder="NG"></label>
+          <label class="auth-field"><span>Date of birth (optional)</span><input name="dateOfBirth" type="date"></label>
+          <label class="auth-field"><span>Password *</span><input name="password" type="password" required autocomplete="new-password" minlength="8" placeholder="8+ chars, letters and numbers"></label>
+        </div>
+        <p><button class="auth-btn" type="submit">Create account</button></p>
+        <p class="hint">Verification codes are shown on screen and in the server log while demo delivery is enabled.</p>
+      </form>
+    </section>
+
+    <!-- 2. Verification -->
+    <section id="view-verify" class="auth-panel hidden">
+      <h2>Verify your contact details <span id="verify-badge" class="badge wait">PENDING</span></h2>
+      <p class="hint">Enter the 6-digit codes. While demo delivery is enabled the code is also shown below.</p>
+      <div id="verify-channels"></div>
+      <p><button class="auth-btn secondary" id="verify-refresh" type="button">Check status</button></p>
+    </section>
+
+    <!-- 3. KYC / KYB -->
+    <section id="view-compliance" class="auth-panel hidden">
+      <h2 id="compliance-title">Identity verification <span id="compliance-badge" class="badge wait">NOT_SUBMITTED</span></h2>
+      <div id="compliance-mode" class="msg info"></div>
+      <form id="form-compliance">
+        <div class="auth-grid" id="compliance-fields"></div>
+        <p><button class="auth-btn" type="submit" id="compliance-submit">Start verification</button></p>
+      </form>
+      <div id="compliance-result"></div>
+      <p><button class="auth-btn secondary" id="compliance-refresh" type="button">Refresh verification status</button></p>
+      <p id="compliance-sync-status" class="hint" role="status" aria-live="polite">Waiting for verification status.</p>
+    </section>
+
+    <!-- 4. Done -->
+    <section id="view-done" class="auth-panel hidden">
+      <h2>Account ready <span class="badge ok">APPROVED</span></h2>
+      <div class="msg success show">Your account is active and identity verification is approved. You can create wallets, add money and convert.</div>
+      <p><a href="/bridge-onboarding.html"><button class="auth-btn" type="button">Complete Bridge onboarding</button></a></p>
+      <p><a href="/customer-dashboard.html"><button class="auth-btn secondary" type="button">Open dashboard</button></a></p>
+      <p><button class="auth-btn secondary" id="logout-done" type="button">Sign Out</button></p>
+    </section>
+
+    <p id="session-footer" class="hint hidden"><button class="auth-btn secondary" id="logout" type="button">Sign out</button></p>
+  </main>
+</body>
+</html>

@@ -3,6 +3,7 @@ import { getPaytrieQuote, getPaytrieReadiness } from "./paytrieService.js";
 import { getVoveKybReadiness } from "./voveKybService.js";
 import { getHoneycoinReadiness } from "./providers/honeycoinService.js";
 import { getPaycrestReadiness } from "./providers/paycrestService.js";
+import { getNetcoinsReadiness } from "./providers/netcoinsService.js";
 import { getPartnerReadiness } from "./providers/partnerCatalog.js";
 import { saveOrchestrationIntent, findOrchestrationIntent } from "../repositories/orchestrationRepository.js";
 
@@ -32,6 +33,7 @@ export function getOrchestrationOverview() {
       })),
       { name: "Honeycoin", role: "African fiat on/off-ramp and payouts", ...getHoneycoinReadiness() },
       { name: "Paycrest", role: "Stablecoin / local fiat routing", ...getPaycrestReadiness() },
+      { name: "Netcoins", role: "CAD / USD trading rail (USDC quotes, trades, withdrawals)", ...getNetcoinsReadiness() },
     ],
     safety: "StableX coordinates providers; it is not itself a bank, stablecoin issuer or liquidity provider. No real transfer is executed by this prototype.",
   };

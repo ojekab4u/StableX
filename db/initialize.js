@@ -58,6 +58,25 @@ const schemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS transfers_customer_created_idx ON transfers (customer_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS transfers_status_idx ON transfers (status)`,
+  `CREATE TABLE IF NOT EXISTS provider_orders (
+    order_id UUID PRIMARY KEY,
+    transfer_id UUID NOT NULL UNIQUE REFERENCES transfers(transfer_id),
+    customer_id VARCHAR(128) NOT NULL,
+    provider VARCHAR(80) NOT NULL,
+    external_reference VARCHAR(255) NOT NULL UNIQUE,
+    provider_transaction_id VARCHAR(255) UNIQUE,
+    payment_method VARCHAR(24) NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    provider_status VARCHAR(40),
+    recipient_address VARCHAR(128) NOT NULL,
+    payment_details JSONB,
+    transaction_hash VARCHAR(80),
+    failure_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS provider_orders_customer_idx ON provider_orders (customer_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS provider_orders_status_idx ON provider_orders (status)`,
   `CREATE TABLE IF NOT EXISTS transfer_events (
     event_id BIGSERIAL PRIMARY KEY, transfer_id UUID NOT NULL REFERENCES transfers(transfer_id),
     from_status VARCHAR(40), to_status VARCHAR(40) NOT NULL, actor_type VARCHAR(32) NOT NULL,
@@ -135,6 +154,24 @@ const schemaStatements = [
     UNIQUE (provider, provider_reference)
   )`,
   `CREATE INDEX IF NOT EXISTS payment_details_customer_idx ON payment_details (customer_id)`,
+  `CREATE TABLE IF NOT EXISTS provider_customers (
+    id UUID PRIMARY KEY,
+    provider VARCHAR(40) NOT NULL,
+    customer_id VARCHAR(128) NOT NULL,
+    provider_customer_id VARCHAR(255),
+    onboarding_status VARCHAR(40) NOT NULL DEFAULT 'NOT_STARTED',
+    tos_url TEXT,
+    signed_agreement_id VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(provider, customer_id),
+    UNIQUE(provider, provider_customer_id)
+  )`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS bridge_status VARCHAR(40)`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS endorsements JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS base_endorsement_status VARCHAR(40)`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS sepa_endorsement_status VARCHAR(40)`,
+  `ALTER TABLE provider_customers ADD COLUMN IF NOT EXISTS status_checked_at TIMESTAMPTZ`,
   `CREATE TABLE IF NOT EXISTS external_wallets (
     external_wallet_id UUID PRIMARY KEY,
     customer_id VARCHAR(128) NOT NULL,
@@ -144,6 +181,79 @@ const schemaStatements = [
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (customer_id, chain_id, address)
+  )`,
+  `CREATE TABLE IF NOT EXISTS accounts (
+    account_id UUID PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(32),
+    password_hash VARCHAR(255) NOT NULL,
+    account_type VARCHAR(16) NOT NULL CHECK (account_type IN ('PERSONAL','BUSINESS')),
+    full_name VARCHAR(255) NOT NULL,
+    business_name VARCHAR(255),
+    country VARCHAR(2),
+    date_of_birth VARCHAR(10),
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING_VERIFICATION'
+      CHECK (status IN ('PENDING_VERIFICATION','ACTIVE','SUSPENDED','CLOSED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS country VARCHAR(2)`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR(10)`,
+  `CREATE INDEX IF NOT EXISTS accounts_status_idx ON accounts (status)`,
+  `CREATE TABLE IF NOT EXISTS verification_codes (
+    code_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(account_id),
+    channel VARCHAR(8) NOT NULL CHECK (channel IN ('EMAIL','PHONE')),
+    code_hash CHAR(64) NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS verification_codes_account_idx ON verification_codes (account_id, channel)`,
+  `CREATE TABLE IF NOT EXISTS auth_sessions (
+    session_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(account_id),
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS auth_sessions_account_idx ON auth_sessions (account_id)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_customer_sessions (
+    customer_id VARCHAR(128) PRIMARY KEY,
+    encrypted_token JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_customer_sessions_expiry_idx ON paytrie_customer_sessions (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_customers (
+    customer_id VARCHAR(128) PRIMARY KEY,
+    provider_user_id UUID NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    provider_status VARCHAR(40),
+    onboarding_status VARCHAR(40) NOT NULL DEFAULT 'REGISTERED',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_customers_status_idx ON paytrie_customers (provider_status, onboarding_status)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_webhook_events (
+    event_id VARCHAR(255) PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL,
+    processing_status VARCHAR(40) NOT NULL DEFAULT 'RECEIVED',
+    error_message TEXT,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_webhook_events_received_idx ON paytrie_webhook_events (received_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_webhook_config (
+    config_id VARCHAR(32) PRIMARY KEY CHECK (config_id='default'),
+    webhook_url TEXT NOT NULL,
+    encrypted_secret JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`
 
 ];
@@ -157,7 +267,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

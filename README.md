@@ -397,3 +397,118 @@ Open `/providers.html` to inspect Honeycoin and Paycrest configuration readiness
 Configure credentials only in the server-side `.env` file. Keep each variable on its own line. Use actual provider-issued sandbox credentials; do not use sample values such as `key`, `your_api_key`, or `your_sandbox_api_key`. The readiness endpoint treats common placeholder values as missing. A credentials-present status is not proof of provider approval or successful API access.
 
 The provider console remains read-only. It does not create provider orders, reserve liquidity, accept customer funds, transfer tokens or initiate payouts.
+
+## Customer accounts and authentication (prototype)
+
+StableX now implements step 1 of the customer flow: real account creation with email/phone verification, personal or business account types, and password sign-in. The authenticated account ID doubles as the `customerId` used by transfers, wallets and compliance.
+
+Configure in the server-side `.env` file:
+
+- `ACCOUNTS_DEMO_CODE_DELIVERY` — when `true` (default), email/phone verification codes are returned in API responses and printed to the server log so the flow works without an email/SMS provider. Set to `false` and wire a real provider before any production use; codes are then only hashed and stored.
+- `SESSION_TTL_HOURS` — lifetime of issued session tokens, default 72.
+
+### API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/auth/register` | Create a PERSONAL or BUSINESS account; issues verification codes |
+| POST | `/api/auth/verify/email` | Confirm the 6-digit email code |
+| POST | `/api/auth/verify/phone` | Confirm the 6-digit phone code (accounts with a phone) |
+| POST | `/api/auth/resend` | Reissue a code; the previous code for that channel is invalidated |
+| POST | `/api/auth/login` | Password sign-in; returns a Bearer session token |
+| GET | `/api/auth/session` | Returns the signed-in account, verification state and compliance gate |
+| POST | `/api/auth/logout` | Revokes the current session |
+
+Example registration:
+
+```json
+{
+  "email": "customer@example.com",
+  "phone": "+2348012345678",
+  "password": "correct-horse-7",
+  "accountType": "PERSONAL",
+  "fullName": "Ada Lovelace"
+}
+```
+
+`BUSINESS` accounts additionally require `businessName`. An account becomes `ACTIVE` when the email is verified and, if a phone was provided, the phone is verified too. Signing in before verification returns HTTP 403 with the pending channels and the account ID.
+
+### How it is secured
+
+- Passwords use `scrypt` with a per-account random salt; hashes are never returned by any endpoint.
+- Verification codes are 6 digits, hashed at rest, expire after 15 minutes, are single-use, lock after 5 failed attempts, and issuing a new code invalidates the old one.
+- Sessions are opaque 32-byte tokens; only a SHA-256 hash is stored. `GET /api/auth/session` resolves the token to the account and includes the compliance gate status linking to step 2 (KYC for PERSONAL, KYB for BUSINESS).
+
+### Important limitations
+
+- With demo delivery enabled the verification code is visible in API responses and logs; that mode is for local testing only.
+- There is no email/SMS provider integration yet, no rate limiting on register/login beyond the code attempt lock, and no password reset flow.
+- Existing endpoints still accept a caller-supplied `customerId`; pass the authenticated `accountId` as the `customerId` and scope all reads to the session owner via the `requireAuth` middleware before exposing these routes publicly.
+- Account records live in PostgreSQL and are subject to the same prototype boundaries as the rest of the project: no money movement is enabled by any account action.
+
+## Identity verification: KYC/KYB linked from registration data (prototype)
+
+Step 2 of the customer flow starts from the signed-in account. Registration data prefills verification so the customer never retypes their email, country, phone or date of birth. Bridge onboarding (hosted ToS → customer → hosted KYC) can only start after StableX compliance is approved.
+
+### How verification is chosen
+
+`GET /api/auth/session` returns:
+
+- `complianceSubjectType` — `INDIVIDUAL` for PERSONAL accounts (KYC), `BUSINESS` for BUSINESS accounts (KYB)
+- `compliancePrefill` — subject fields built from stored registration data
+- `providerPrefill.vove` / `providerPrefill.bridge` — what VOVE KYC/KYB and Bridge customer creation can draw from the account
+- `complianceOptions.mode` — `VOVE_HOSTED` (real hosted sessions, when `VOVE_API_KEY`/`VOVE_PUBLIC_KEY` are configured), `LOCAL_SIMULATOR` (labeled simulator, when `COMPLIANCE_SIM_AUTO_APPROVE=true`), or `NOT_AVAILABLE`
+- `complianceGate` — `APPROVED`, `PENDING`, `REJECTED` or `NOT_SUBMITTED`; transfers are blocked until approved
+
+### API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/compliance/cases/self` | Signed-in account starts its KYC/KYB case; subject prefilled from registration data |
+
+The endpoint issues a real VOVE hosted verification session when credentials are configured; otherwise it creates a clearly labeled simulated case for local testing. Completing the hosted flow does not by itself approve the account — final approval comes from VOVE results and/or an authorized StableX decision.
+
+### VOVE integration notes (fixed in this milestone)
+
+- **KYB calls use the unversioned root** (`POST {root}/kyb/case`, accepting only `refId` + optional `flow`, per VOVE's docs), while KYC keeps `{base}/v2/sessions`. The previous code called KYB under `/v2/kyb/case`, which VOVE rejects as 404.
+- **Hosted links use the Sandbox host** (`web.voveid.net` with `environment=Sandbox`), matching VOVE's hosted-link convention; production links use `web.voveid.com`.
+- You do not need to touch either integration to run the flow locally — with `COMPLIANCE_SIM_AUTO_APPROVE=true` (already in `.env.example`) the simulator hands you an approved gate and the account becomes active immediately.
+- Case statuses are refreshed via `/api/compliance/cases/:caseId/refresh` and signed VOVE webhooks at `/api/kyb/webhook`.
+
+## Frontend screens
+
+- `/auth.html` + `/auth.js` — sign up / sign in / verify email-phone / KYC-KYB case / done, with demo verification codes shown on screen while `ACCOUNTS_DEMO_CODE_DELIVERY=true`.
+
+## Important limitations
+
+- This is a prototype layer: real provider verification is exercised through hosted sessions only; StableX does not collect or persist identity documents.
+- KYC auto-approval in the simulator (`VERIFIED` status) is explicitly labeled as simulated and not a real compliance decision.
+- Bridge customer creation additionally requires an operator token, ToS acceptance, passport number and passport image at the operator endpoint; registration data only pre-fills it.
+
+## Paytrie platform authorization and personal-account test
+
+StableX customers do not need to create or connect a separate Paytrie account as a standard StableX onboarding step. The normal customer journey remains StableX registration, StableX identity verification, quote selection and transfer confirmation.
+
+For local integration testing only, StableX can authenticate **one explicitly configured StableX PERSONAL test account** against that same developer's own Paytrie retail account, then submit that account's own CAD -> USDC-BASE transaction. This is a test harness for validating Paytrie's customer JWT and order API; it is not a platform integration approval and must never be used to transact for other StableX customers, pool customer funds or route a business/MSB's own funds through a personal account.
+
+Configure the following locally (never commit the values):
+- `PAYTRIE_API_KEY` — Paytrie-issued API key.
+- `PAYTRIE_PERSONAL_TEST_MODE=true` — enables the isolated developer test path.
+- `PAYTRIE_PERSONAL_TEST_CUSTOMER_ID` — the account ID of the single StableX PERSONAL account allowed to use the test path.
+- `PAYTRIE_PLATFORM_EXECUTION_APPROVED=false` — keep the separate production platform gate closed.
+
+The test account signs in to StableX, links and signs ownership of its own Base Mainnet wallet (chain ID 8453), requests a 4-digit Paytrie login code to its own Paytrie-registered email, and verifies that code in StableX. The Paytrie JWT is encrypted in PostgreSQL and never sent to the browser. The order endpoint requires a live selected Paytrie quote, approved StableX compliance, a linked Base Mainnet wallet, explicit customer confirmation and a single-order idempotency reservation. Paytrie's order response is not treated as proof of payment or settlement; StableX verifies the resulting USDC transfer on Base before marking the transfer completed.
+
+The personal test path is disabled by default and is restricted server-side to the configured StableX PERSONAL account. It does not change the production platform gate. The normal StableX end-user experience must not require Paytrie registration; production platform execution remains a separate configuration that must be enabled only within Paytrie's approved partner scope.
+
+## Authenticated customer transfer flow
+
+Open `/transfer-flow.html` from the customer dashboard (or directly) to exercise the StableX-first transfer path:
+
+1. Sign in through `POST /api/auth/login`; the page keeps the StableX session token in session storage and sends it as a Bearer token.
+2. Save a beneficiary through authenticated `POST /api/transfers/beneficiaries`. The API derives the owner from the session.
+3. Create a durable DRAFT through authenticated `POST /api/transfers` with an `Idempotency-Key`.
+4. Request provider quotes through authenticated `POST /api/routing/quotes`. Each quote is persisted and bound to the requesting StableX account.
+5. Select one through authenticated `POST /api/routing/select`. The server verifies quote ownership, transfer ownership, route/amount match, expiry and the customer's APPROVED compliance gate; it atomically records the quote and advances the transfer to QUOTED.
+
+Quote selection is not itself an order, funding, debit, payout or settlement. A separate local-only Paytrie personal-account test can submit an order for the one configured StableX PERSONAL test account after its own Paytrie email authentication and Base Mainnet wallet link. This test path does not enable other StableX customers or establish production platform authorization. StableX customers are not required to register with Paytrie as a standard onboarding step.

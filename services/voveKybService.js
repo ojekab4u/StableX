@@ -1,6 +1,8 @@
 import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 
 const SANDBOX_URL = "https://api.voveid.net/v2";
+const HOSTED_SANDBOX_URL = "https://web.voveid.net";
+const HOSTED_PRODUCTION_URL = "https://web.voveid.com";
 
 function config() {
   const apiKey = process.env.VOVE_API_KEY || process.env.VOVE_ID_API_KEY;
@@ -11,10 +13,17 @@ function config() {
     error.statusCode = 503;
     throw error;
   }
+  const baseUrl = process.env.VOVE_ID_API_BASE_URL || SANDBOX_URL;
+  const environment = process.env.VOVE_ID_ENVIRONMENT || "Sandbox";
   return {
     apiKey, publicKey, webhookSecret,
-    baseUrl: process.env.VOVE_ID_API_BASE_URL || SANDBOX_URL,
-    environment: process.env.VOVE_ID_ENVIRONMENT || "Sandbox",
+    baseUrl,
+    // VOVE's API conventions: KYC routes begin with /v2, KYB and AML routes
+    // are unversioned. The configured base URL usually includes /v2, so derive
+    // the versionless root for KYB calls.
+    rootBaseUrl: baseUrl.replace(/\/v2\/?$/, ""),
+    environment,
+    hostedBaseUrl: environment === "Production" ? HOSTED_PRODUCTION_URL : HOSTED_SANDBOX_URL,
     kycFlowId: process.env.VOVE_ID_KYC_FLOW_ID || undefined,
     kybFlowId: process.env.VOVE_ID_KYB_FLOW_ID || undefined,
   };
@@ -45,8 +54,33 @@ async function voveRequest(path, { method = "GET", body } = {}) {
   return payload;
 }
 
+async function voveRequestRoot(path, { method = "GET", body } = {}) {
+  const settings = config();
+  const response = await fetch(`${settings.rootBaseUrl}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "x-api-key": settings.apiKey,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(15000),
+  });
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { payload = { message: raw.slice(0, 500) }; }
+  if (!response.ok) {
+    const error = new Error(payload.message || payload.error || `VOVE request failed (${response.status})`);
+    error.statusCode = response.status === 401 || response.status === 403 ? 502 : response.status >= 500 ? 502 : 400;
+    error.providerStatus = response.status;
+    throw error;
+  }
+  return payload;
+}
+
 function buildKycLink(token, settings) {
-  const url = new URL("https://web.voveid.com/");
+  const url = new URL(settings.hostedBaseUrl + "/");
   url.searchParams.set("authToken", token);
   url.searchParams.set("publicKey", settings.publicKey);
   url.searchParams.set("environment", settings.environment);
@@ -54,7 +88,7 @@ function buildKycLink(token, settings) {
 }
 
 function buildKybLink(token, settings) {
-  const url = new URL("https://web.voveid.com/kyb/");
+  const url = new URL(settings.hostedBaseUrl + "/kyb");
   url.searchParams.set("authToken", token);
   url.searchParams.set("publicKey", settings.publicKey);
   url.searchParams.set("environment", settings.environment);
@@ -106,18 +140,13 @@ export async function createVoveKycCase({ fullName, country, dateOfBirth, email,
 export async function createVoveKybCase({ businessName, country, registrationNumber, city, address }) {
   const settings = config();
   const refId = `stablex_kyb_${randomUUID()}`;
+  // VOVE's documented create contract accepts only refId and the optional flow;
+  // the applicant supplies business data inside the hosted case journey.
   const payload = {
-    businessName,
     refId,
     ...(settings.kybFlowId ? { flow: settings.kybFlowId } : {}),
-    formData: {
-      ...(registrationNumber ? { registrationNumber } : {}),
-      ...(country ? { country } : {}),
-      ...(city ? { city } : {}),
-      ...(address ? { address } : {}),
-    },
   };
-  const result = await voveRequest("/kyb/case", { method: "POST", body: payload });
+  const result = await voveRequestRoot("/kyb/case", { method: "POST", body: payload });
   const kybCase = result.kybCase || result.data?.kybCase || result.data || {};
   const token = result.token || result.sessionToken;
   const providerRef = kybCase.refId || refId;
@@ -142,8 +171,9 @@ export async function getVoveKycResult(refId) {
 }
 
 export async function getVoveKybResult(refId) {
+  const settings = config();
   const query = new URLSearchParams({ search: refId, limit: "1" });
-  const payload = await voveRequest(`/kyb/case?${query.toString()}`);
+  const payload = await voveRequestRoot(`/kyb/case?${query.toString()}`);
   const records = Array.isArray(payload.data) ? payload.data : [];
   const record = records.find((item) => item.refId === refId) ||
     (payload.kybCase?.refId === refId ? payload.kybCase : null) ||
@@ -160,10 +190,42 @@ export async function getVoveVerificationResult(refId, { subjectType = "INDIVIDU
   return subjectType === "BUSINESS" ? getVoveKybResult(refId) : getVoveKycResult(refId);
 }
 
-export function verifyVoveWebhookSignature(rawBody, signature, secret) {
-  if (!rawBody || !signature || !secret) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
-  const received = Buffer.from(signature);
-  const calculated = Buffer.from(expected);
-  return received.length === calculated.length && timingSafeEqual(received, calculated);
+export function verifyVoveWebhookSignature(
+  rawBody,
+  { id, timestamp, signature } = {},
+  secret,
+  { now = Date.now(), toleranceSeconds = 300 } = {}
+) {
+  if (!rawBody || !id || !timestamp || !signature || !secret) return false;
+  if (!secret.startsWith("whsec_")) return false;
+
+  const timestampNumber = Number(timestamp);
+  if (!Number.isInteger(timestampNumber) ||
+      Math.abs(Math.floor(now / 1000) - timestampNumber) > toleranceSeconds) {
+    return false;
+  }
+
+  let key;
+  try {
+    key = Buffer.from(secret.slice("whsec_".length), "base64");
+  } catch {
+    return false;
+  }
+  if (!key.length) return false;
+
+  const signedContent = `${id}.${timestamp}.${rawBody}`;
+  const expected = createHmac("sha256", key).update(signedContent).digest();
+  const candidates = String(signature).split(" ").filter(Boolean);
+
+  return candidates.some((candidate) => {
+    const [version, encoded] = candidate.split(",", 2);
+    if (version !== "v1" || !encoded) return false;
+    let received;
+    try {
+      received = Buffer.from(encoded, "base64");
+    } catch {
+      return false;
+    }
+    return received.length === expected.length && timingSafeEqual(received, expected);
+  });
 }

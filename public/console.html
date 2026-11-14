@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX — Customer & Routing Console</title>
+  <link rel="stylesheet" href="/console.css">
+  <script src="/console.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav><a href="/customer-dashboard.html">Customer dashboard</a><a href="/send.html">Send & settle</a><a href="/providers.html">Providers</a><a href="/bridge-funding.html">Bridge Sandbox funding</a><a href="/honeycoin-onramp.html">Honeycoin diagnostics</a><a href="/paytrie-onboarding.html">Paytrie account</a></nav>
+    <span class="network-label">Provider orchestration</span>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">STABLEX / CUSTOMER WORKSPACE</p>
+      <h1>Customer, quotes<br>and transfer lifecycle.</h1>
+      <p>Use the durable StableX APIs to check compliance, compare provider quotes and attach a selected quote to a transfer.</p>
+      <p class="notice">Sandbox / preview workspace. Quote selection does not create a provider order, collect funds or settle a transaction.</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><p class="eyebrow">01 / CUSTOMER</p><h2>Customer status</h2></div><button id="refresh-customer" class="secondary" type="button">Refresh</button></div>
+      <div class="inline-form"><span id="session-badge">Checking your sign-in…</span><button id="load-customer" type="button" class="secondary">Reload</button></div>
+      <div class="status-grid">
+        <article><span class="muted">VOVE compliance gate</span><strong id="gate-status">Loading…</strong></article>
+        <article><span class="muted">Compliance cases</span><strong id="case-count">—</strong></article>
+        <article><span class="muted">Bridge readiness</span><strong id="bridge-status">Checking…</strong></article>
+      </div>
+      <p id="customer-message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="panel" id="bridge-onboarding">
+      <div class="section-heading"><div><p class="eyebrow">02 / BRIDGE CUSTOMER ONBOARDING</p><h2>Bridge verification status</h2></div><button id="bridge-refresh" class="secondary" type="button">Sync Bridge status</button></div>
+      <p class="muted">Your Bridge customer, Terms acceptance and endorsement approvals belong to your signed-in account. The full profile and KYC/KYB flow runs on the dedicated onboarding page.</p>
+      <div id="bridge-onboarding-status" class="route-status" aria-live="polite">Saved Bridge onboarding status has not been loaded yet.</div>
+      <div class="button-row"><a href="/bridge-onboarding.html">Open Bridge onboarding flow</a></div>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">03 / BENEFICIARY</p><h2>Choose a recipient</h2>
+      <div class="field"><label for="beneficiary-select">Saved beneficiaries</label><select id="beneficiary-select"><option value="">Loading beneficiaries…</option></select></div>
+      <details>
+        <summary>Add a beneficiary</summary>
+        <div class="form-grid">
+          <div class="field"><label for="beneficiary-name">Recipient name</label><input id="beneficiary-name" placeholder="Recipient or wallet owner"></div>
+          <div class="field"><label for="beneficiary-country">Country (ISO-2)</label><input id="beneficiary-country" value="NG" maxlength="2"></div>
+          <div class="field"><label for="beneficiary-currency">Destination currency</label><select id="beneficiary-currency"><option>USDC</option></select></div>
+          <div class="field"><label for="beneficiary-network">Network (wallet only)</label><input id="beneficiary-network" value="BASE" placeholder="BASE"></div>
+          <div class="field full"><label for="beneficiary-wallet">Wallet address</label><input id="beneficiary-wallet" placeholder="0x…"></div>
+          <div class="field"><label for="beneficiary-bank">Bank name (payout recipient)</label><input id="beneficiary-bank" placeholder="Optional"></div>
+          <div class="field"><label for="beneficiary-account">Account number / IBAN</label><input id="beneficiary-account" placeholder="Optional"></div>
+        </div>
+        <button id="create-beneficiary" type="button">Save beneficiary</button>
+      </details>
+      <p id="beneficiary-message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">04 / PROVIDER MARKETPLACE</p><h2>Compare provider quotes</h2>
+      <div class="form-grid">
+        <div class="field"><label for="amount">Amount</label><input id="amount" type="number" min="0.000001" max="1000000" step="any" value="100"></div>
+        <div class="field"><label for="from">Pay with</label><select id="from"></select></div>
+        <div class="field"><label for="to">Recipient receives</label><select id="to"></select></div>
+      </div>
+      <button id="get-quotes" type="button">Get provider quotes</button>
+      <p id="quote-message" class="message" aria-live="polite"></p>
+      <div id="quotes" class="quotes"><p class="muted">Request quotes to see live provider responses and indicative previews.</p></div>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">05 / PROVIDER PAYMENT</p>
+      <h2>Complete Honeycoin NGN payment</h2>
+      <p class="muted">Available only for a QUOTED NGN → USDC transfer with a selected Honeycoin quote and a saved Base wallet beneficiary.</p>
+      <div class="form-grid">
+        <div class="field"><label for="honeycoin-email">Customer email for payment instructions</label><input id="honeycoin-email" type="email" placeholder="customer@example.com"></div>
+        <div class="field"><label for="honeycoin-method">NGN payment method</label><select id="honeycoin-method"><option value="opay">OPay</option><option value="bank">Bank transfer</option></select></div>
+      </div>
+      <p id="provider-order-message" class="message" aria-live="polite">Select a Honeycoin quote, then create the provider order from the transfer history below.</p>
+      <div id="provider-order-result" class="route-status" aria-live="polite"></div>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><div><p class="eyebrow">05 / DURABLE TRANSFERS</p><h2>Transfer history</h2></div><button id="refresh-transfers" class="secondary" type="button">Refresh</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Transfer</th><th>Route</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="transfers"><tr><td colspan="6" class="muted">Loading transfers…</td></tr></tbody></table></div>
+      <p class="muted small">A selected quote is recorded against a DRAFT transfer and advances it to QUOTED. Provider execution remains separately gated.</p>
+    </section>
+    <footer>StableX · Provider orchestration prototype · No funds are moved by this console</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10152a">
+  <title>StableX · Connect Paytrie</title>
+  <link rel="stylesheet" href="/console.css">
+  <style>
+    .paytrie-wrap{max-width:980px;margin:28px auto;padding:0 20px 40px}
+    .paytrie-hero{background:#10152a;color:#fff;border-radius:14px;padding:26px;margin-bottom:18px}
+    .paytrie-hero h1{margin:5px 0 10px;font-size:clamp(1.7rem,4vw,2.3rem)}
+    .paytrie-hero p{color:#d6def4;max-width:760px;line-height:1.55}
+    .paytrie-panel{background:#fff;border:1px solid #e1e7f0;border-radius:12px;padding:22px;margin:16px 0}
+    .paytrie-panel h2{margin:0 0 12px;font-size:1.15rem}
+    .paytrie-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .paytrie-field label{display:block;margin:0 0 6px;font-size:.84rem;font-weight:650;color:#43516a}
+    .paytrie-field input,.paytrie-field select{box-sizing:border-box;width:100%}
+    .paytrie-field.full{grid-column:1/-1}
+    .paytrie-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+    .paytrie-note{background:#f4f7fc;border:1px solid #e3eaf5;padding:12px 14px;border-radius:8px;color:#43516a;line-height:1.5}
+    .paytrie-status{padding:12px 14px;border-radius:8px;background:#f1f5fb;white-space:pre-wrap;overflow-wrap:anywhere}
+    .paytrie-status.good{background:#eaf7ef;color:#17643b}
+    .paytrie-status.bad{background:#fff0ee;color:#a82b20}
+    .paytrie-check{display:flex;align-items:flex-start;gap:9px;margin:12px 0;color:#43516a;font-size:.9rem}
+    .paytrie-check input{margin-top:3px}
+    .paytrie-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .paytrie-step{border:1px solid #e2e8f0;border-radius:9px;padding:12px;background:#fafbfd}
+    .paytrie-step strong{display:block;margin-bottom:4px}
+    .paytrie-step small{color:#64748b;line-height:1.4}
+    .paytrie-hidden{display:none!important}
+    .paytrie-link{display:inline-block;margin-top:8px}
+    button.secondary{background:#e9eef7;color:#24324a}
+    @media(max-width:680px){.paytrie-grid,.paytrie-steps{grid-template-columns:1fr}.paytrie-panel{padding:16px}}
+  </style>
+  <script src="/paytrie-onboarding.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/console.html">Stable<span>X</span></a>
+  <nav><a href="/console.html">Customer console</a><a href="/customer-dashboard.html">Dashboard</a><a href="/transfer-flow.html">Transfers</a></nav>
+  <span class="network-label">Paytrie customer onboarding</span>
+</header>
+
+<main class="paytrie-wrap">
+  <section class="paytrie-hero">
+    <p class="eyebrow">PROVIDER CONNECTION / CANADA</p>
+    <h1>Connect your Paytrie account</h1>
+    <p>Register or connect your own Paytrie individual account from StableX. Your Paytrie profile, email verification and identity checks belong to you. StableX never asks for your bank login or stores your Paytrie password.</p>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>Your StableX account</h2>
+    <div id="accountStatus" class="paytrie-status">Checking your signed-in account…</div>
+    <div id="readinessStatus" class="paytrie-note" style="margin-top:12px">Checking Paytrie availability…</div>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>1 · Create or connect your Paytrie identity</h2>
+    <p class="muted">Enter the email address on your Paytrie account. It can differ from your StableX email; Paytrie will send an OTP to that address, proving you control the account. StableX checks whether it already exists before creating a new individual profile.</p>
+    <p class="paytrie-note">Paytrie currently supports this API onboarding path for Canadian individual customers. You need your own eligible Canadian banking/Interac access to fund a CAD purchase. Business onboarding is a separate Paytrie process and is not enabled here.</p>
+    <div class="paytrie-grid">
+      <div class="paytrie-field"><label>Verified StableX email</label><input id="customerEmail" type="email" readonly></div>
+      <div class="paytrie-field"><label>Email registered with Paytrie</label><input id="paytrieEmail" type="email" autocomplete="email"></div>
+      <div class="paytrie-field"><label>Mobile phone (10-digit Canadian number)</label><input id="phone" inputmode="numeric" placeholder="4165551234" autocomplete="tel-national"></div>
+      <div class="paytrie-field"><label>First name</label><input id="firstName" autocomplete="given-name"></div>
+      <div class="paytrie-field"><label>Last name</label><input id="lastName" autocomplete="family-name"></div>
+      <div class="paytrie-field"><label>Date of birth</label><input id="dateOfBirth" type="date" autocomplete="bday"></div>
+      <div class="paytrie-field"><label>Occupation</label><input id="occupation" autocomplete="organization-title"></div>
+      <div class="paytrie-field full"><label>Canadian street address</label><input id="addressLine1" autocomplete="address-line1"></div>
+      <div class="paytrie-field full"><label>Apartment / unit (optional)</label><input id="addressLine2" autocomplete="address-line2"></div>
+      <div class="paytrie-field"><label>City</label><input id="city" autocomplete="address-level2"></div>
+      <div class="paytrie-field"><label>Province / territory</label>
+        <select id="province">
+          <option value="">Select province</option>
+          <option value="ab">Alberta</option><option value="bc">British Columbia</option>
+          <option value="mb">Manitoba</option><option value="nb">New Brunswick</option>
+          <option value="nl">Newfoundland and Labrador</option><option value="ns">Nova Scotia</option>
+          <option value="nt">Northwest Territories</option><option value="nu">Nunavut</option>
+          <option value="on">Ontario</option><option value="pe">Prince Edward Island</option>
+          <option value="qc">Quebec</option><option value="sk">Saskatchewan</option><option value="yt">Yukon</option>
+        </select>
+      </div>
+      <div class="paytrie-field"><label>Postal code</label><input id="postalCode" autocomplete="postal-code" placeholder="M5V 1A1"></div>
+    </div>
+    <div class="paytrie-grid" style="margin-top:14px">
+      <div class="paytrie-field"><label>Are you a politically exposed person (PEP)?</label><select id="pep"><option value="">Select Yes or No</option><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="paytrie-field"><label>Are you registering or acting on behalf of a third party?</label><select id="tpd"><option value="">Select Yes or No</option><option value="false">No</option><option value="true">Yes</option></select></div>
+    </div>
+    <div class="paytrie-actions"><button id="connectPaytrie">Check and connect Paytrie</button></div>
+    <p id="registrationMessage" class="paytrie-status" aria-live="polite">No Paytrie account has been linked yet.</p>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>2 · Verify your Paytrie email</h2>
+    <p class="muted">Paytrie sends a one-time 4-digit code to the email address shown above. Enter the code yourself; do not share it with StableX support or anyone else.</p>
+    <div class="paytrie-grid">
+      <div class="paytrie-field"><label>4-digit Paytrie code</label><input id="paytrieCode" inputmode="numeric" maxlength="4" autocomplete="one-time-code"></div>
+    </div>
+    <div class="paytrie-actions"><button id="verifyPaytrieCode" disabled>Verify code and connect</button><button id="resendPaytrieCode" class="secondary" disabled>Send another code</button></div>
+    <p id="authMessage" class="paytrie-status" aria-live="polite">Connect or register your Paytrie account first.</p>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>3 · Complete any profile requirements</h2>
+    <p class="muted">Paytrie tells StableX exactly which fields are missing for your account. Only outstanding fields returned by Paytrie are submitted.</p>
+    <div id="requirementsStatus" class="paytrie-status">Authenticate with Paytrie to load your requirements.</div>
+    <form id="requirementsForm" class="paytrie-hidden">
+      <div id="requirementsFields" class="paytrie-grid"></div>
+      <div class="paytrie-actions"><button type="submit">Submit required profile details</button></div>
+    </form>
+    <div id="phoneVerification" class="paytrie-hidden" style="margin-top:16px">
+      <h3>Phone verification</h3>
+      <p class="muted">Some existing Paytrie accounts may need to verify their mobile number.</p>
+      <div class="paytrie-grid">
+        <div class="paytrie-field"><label>Canadian mobile number</label><input id="phoneForVerify" inputmode="numeric" placeholder="4165551234"></div>
+        <div class="paytrie-field"><label>Phone verification code</label><input id="phoneCode" inputmode="numeric" maxlength="4"></div>
+      </div>
+      <div class="paytrie-actions"><button id="sendPhoneCode" type="button">Send phone code</button><button id="verifyPhoneCode" type="button" class="secondary">Verify phone code</button></div>
+      <p id="phoneMessage" class="muted"></p>
+    </div>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>4 · Complete identity verification</h2>
+    <div class="paytrie-steps">
+      <div class="paytrie-step"><strong>Profile</strong><small>Submit required details</small></div>
+      <div class="paytrie-step"><strong>Identity check</strong><small>Secure Paytrie / Sumsub flow</small></div>
+      <div class="paytrie-step"><strong>Review</strong><small>Paytrie verifies your information</small></div>
+      <div class="paytrie-step"><strong>Verified</strong><small>Paytrie enables eligible transactions</small></div>
+    </div>
+    <div class="paytrie-actions"><button id="getKycLink" disabled>Open identity verification</button><button id="refreshStatus" class="secondary" disabled>Refresh Paytrie status</button></div>
+    <p id="kycMessage" class="paytrie-status" aria-live="polite">Complete the preceding steps to request the secure KYC link.</p>
+    <a id="kycLink" class="paytrie-link paytrie-hidden" target="_blank" rel="noopener noreferrer">Continue to Paytrie's secure identity verification</a>
+    <div id="finalStatus" class="paytrie-note" style="margin-top:14px">Paytrie verification has not been completed.</div>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>5 · Link your Base Mainnet wallet</h2>
+    <p class="muted">Paytrie sends the purchased USDC to this wallet. Connect your own EVM wallet, switch to Base Mainnet (chain ID 8453), and sign a message proving that you control the address. StableX never receives your seed phrase or private key.</p>
+    <div class="paytrie-actions"><button id="connectBaseWallet" disabled>Connect MetaMask / EVM wallet</button></div>
+    <p id="walletStatus" class="paytrie-status">No Base wallet linked yet.</p>
+  </section>
+
+  <section class="paytrie-panel">
+    <h2>How funding works</h2>
+    <p>For a CAD purchase, Paytrie creates an Interac payment request. StableX will display Paytrie's payment reference when a transaction is created. You complete the e-Transfer yourself through your Canadian bank using Paytrie's instructions. StableX does not debit your bank account and will never ask for your online banking credentials.</p>
+    <p class="paytrie-note">KYC verification does not by itself authorize StableX to create live Paytrie orders. Live platform transactions remain disabled until Paytrie has approved StableX's platform integration. Your Paytrie account can be linked and verified in advance.</p>
+  </section>
+</main>
+</body>
+</html>

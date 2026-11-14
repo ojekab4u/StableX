@@ -1,17 +1,9 @@
-// Partner catalog — readiness skeletons for every provider on the StableX
-// integration map that does not yet have a full adapter. Each entry documents
-// the expected configuration variables, the corridor/product role it unlocks,
-// and its connector status. No network calls are made until each provider's
-// real credentials arrive and its adapter is implemented.
-//
-// Pattern parity: full adapters (Vove, Paytrie, Honeycoin, Paycrest) already
-// live adjacent in services/. When a partner below receives credentials,
-// convert its entry into a full adapter following the same shape.
+// Partner catalog — readiness skeletons for providers without a complete adapter.
+// Each entry documents its current verified integration role and remaining work.
 
 const isUsableCredential = (value) =>
   Boolean(value) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder|test)$/i.test(String(value).trim());
 
-// Definition list; readiness below reads from both config_registry entries.
 export const PARTNER_CATALOG = [
   {
     name: "Apaylo",
@@ -67,15 +59,28 @@ export const PARTNER_CATALOG = [
     ],
   },
   {
-    name: "Bridge (Stripe)",
-    role: "USD / GBP / EUR stablecoin issuance and on/off-ramp",
-    corridors: ["USD", "GBP", "EUR"],
-    docsUrl: "https://bridge.xyz/",
-    requiredCredentials: ["BRIDGE_API_BASE_URL", "BRIDGE_API_KEY"],
-    capabilities: ["USD_ONOFFRAMP", "GBP_ONOFFRAMP", "EUR_ONOFFRAMP", "STABLECOIN_ISSUANCE"],
+    name: "Netcoins",
+    role: "CAD/USD crypto trading rail — USDC quotes, instant/limit trades and balances (Netcoins API v4)",
+    corridors: ["CAD", "USD", "USDC"],
+    docsUrl: "https://developers.netcoins.app/",
+    docsNote: "Netcoins API v4 (Trading & Balances): bearer-token auth, `data` envelope, RFQ quote sessions (quoteReqId → quoteId → execute). Staging https://api-staging.netcoins.app/api/v4, production https://api.netcoins.com/api/v4. Rate limits per token. Regulated: FINTRAC MSB M15560893, BCSC.",
+    requiredCredentials: [
+      "NETCOINS_ENVIRONMENT",
+      "NETCOINS_API_KEY",
+    ],
+    capabilities: ["CAD_ONRAMP", "CAD_OFFRAMP", "USD_ONRAMP", "USD_OFFRAMP", "CUSTODY"],
+    capabilitiesPlanned: ["LIVE_QUOTE", "INSTANT_TRADE_EXECUTION", "LIMIT_ORDERS", "PUSHER_WEBSOCKET_QUOTES"],
+    configurationTasks: [
+      "Retrieve staging + production credentials from the Bitwarden sends (account email + 2FA)",
+      "Set NETCOINS_ENVIRONMENT=staging with the staging token; keep the production token out of .env until staging passes",
+      "Confirm the whitelisted public IP matches the machine running StableX (403 'IP Address not whitelisted' otherwise)",
+      "Confirm sandbox behaviour: whether staging orders move real funds or are simulated",
+      "v4 has no withdrawal/deposit endpoints — confirm how funds move in and out of the account (app, desk or legacy v2 endpoints)",
+    ],
     openQuestions: [
-      "Whether customer verification flows through Bridge KYC or StableX Vove KYC",
-      "Division of responsibility with Circle for USD/USDC conversion",
+      "Does the staging environment fully simulate funding + settlement?",
+      "Are crypto withdrawals to arbitrary Base addresses supported via API?",
+      "Is a Pusher WebSocket (trading.{userUuid}) needed for production quote freshness, or is polling acceptable?",
     ],
   },
   {
@@ -132,7 +137,7 @@ export function getPartnerReadiness() {
   return {
     module: "PARTNER_CONNECTOR_SKELETONS",
     connectorsBuilt: 0,
-    note: "These partners are catalogued but not yet connected. When credentials arrive, each catalog entry becomes a full adapter following the existing Honeycoin/Paycrest pattern.",
+    note: "These partner entries are not executable adapters. Implemented provider adapters are reported separately.",
     friendly: PARTNER_CATALOG.map(catalogReadiness),
   };
 }

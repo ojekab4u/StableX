@@ -14,6 +14,12 @@ import {
   getVoveKybReadiness,
   getVoveVerificationResult,
 } from "./voveKybService.js";
+import { buildComplianceSubject } from "./complianceSubject.js";
+
+// The labeled simulator fallback for environments without VOVE credentials.
+// Matches the sanctioned M1 gate simulator documented in .env.example.
+export const complianceSimulatorEnabled = () =>
+  String(process.env.COMPLIANCE_SIM_AUTO_APPROVE || "").toLowerCase() === "true";
 
 const customerIdRegex = /^[A-Za-z0-9._:-]{2,128}$/;
 const nameRegex = /^[A-Za-z .,'-]{2,120}$/;
@@ -31,6 +37,7 @@ export function getComplianceReadiness() {
     checks: [
       { requirement: "KYC", subject: "INDIVIDUAL", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_KYC_SESSION_AND_RESULT_LOOKUP" : "NOT_CONFIGURED" },
       { requirement: "KYB", subject: "BUSINESS", providerConfigured: voveConfigured, activeImplementation: voveConfigured ? "VOVE_KYB_CASE_AND_RESULT_LOOKUP" : "NOT_CONFIGURED" },
+      { requirement: "AML", subject: "INDIVIDUAL_AND_BUSINESS", providerConfigured: false, activeImplementation: "NOT_CONFIGURED" },
     ],
     note: voveConfigured
       ? "Hosted VOVE verification sessions are enabled. Case creation is not approval; final status is tracked from VOVE results and authorized review."
@@ -132,8 +139,78 @@ export async function submitComplianceCase({ customerId, subjectType, subject })
   };
 }
 
-export async function getComplianceCaseByProviderReference(providerReference) {
-  if (typeof providerReference !== "string" || providerReference.length < 8 || providerReference.length > 255) {
+// Self-service case creation for the authenticated account (step 2 of the
+// customer flow). The subject is built from stored registration data; only
+// fields the account does not hold (registrationNumber, city, address) may be
+// supplied as extras. Uses real VOVE hosted sessions when credentials are
+// present; otherwise falls back to the clearly labeled local simulator so the
+// flow can be completed without provider setup. The simulator never touches
+// VOVE and is recorded with provider "SIMULATOR".
+export async function submitSelfServeComplianceCase({ account, extras = {} }) {
+  if (!account || !account.accountId) {
+    const error = new Error("An authenticated account is required.");
+    error.statusCode = 401;
+    throw error;
+  }
+  const subjectType = account.accountType === "BUSINESS" ? "BUSINESS" : "INDIVIDUAL";
+  const subject = buildComplianceSubject(account, extras);
+
+  if (!subject.country || !countryRegex.test(subject.country)) {
+    const error = new Error("This account has no two-letter ISO country code. Re-register with a country to start verification.");
+    error.statusCode = 409;
+    throw error;
+  }
+  if (subjectType === "INDIVIDUAL" && !subject.fullName.match(nameRegex)) {
+    const error = new Error("This account's fullName cannot be used for KYC. Update the account first.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const voveReady = getVoveKybReadiness();
+  if (voveReady.configured) {
+    const result = await submitComplianceCase({ customerId: account.accountId, subjectType, subject });
+    return { ...result, simulated: false, mode: "VOVE_HOSTED" };
+  }
+
+  if (!complianceSimulatorEnabled()) {
+    const error = new Error(
+      "No identity provider is available. Configure VOVE credentials, or set COMPLIANCE_SIM_AUTO_APPROVE=true to use the labeled simulator while testing."
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const caseId = randomUUID();
+  const autoApprove = String(process.env.COMPLIANCE_SIM_AUTO_APPROVE).toLowerCase() === "true";
+  const created = await saveComplianceCase({
+    id: caseId,
+    customerId: account.accountId,
+    subjectType,
+    requirement: subjectType === "INDIVIDUAL" ? "KYC" : "KYB",
+    subject,
+    screening: { method: "LOCAL_SIMULATOR", autoApprove },
+    status: autoApprove ? "APPROVED" : "SUBMITTED",
+    providerStatus: autoApprove ? "SIMULATED_APPROVED" : "NOT_STARTED",
+    decisionReason: autoApprove
+      ? "Simulated approval for local testing. Not a real KYC/KYB decision."
+      : null,
+    provider: "SIMULATOR",
+    providerReference: `sim_${caseId}`,
+    decidedAt: autoApprove ? new Date().toISOString() : null,
+  });
+
+  return {
+    case: { ...created, id: caseId },
+    gateMessage: autoApprove
+      ? "Simulated verification approved for local testing. This is not a real KYC/KYB decision."
+      : "Simulated case recorded as SUBMITTED. Approve or reject it from the compliance console.",
+    verificationUrl: null,
+    simulated: true,
+    mode: "LOCAL_SIMULATOR",
+  };
+}
+
+export async function getComplianceCaseByProviderReference(providerReference) {  if (typeof providerReference !== "string" || providerReference.length < 8 || providerReference.length > 255) {
     const error = new Error("A valid VOVE reference is required.");
     error.statusCode = 400;
     throw error;
@@ -162,6 +239,10 @@ export async function refreshVoveComplianceCase(caseId) {
       refreshed: false,
       reason: "This case already has a final StableX compliance decision.",
       case: caseRecord,
+      providerStatus: caseRecord.providerStatus || "UNKNOWN",
+      complianceStatus: caseRecord.status,
+      providerStatusField: null,
+      providerResponseKeys: [],
     };
   }
   const refId = caseRecord.providerReference || caseRecord.screening?.voveRefId;
@@ -176,7 +257,7 @@ export async function refreshVoveComplianceCase(caseId) {
     error.statusCode = 502;
     throw error;
   }
-  const outcome = normalizeVoveOutcome(null, providerResult);
+  const outcome = normalizeVoveOutcome(null, providerResult, { subjectType: caseRecord.subjectType });
   const updated = await updateComplianceProviderStatus({
     caseId,
     providerStatus: outcome.providerStatus,
@@ -190,7 +271,9 @@ export async function refreshVoveComplianceCase(caseId) {
     subjectType: caseRecord.subjectType,
     providerStatus: updated.providerStatus,
     complianceStatus: updated.status,
-    providerUpdatedAt: providerResult.updatedAt || null,
+    providerStatusField: outcome.statusField,
+    providerResponseKeys: Object.keys(providerResult || {}),
+    providerUpdatedAt: providerResult.updatedAt || providerResult.updated_at || null,
     // Deliberately omit document, biometric, and registry PII from this response.
   };
 }
@@ -238,7 +321,7 @@ function evaluateGate(cases) {
   return {
     approved: false,
     status: rejected ? "REJECTED" : cases.length ? "PENDING" : "NOT_SUBMITTED",
-    caseId: rejected ? rejected.caseId : null,
+    caseId: rejected ? rejected.caseId : (cases.length ? cases[0].caseId : null),
   };
 }
 
@@ -252,29 +335,72 @@ export async function getCustomerGateStatus(customerId) {
   return { customerId, gate: evaluateGate(cases), caseCount: cases.length };
 }
 
-export function normalizeVoveOutcome(event, result) {
+function extractVoveStatus(result) {
+  const candidates = [
+    ["status", result?.status],
+    ["verificationStatus", result?.verificationStatus],
+    ["verification_status", result?.verification_status],
+    ["data.status", result?.data?.status],
+    ["data.verificationStatus", result?.data?.verificationStatus],
+    ["data.verification_status", result?.data?.verification_status],
+    ["user.status", result?.user?.status],
+    ["user.verificationStatus", result?.user?.verificationStatus],
+    ["data.user.status", result?.data?.user?.status],
+    ["data.user.verificationStatus", result?.data?.user?.verificationStatus],
+    ["verification.status", result?.verification?.status],
+    ["data.verification.status", result?.data?.verification?.status],
+    ["result.status", result?.result?.status],
+    ["kybCase.status", result?.kybCase?.status],
+    ["data.kybCase.status", result?.data?.kybCase?.status],
+    ["data[0].status", Array.isArray(result?.data) ? result.data[0]?.status : undefined],
+  ];
+  const found = candidates.find(([, value]) =>
+    typeof value === "string" && value.trim()
+  );
+  return found
+    ? { value: found[1], field: found[0] }
+    : { value: undefined, field: null };
+}
+
+export function normalizeVoveOutcome(event, result, { subjectType = "INDIVIDUAL" } = {}) {
   const data = event?.data || {};
   const eventType = String(event?.type || "").toLowerCase();
-  const rawStatus = result?.status || result?.data?.status || result?.user?.status ||
-    data.status || data.case?.status || data.session?.status ||
+  const extracted = extractVoveStatus(result);
+  const eventStatus = data.status || data.case?.status || data.session?.status;
+  const rawStatus = extracted.value || eventStatus ||
     (eventType.endsWith(".rejected") ? "REJECTED" :
       eventType.endsWith(".completed") ? "COMPLETED" : "UNKNOWN");
   const providerStatus = String(rawStatus).trim().toUpperCase();
+  const statusField = extracted.field || (eventStatus ? "event.data.status" :
+    eventType.endsWith(".rejected") || eventType.endsWith(".completed") ? "event.type" : null);
 
-  // KYC's documented "successful" result is a positive provider outcome.
-  // KYB's "COMPLETED" means evidence collection/checks are complete and must
-  // still go through StableX's internal compliance review.
-  if (["VERIFIED", "APPROVED", "SUCCESSFUL"].includes(providerStatus) && result?.refId) {
-    return { providerStatus, status: "APPROVED" };
+  if (providerStatus === "REJECTED") {
+    return { providerStatus, status: "REJECTED", statusField };
   }
-  if (providerStatus === "REJECTED") return { providerStatus, status: "REJECTED" };
+
+  // VOVE documents KYB COMPLETED as ready for the customer's internal review,
+  // not as an automatic business-account approval. Keep all BUSINESS cases
+  // behind StableX's own review/decision gate.
+  if (subjectType === "BUSINESS" &&
+      ["COMPLETED", "SUCCESSFUL", "VERIFIED", "APPROVED"].includes(providerStatus)) {
+    return { providerStatus, status: "IN_REVIEW", statusField };
+  }
+
+  // For an individual KYC case, a provider-fetched SUCCESSFUL / VERIFIED /
+  // APPROVED result is authoritative. The lookup itself is scoped by our saved
+  // refId, so the response does not also need to echo refId.
+  if (subjectType !== "BUSINESS" &&
+      ["SUCCESSFUL", "VERIFIED", "APPROVED"].includes(providerStatus)) {
+    return { providerStatus, status: "APPROVED", statusField };
+  }
+
   if (["COMPLETED", "IN_REVIEW", "SUSPECTED", "PENDING_REVIEW"].includes(providerStatus)) {
-    return { providerStatus, status: "IN_REVIEW" };
+    return { providerStatus, status: "IN_REVIEW", statusField };
   }
-  if (["IN_PROGRESS", "PENDING", "NOT_STARTED", "UNKNOWN"].includes(providerStatus)) {
-    return { providerStatus, status: "SUBMITTED" };
+  if (["IN_PROGRESS", "PENDING", "NOT_STARTED", "UNKNOWN", "CANCELED", "CANCELLED", "MAX_ATTEMPTS"].includes(providerStatus)) {
+    return { providerStatus, status: "SUBMITTED", statusField };
   }
-  return { providerStatus, status: "SUBMITTED" };
+  return { providerStatus, status: "SUBMITTED", statusField };
 }
 
 export async function refreshVoveComplianceCase(providerReference) {
@@ -343,7 +469,7 @@ export async function processVoveWebhook(event) {
   // Fetch the latest provider record rather than trusting an unsigned status field
   // or treating a hosted-flow completion as a compliance approval.
   const result = await getVoveVerificationResult(String(refId), { subjectType: caseRecord.subjectType });
-  const outcome = normalizeVoveOutcome(event, result);
+  const outcome = normalizeVoveOutcome(event, result, { subjectType: caseRecord.subjectType });
   const updated = await updateComplianceProviderStatus({
     caseId: caseRecord.caseId,
     providerStatus: outcome.providerStatus,
