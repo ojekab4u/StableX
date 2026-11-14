@@ -276,7 +276,7 @@
 
     function statusBadge(status) {
       const s = String(status || "").toLowerCase();
-      const tone = s === "successful" || s === "completed" ? "ok" : s === "cancelled" || s === "failed" ? "bad" : "warn";
+      const tone = ["success", "successful", "completed"].includes(s) ? "ok" : ["cancelled", "failed"].includes(s) ? "bad" : "warn";
       return "<span class='badge " + tone + "'>" + (status || "pending") + "</span>";
     }
 
@@ -326,7 +326,7 @@
         "<tr><th>You receive</th><td class='mono'>" + (payoutAmount || "-") + "</td></tr>" +
         "<tr><th>Status</th><td>" + statusBadge(status) + "</td></tr></table>";
 
-      const done = ["successful", "completed", "cancelled", "failed"].includes(String(status).toLowerCase());
+      const done = ["success", "successful", "completed", "cancelled", "failed"].includes(String(status).toLowerCase());
       let details = [];
       for (const [k, v] of Object.entries(settlement)) {
         if (v) details.push({ k, v });
