@@ -65,8 +65,12 @@ kybRouter.post("/cases/:refId/refresh", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized operator action." });
   }
   try {
-    const result = await refreshVoveComplianceCase(req.params.refId);
-    return res.status(result.updated ? 200 : 202).json(result);
+    const record = await getComplianceCaseByProviderReference(req.params.refId);
+    if (!record) {
+      return res.status(404).json({ error: "No persisted StableX compliance case matches this VOVE reference." });
+    }
+    const result = await refreshVoveComplianceCase(record.caseId);
+    return res.status(result.refreshed ? 200 : 202).json(result);
   } catch (error) {
     return res.status(error.statusCode || 502).json({ error: error.message });
   }
