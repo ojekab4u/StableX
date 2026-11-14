@@ -36,6 +36,7 @@ import { bridgeRouter } from "./routes/bridgeRoutes.js";
 import { bridgeSelfServeRouter } from "./routes/bridgeSelfServeRoutes.js";
 import { honeycoinWebhookRouter } from "./routes/honeycoinWebhookRoutes.js";
 import { paytrieRouter } from "./routes/paytrieRoutes.js";
+import { netcoinsRouter } from "./routes/netcoinsRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
 const app = express();
@@ -495,6 +496,7 @@ app.use("/api/bridge", bridgeRouter);
 app.use("/api/bridge/self", bridgeSelfServeRouter);
 app.use("/api/webhooks/honeycoin", honeycoinWebhookRouter);
 app.use("/api/paytrie", paytrieRouter);
+app.use("/api/netcoins", netcoinsRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {

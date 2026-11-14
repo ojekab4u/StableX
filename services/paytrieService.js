@@ -8,6 +8,7 @@ const TOKEN_LABELS = {
 export function getPaytrieReadiness() {
   const apiKey = String(process.env.PAYTRIE_API_KEY || "").trim();
   const hasUsableKey = Boolean(apiKey) && !/^(key|your[_ -].*|replace[_ -].*|changeme|placeholder)$/i.test(apiKey);
+  const platformApproved = String(process.env.PAYTRIE_PLATFORM_EXECUTION_APPROVED || "").trim().toLowerCase() === "true";
   return {
     name: "Paytrie",
     apiVersion: "v2",
@@ -16,12 +17,16 @@ export function getPaytrieReadiness() {
     status: hasUsableKey ? "CREDENTIAL_PRESENT_CONNECTION_NOT_TESTED" : "PUBLIC_QUOTES_NO_KEY_REQUIRED",
     supportedStablecoinPairs: ["CAD/USDC-BASE", "CAD/CADC-BASE", "USDC-BASE/CAD", "CADC-BASE/CAD"],
     quoteEndpoint: API_BASE + "/quotes",
-    transactionCreationEnabled: hasUsableKey,
-    authenticationRequired: "PAYTRIE_USER_JWT_PER_CUSTOMER",
+    platformAuthorizationRequired: true,
+    platformExecutionApproved: platformApproved,
+    transactionCreationEnabled: false,
+    customerAuthenticationModel: "AWAITING_PAYTRIE_PLATFORM_CONFIRMATION",
     transactionEndpoint: API_BASE + "/transactions",
-    note: hasUsableKey
-      ? "Integrator API key is configured; a verified Paytrie customer JWT is still required for transaction creation. Account permissions have not yet been verified."
-      : "Live quotes may be available without a key; transaction creation requires PAYTRIE_API_KEY and a verified Paytrie customer JWT.",
+    note: !hasUsableKey
+      ? "Live quotes may be available without a key. Transaction creation also requires an API key, Paytrie's explicit approval of StableX's platform/partner arrangement and authentication model."
+      : !platformApproved
+        ? "API key is present, but platform execution remains disabled until Paytrie explicitly approves StableX's platform/partner arrangement."
+        : "Platform approval flag is enabled. The platform authentication and end-user funding model must also be confirmed and implemented before use.",
   };
 }
 
@@ -92,6 +97,6 @@ export async function getPaytrieQuote({ from, to, amount }) {
     timestamp: quote.timestamp || null,
     raw: quote,
     executable: false,
-    note: "This is a live provider quote, not a completed purchase or transfer. Paytrie transaction creation requires a separately authenticated user JWT and customer payment.",
+    note: "Live provider quote only. StableX platform authorization, end-user authentication and payment responsibilities must be confirmed with Paytrie before order execution.",
   };
 }

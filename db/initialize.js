@@ -221,7 +221,40 @@ const schemaStatements = [
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `CREATE INDEX IF NOT EXISTS auth_sessions_account_idx ON auth_sessions (account_id)`
+  `CREATE INDEX IF NOT EXISTS auth_sessions_account_idx ON auth_sessions (account_id)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_customer_sessions (
+    customer_id VARCHAR(128) PRIMARY KEY,
+    encrypted_token JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_customer_sessions_expiry_idx ON paytrie_customer_sessions (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_customers (
+    customer_id VARCHAR(128) PRIMARY KEY,
+    provider_user_id UUID NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    provider_status VARCHAR(40),
+    onboarding_status VARCHAR(40) NOT NULL DEFAULT 'REGISTERED',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_customers_status_idx ON paytrie_customers (provider_status, onboarding_status)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_webhook_events (
+    event_id VARCHAR(255) PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL,
+    processing_status VARCHAR(40) NOT NULL DEFAULT 'RECEIVED',
+    error_message TEXT,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS paytrie_webhook_events_received_idx ON paytrie_webhook_events (received_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS paytrie_webhook_config (
+    config_id VARCHAR(32) PRIMARY KEY CHECK (config_id='default'),
+    webhook_url TEXT NOT NULL,
+    encrypted_secret JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`
 
 ];
 
@@ -234,7 +267,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

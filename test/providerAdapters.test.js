@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { getPaycrestRate, getPaycrestReadiness } from "../services/providers/paycrestService.js";
 import { getHoneycoinRate, getHoneycoinReadiness } from "../services/providers/honeycoinService.js";
 import { getBridgeRate, getBridgeReadiness, createBridgeOnRampOrder } from "../services/providers/bridgeService.js";
-import { rankRoutingQuotes } from "../services/routingService.js";
+import { getNetcoinsRate, getNetcoinsReadiness } from "../services/providers/netcoinsService.js";
+import { rankRoutingQuotes, normalizeProviderResult } from "../services/routingService.js";
 
 test("Paycrest onramp preview requests a one-token indicative rate", async () => {
   const originalFetch = globalThis.fetch;
@@ -298,5 +299,176 @@ test("Honeycoin creates an NGN to Base USDC on-ramp and supports canonical statu
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  }
+});
+
+
+test("Paytrie quote normalization preserves fee breakdown and calculates a clearly labelled pricing-rule estimate", () => {
+  const quote = normalizeProviderResult("Paytrie", {
+    from: "CAD", to: "USDC", amount: 10, customerId: "customer-1",
+  }, {
+    quoteType: "LIVE_PROVIDER_QUOTE",
+    raw: {
+      quoteId: 12345,
+      leftSideLabel: "CAD",
+      leftSideValue: 10,
+      rightSideLabel: "USDC-BASE",
+      rightSideValue: 3.52,
+      breakdown: { paytrieFee: 5, gasFee: 0.6, usdToCad: 1.42 },
+    },
+  });
+
+  assert.equal(quote.destinationAmount, 3.52);
+  assert.equal(quote.fee, 5);
+  assert.equal(quote.feeCurrency, null, "Do not invent a fee currency when Paytrie omits it");
+  assert.deepEqual(quote.feeBreakdown, { paytrieFee: 5, gasFee: 0.6, usdToCad: 1.42 });
+  assert.equal(quote.providerData.quoteId, 12345);
+  assert.equal(quote.pricingPolicy.feeRateBps, 60);
+  assert.equal(quote.pricingPolicy.percentageFee, 0.06);
+  assert.equal(quote.pricingPolicy.estimatedFee, 5);
+  assert.equal(quote.pricingPolicy.estimatedNetSourceAmount, 5);
+  assert.equal(quote.pricingPolicy.minimumFeeApplies, true);
+  assert.equal(quote.pricingPolicy.estimateOnly, true);
+});
+
+test("Paytrie pricing-rule estimate switches from the minimum to 60 bps when percentage fee is higher", () => {
+  const quote = normalizeProviderResult("Paytrie", {
+    from: "CAD", to: "USDC", amount: 1000,
+  }, {
+    quoteType: "LIVE_PROVIDER_QUOTE",
+    raw: {
+      quoteId: 12346,
+      leftSideLabel: "CAD",
+      leftSideValue: 1000,
+      rightSideLabel: "USDC-BASE",
+      rightSideValue: 700,
+      breakdown: { paytrieFee: 6, gasFee: 0.2, usdToCad: 1.4 },
+    },
+  });
+
+  assert.equal(quote.pricingPolicy.percentageFee, 6);
+  assert.equal(quote.pricingPolicy.estimatedFee, 6);
+  assert.equal(quote.pricingPolicy.estimatedNetSourceAmount, 994);
+  assert.equal(quote.pricingPolicy.minimumFeeApplies, false);
+});
+
+test("Netcoins buy preview uses the account-priced indicative buy price", async () => {
+  const originalFetch = globalThis.fetch;
+  const originals = {
+    key: process.env.NETCOINS_API_KEY,
+    base: process.env.NETCOINS_API_BASE_URL,
+    environment: process.env.NETCOINS_ENVIRONMENT,
+  };
+  process.env.NETCOINS_API_KEY = "test-netcoins-token";
+  process.env.NETCOINS_ENVIRONMENT = "staging";
+  delete process.env.NETCOINS_API_BASE_URL;
+  let requestedUrl = "";
+  let requestInit = null;
+  globalThis.fetch = async (url, init) => {
+    requestedUrl = String(url);
+    requestInit = init;
+    return {
+      ok: true,
+      json: async () => ({
+        data: {
+          base_currency: "USDC",
+          quote_currency: "CAD",
+          buy_price: "1.43",
+          sell_price: "1.41",
+          timestamp: "2026-11-13T10:30:00.000000Z",
+        },
+      }),
+    };
+  };
+
+  try {
+    const quote = await getNetcoinsRate({ from: "CAD", to: "USDC", amount: 100 });
+    assert.match(requestedUrl, /^https:\/\/api-staging\.netcoins\.app\/api\/v4\/markets\/prices\/USDC\/CAD$/);
+    assert.equal(requestInit.method, "GET");
+    assert.equal(requestInit.headers.Authorization, "Bearer test-netcoins-token");
+    assert.equal(quote.direction, "ONRAMP");
+    assert.equal(quote.destinationAmount, 100 / 1.43);
+    assert.equal(quote.rate, 1.43);
+    assert.equal(quote.buyPrice, 1.43);
+    assert.equal(quote.sellPrice, 1.41);
+    assert.equal(quote.executionEnabled, false);
+    assert.equal(quote.priceTimestamp, "2026-11-13T10:30:00.000000Z");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originals.key === undefined) delete process.env.NETCOINS_API_KEY; else process.env.NETCOINS_API_KEY = originals.key;
+    if (originals.base === undefined) delete process.env.NETCOINS_API_BASE_URL; else process.env.NETCOINS_API_BASE_URL = originals.base;
+    if (originals.environment === undefined) delete process.env.NETCOINS_ENVIRONMENT; else process.env.NETCOINS_ENVIRONMENT = originals.environment;
+  }
+});
+
+test("Netcoins sell preview uses the account-priced indicative sell price", async () => {
+  const originalFetch = globalThis.fetch;
+  process.env.NETCOINS_API_KEY = "test-netcoins-token";
+  process.env.NETCOINS_API_BASE_URL = "https://netcoins.test/api/v4";
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return {
+      ok: true,
+      json: async () => ({
+        data: {
+          base_currency: "USDC",
+          quote_currency: "CAD",
+          buy_price: "1.43",
+          sell_price: "1.415",
+          timestamp: "2026-11-13T10:30:00.000000Z",
+        },
+      }),
+    };
+  };
+
+  try {
+    const quote = await getNetcoinsRate({ from: "USDC", to: "CAD", amount: 50 });
+    assert.equal(requestedUrl, "https://netcoins.test/api/v4/markets/prices/USDC/CAD");
+    assert.equal(quote.direction, "OFFRAMP");
+    assert.equal(quote.destinationAmount, 50 * 1.415);
+    assert.equal(quote.rate, 1.415);
+    assert.equal(quote.quoteType, "INDICATIVE_RATE_PREVIEW");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+test("Netcoins rejects crypto-to-crypto and fiat-to-fiat requests without calling the API", async () => {
+  let fetchCalled = false;
+  const originalFetch = globalThis.fetch;
+  process.env.NETCOINS_API_KEY = "test-netcoins-token";
+  globalThis.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
+
+  try {
+    await assert.rejects(
+      () => getNetcoinsRate({ from: "USDC", to: "USDT", amount: 10 }),
+      (error) => error.statusCode === 400 && /Netcoins quotes/i.test(error.message)
+    );
+    await assert.rejects(
+      () => getNetcoinsRate({ from: "CAD", to: "USD", amount: 10 }),
+      (error) => error.statusCode === 400 && /crypto asset/i.test(error.message)
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Netcoins readiness reports missing credentials and staging default", async () => {
+  const originalKey = process.env.NETCOINS_API_KEY;
+  const originalEnvironment = process.env.NETCOINS_ENVIRONMENT;
+  delete process.env.NETCOINS_API_KEY;
+  delete process.env.NETCOINS_ENVIRONMENT;
+
+  try {
+    const readiness = getNetcoinsReadiness();
+    assert.equal(readiness.name, "Netcoins");
+    assert.equal(readiness.configured, false);
+    assert.deepEqual(readiness.missingVariables, ["NETCOINS_API_KEY"]);
+    assert.equal(readiness.environment, "staging");
+    assert.equal(readiness.executionEnabled, false);
+  } finally {
+    if (originalKey === undefined) delete process.env.NETCOINS_API_KEY; else process.env.NETCOINS_API_KEY = originalKey;
+    if (originalEnvironment === undefined) delete process.env.NETCOINS_ENVIRONMENT; else process.env.NETCOINS_ENVIRONMENT = originalEnvironment;
   }
 });

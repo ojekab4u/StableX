@@ -43,6 +43,15 @@ export async function readProviderOrderByReference(reference) {
   return result.rows[0] || null;
 }
 
+
+export async function readProviderOrderByPaytrieTransactionId(providerTransactionId) {
+  const result = await getPool().query(
+    `${SELECT} WHERE provider='Paytrie' AND provider_transaction_id=$1 LIMIT 1`,
+    [providerTransactionId]
+  );
+  return result.rows[0] || null;
+}
+
 export async function readProviderOrderById(orderId, customerId) {
   const result = await getPool().query(
     `${SELECT} WHERE order_id=$1 AND customer_id=$2`,

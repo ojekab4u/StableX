@@ -430,7 +430,6 @@ async function refreshComplianceStatus({ silent = false } = {}) {
     pollingDelayMs = 15000;
     if (pollingActive) scheduleCompliancePoll();
   } catch (error) {
-    console.error("[StableX compliance status refresh failed]", error.status, error.message);
     setComplianceSyncMessage(
       `Could not retrieve the latest VOVE status: ${error.message}. The saved StableX status has not been changed by this failed check.`,
       "error"

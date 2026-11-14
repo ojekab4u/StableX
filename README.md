@@ -484,3 +484,31 @@ The endpoint issues a real VOVE hosted verification session when credentials are
 - This is a prototype layer: real provider verification is exercised through hosted sessions only; StableX does not collect or persist identity documents.
 - KYC auto-approval in the simulator (`VERIFIED` status) is explicitly labeled as simulated and not a real compliance decision.
 - Bridge customer creation additionally requires an operator token, ToS acceptance, passport number and passport image at the operator endpoint; registration data only pre-fills it.
+
+## Paytrie platform authorization and personal-account test
+
+StableX customers do not need to create or connect a separate Paytrie account as a standard StableX onboarding step. The normal customer journey remains StableX registration, StableX identity verification, quote selection and transfer confirmation.
+
+For local integration testing only, StableX can authenticate **one explicitly configured StableX PERSONAL test account** against that same developer's own Paytrie retail account, then submit that account's own CAD -> USDC-BASE transaction. This is a test harness for validating Paytrie's customer JWT and order API; it is not a platform integration approval and must never be used to transact for other StableX customers, pool customer funds or route a business/MSB's own funds through a personal account.
+
+Configure the following locally (never commit the values):
+- `PAYTRIE_API_KEY` — Paytrie-issued API key.
+- `PAYTRIE_PERSONAL_TEST_MODE=true` — enables the isolated developer test path.
+- `PAYTRIE_PERSONAL_TEST_CUSTOMER_ID` — the account ID of the single StableX PERSONAL account allowed to use the test path.
+- `PAYTRIE_PLATFORM_EXECUTION_APPROVED=false` — keep the separate production platform gate closed.
+
+The test account signs in to StableX, links and signs ownership of its own Base Mainnet wallet (chain ID 8453), requests a 4-digit Paytrie login code to its own Paytrie-registered email, and verifies that code in StableX. The Paytrie JWT is encrypted in PostgreSQL and never sent to the browser. The order endpoint requires a live selected Paytrie quote, approved StableX compliance, a linked Base Mainnet wallet, explicit customer confirmation and a single-order idempotency reservation. Paytrie's order response is not treated as proof of payment or settlement; StableX verifies the resulting USDC transfer on Base before marking the transfer completed.
+
+The personal test path is disabled by default and is restricted server-side to the configured StableX PERSONAL account. It does not change the production platform gate. The normal StableX end-user experience must not require Paytrie registration; production platform execution remains a separate configuration that must be enabled only within Paytrie's approved partner scope.
+
+## Authenticated customer transfer flow
+
+Open `/transfer-flow.html` from the customer dashboard (or directly) to exercise the StableX-first transfer path:
+
+1. Sign in through `POST /api/auth/login`; the page keeps the StableX session token in session storage and sends it as a Bearer token.
+2. Save a beneficiary through authenticated `POST /api/transfers/beneficiaries`. The API derives the owner from the session.
+3. Create a durable DRAFT through authenticated `POST /api/transfers` with an `Idempotency-Key`.
+4. Request provider quotes through authenticated `POST /api/routing/quotes`. Each quote is persisted and bound to the requesting StableX account.
+5. Select one through authenticated `POST /api/routing/select`. The server verifies quote ownership, transfer ownership, route/amount match, expiry and the customer's APPROVED compliance gate; it atomically records the quote and advances the transfer to QUOTED.
+
+Quote selection is not itself an order, funding, debit, payout or settlement. A separate local-only Paytrie personal-account test can submit an order for the one configured StableX PERSONAL test account after its own Paytrie email authentication and Base Mainnet wallet link. This test path does not enable other StableX customers or establish production platform authorization. StableX customers are not required to register with Paytrie as a standard onboarding step.

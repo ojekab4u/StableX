@@ -155,7 +155,7 @@
   <!-- Header -->
   <div class="header">
     <a class="brand" href="/">Stable<span>X</span></a>
-    <nav class="dashboard-nav"><a href="/bridge-onboarding.html">Bridge KYC / KYB</a><a href="/console.html">Customer &amp; routing console</a><a href="/send.html">Send &amp; settle</a><a href="/providers.html">Providers</a></nav>
+    <nav class="dashboard-nav"><a href="/transfer-flow.html">New transfer</a><a href="/bridge-onboarding.html">Bridge KYC / KYB</a><a href="/console.html">Customer &amp; routing console</a><a href="/send.html">Send &amp; settle</a><a href="/providers.html">Providers</a></nav>
     <div class="wallet-bar">
       <span class="conn-indicator">
         <span class="conn-dot disconnected" id="connDot"></span>
@@ -163,8 +163,7 @@
       </span>
       <button id="connectWalletBtn" class="wallet-connected">Connect Wallet</button>
    
-      <input type="text" id="ctxCustomerId" placeholder="Customer ID" value="customer-001" />
-      <button id="ctxLoadBtn">Load Customer</button>
+      <span id="sessionBadge" style="font-size:0.85rem;color:#475569;font-weight:600;">Checking session…</span>
     </div>
   </div>
 </div>
@@ -443,7 +442,7 @@
 </div>
 
 <script type="module">
-  const API = "http://localhost:3000";
+  const API = "";
   const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
 
   // Token contract addresses on Base Sepolia
@@ -452,7 +451,7 @@
     EURC: "0x808456652fdb597867f38412077A9182bf77359F",
   };
 
-  let customerId = "customer-001";
+  let customerId = null;
   let customerCountry = "GLOBAL";
   let selectedWallet = null;
   let walletAddress = null;
@@ -464,9 +463,7 @@
   const connectWalletBtn = document.getElementById("connectWalletBtn");
   const connDot = document.getElementById("connDot");
   const connStatus = document.getElementById("connStatus");
-  const ctxCustomerId = document.getElementById("ctxCustomerId");
-  const ctxCountry = document.getElementById("ctxCountry");
-  const ctxLoadBtn = document.getElementById("ctxLoadBtn");
+  const sessionBadge = document.getElementById("sessionBadge");
   const walletGrid = document.getElementById("walletGrid");
   const createWalletBtn = document.getElementById("createWalletBtn");
   const walletsList = document.getElementById("walletsList");
@@ -546,14 +543,22 @@
     btn.addEventListener("click", () => showTab(btn.dataset.tab));
   });
 
-  // API helper
+  // API helper — always authenticated with the StableX session token and
+  // always same-origin, so the page works on localhost and through a tunnel.
+  const TOKEN_KEY = "stablex_session";
+  function sessionToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
   async function api(path, opts = {}) {
     const r = await fetch(API + path, {
       method: opts.method || "GET",
-      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + sessionToken(),
+        ...(opts.headers || {}),
+      },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); location.href = "/auth.html"; throw new Error("Session expired. Sign in again."); }
     if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
     return d;
   }
@@ -697,21 +702,29 @@
     populateCurrencyDropdowns({ ...currentBalances, ...onChainBalances });
   }
 
-  // Load customer
-  ctxLoadBtn.addEventListener("click", async () => {
-    customerId = ctxCustomerId.value.trim() || "customer-001";
-    customerCountry = ctxCountry.value;
+  // The customer is always the signed-in account. There is no manual customer
+  // entry: identity comes from the StableX session, so every read and write
+  // below is scoped to the account holder that logged in.
+  async function bootFromSession() {
+    if (!sessionToken()) { location.href = "/auth.html"; return; }
     try {
-      await api("/api/customer/country", { method: "POST", body: { customerId, country: customerCountry } });
+      const s = await api("/api/auth/session");
+      const account = s.account || {};
+      customerId = account.accountId;
+      customerCountry = String(account.country || "GLOBAL").toUpperCase();
+      const gate = s.complianceGate || {};
+      sessionBadge.textContent = "Signed in: " + (account.email || account.accountId) +
+        " · Compliance: " + (gate.status || "—") +
+        " · Country: " + customerCountry;
       await loadCompliance();
+      await loadComplianceCases();
       await loadWallets();
-      await loadSummary();
-      await loadTokenBalances();
       await loadNombaAccounts();
     } catch (e) {
-      alert("Failed to load customer: " + e.message);
+      // api() already redirects on 401; surface any other failure inline.
+      sessionBadge.textContent = "Session check failed: " + e.message;
     }
-  });
+  }
 
   // --- Compliance ---
 
@@ -1161,10 +1174,8 @@
     }
   }
 
-  // Init
-  loadCompliance();
-  loadComplianceCases();
-  loadWallets();
+  // Init — identity comes from the login session, never a typed ID.
+  bootFromSession();
 </script>
 </body>
 </html>

@@ -4,6 +4,7 @@ import { getPaytrieQuote } from "./paytrieService.js";
 import { getHoneycoinRate } from "./providers/honeycoinService.js";
 import { getPaycrestRate } from "./providers/paycrestService.js";
 import { getBridgeRate } from "./providers/bridgeService.js";
+import { getNetcoinsRate } from "./providers/netcoinsService.js";
 import { getAerodromeQuote } from "./providers/aerodromeService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { readTransfer, applyQuoteSelection } from "../repositories/transferRepository.js";
@@ -55,7 +56,7 @@ function classify(quoteType) {
   return "INDICATIVE";
 }
 
-function normalizeProviderResult(provider, request, result) {
+export function normalizeProviderResult(provider, request, result) {
   const raw = result.providerData ?? result.raw ?? result;
 
   // Paycrest nests direction-specific rates under buy/sell.
@@ -101,8 +102,35 @@ function normalizeProviderResult(provider, request, result) {
     normalizedRate = normalizedDestination / request.amount;
   }
 
+  const explicitFee = pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]);
+  const paytrieBreakdown = provider === "Paytrie" && raw?.breakdown && typeof raw.breakdown === "object"
+    ? raw.breakdown
+    : null;
+  const paytrieBreakdownFee = extractNumeric(paytrieBreakdown?.paytrieFee);
+  const fee = explicitFee ?? paytrieBreakdownFee;
+  const feeCurrency = result.feeCurrency || raw?.feeCurrency || raw?.fee_currency ||
+    (provider === "Paytrie"
+      ? (paytrieBreakdown?.paytrieFeeCurrency || paytrieBreakdown?.feeCurrency || null)
+      : request.to);
+  const paytriePricingPolicy = provider === "Paytrie" && request.from === "CAD" && request.to === "USDC"
+    ? {
+        feeRateBps: 60,
+        feeRatePercent: 0.6,
+        minimumFee: 5,
+        minimumFeeCurrency: "CAD",
+        percentageFee: Number((request.amount * 0.006).toFixed(8)),
+        estimatedFee: Number(Math.max(request.amount * 0.006, 5).toFixed(8)),
+        estimatedNetSourceAmount: Number(Math.max(0, request.amount - Math.max(request.amount * 0.006, 5)).toFixed(8)),
+        minimumFeeApplies: request.amount * 0.006 < 5,
+        estimateOnly: true,
+        source: "Paytrie support pricing confirmation and Paytrie public CAD-to-USDC swap display",
+        note: "Pricing-rule estimate only. The original Paytrie quote breakdown is authoritative for the actual transaction. The $5 minimum is treated as CAD for this CAD-funded route.",
+      }
+    : null;
+
   return {
     quoteId: randomUUID(),
+    customerId: request.customerId || null,
     provider,
     providerClass: classify(result.quoteType),
     from: request.from,
@@ -110,8 +138,10 @@ function normalizeProviderResult(provider, request, result) {
     sourceAmount: request.amount,
     destinationAmount: normalizedDestination ?? null,
     rate: normalizedRate ?? null,
-    fee: pickNumber(raw, ["fee", "fees", "totalFee", "feeAmount"]),
-    feeCurrency: result.feeCurrency || raw?.feeCurrency || raw?.fee_currency || request.to,
+    fee,
+    feeCurrency,
+    feeBreakdown: paytrieBreakdown,
+    pricingPolicy: paytriePricingPolicy,
     quoteType: result.quoteType || "INDICATIVE_RATE_PREVIEW",
     expiresAt: result.expiresAt || new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
     raw,
@@ -146,6 +176,9 @@ async function collectSingleHopCandidates(request) {
     getBridgeRate(request)
       .then((result) => normalizeProviderResult("Bridge", request, result))
       .catch((error) => ({ provider: "Bridge", available: false, reason: error.message })),
+    getNetcoinsRate(request)
+      .then((result) => normalizeProviderResult("Netcoins", request, result))
+      .catch((error) => ({ provider: "Netcoins", available: false, reason: error.message })),
     getAerodromeQuote(request)
       .then((result) => normalizeProviderResult("Aerodrome Slipstream", request, result))
       .catch((error) => ({ provider: "Aerodrome Slipstream", available: false, reason: error.message })),
@@ -180,10 +213,11 @@ export function rankRoutingQuotes(quotes) {
   });
 }
 
-export async function getRoutingQuotes({ from, to, amount }) {
+export async function getRoutingQuotes({ from, to, amount, customerId = null }) {
   const request = {
     ...normalizeRoute(from, to),
     amount: normalizeAmount(amount),
+    customerId,
   };
 
   const direct = await collectSingleHopCandidates(request);
@@ -217,9 +251,9 @@ export async function getRoutingQuotes({ from, to, amount }) {
   };
 }
 
-export async function getRoutingQuote(quoteId) {
+export async function getRoutingQuote(quoteId, customerId) {
   const quote = await readRoutingQuote(quoteId);
-  if (!quote || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
+  if (!quote || quote.customerId !== customerId || Date.parse(quote.expiresAt) <= Date.now() || quote.selectedAt) return null;
   return quote;
 }
 
@@ -236,8 +270,8 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
   }
 
   const quote = await readRoutingQuote(quoteId);
-  if (!quote) {
-    const error = new Error("Quote not found or expired. Request new quotes and select again.");
+  if (!quote || (quote.customerId && quote.customerId !== customerId)) {
+    const error = new Error("Quote not found for this customer or expired. Request new quotes and select again.");
     error.statusCode = 404;
     throw error;
   }
@@ -289,6 +323,8 @@ export async function selectQuoteForTransfer({ customerId, transferId, quoteId }
       rate: quote.rate,
       fee: quote.fee,
       feeCurrency: quote.feeCurrency,
+      feeBreakdown: quote.feeBreakdown || quote.providerData?.breakdown || null,
+      pricingPolicy: quote.pricingPolicy || null,
       expiresAt: quote.expiresAt,
       selectedAt: new Date().toISOString(),
       providerQuoteId: quote.providerQuoteId,

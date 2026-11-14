@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StableX · Transfer</title>
+<link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/customer-dashboard.css">
+<style>
+body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}.wrap{max-width:980px;margin:32px auto;padding:20px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:22px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}label{display:block;font-size:13px;color:#475569;margin:10px 0 5px}input,select{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:7px}button{padding:11px 16px;border:0;border-radius:7px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;margin-top:12px}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#64748b;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}.success{color:#047857;white-space:pre-wrap}.quote{border:1px solid #cbd5e1;border-radius:8px;padding:14px;margin:10px 0}.quote button{margin-left:8px}.status{padding:10px;background:#eff6ff;border-radius:8px;white-space:pre-wrap}a{color:#1d4ed8}
+</style></head>
+<body><main class="wrap">
+<h1>StableX transfer</h1><p class="muted">Customer-first flow: sign in → beneficiary → draft transfer → live provider quotes → select quote. Paytrie registration, customer authentication, KYC and Base wallet linking are handled inside StableX before a supported order can be submitted.</p>
+<section class="card">
+<h2>1. Sign in to StableX</h2><div class="grid"><div><label>Email</label><input id="email" type="email" autocomplete="username"></div><div><label>Password</label><input id="password" type="password" autocomplete="current-password"></div></div>
+<button id="login">Sign in</button> <button id="logout" type="button">Sign out</button><p id="authState" class="status">Not signed in.</p><p id="authError" class="error"></p>
+</section>
+<section class="card">
+<h2>2. Beneficiary</h2><p class="muted">Save the destination details once. Use a wallet address for crypto destinations or bank account/IBAN details for fiat destinations.</p>
+<div class="grid">
+<div><label>Beneficiary name</label><input id="benName" placeholder="Recipient name"></div>
+<div><label>Country (ISO-2)</label><input id="benCountry" value="CA" maxlength="2"></div>
+<div><label>Destination currency</label><input id="benCurrency" value="CADC"></div>
+<div><label>Wallet address (if crypto)</label><input id="benWallet" placeholder="0x…"></div>
+<div><label>Account number (if fiat)</label><input id="benAccount"></div>
+<div><label>IBAN (if applicable)</label><input id="benIban"></div>
+<div><label>Bank name (if applicable)</label><input id="benBank"></div>
+<div><label>Network (if crypto)</label><input id="benNetwork" value="Base"></div>
+</div><button id="saveBeneficiary" disabled>Save beneficiary</button><p id="benState" class="muted"></p>
+</section>
+<section class="card">
+<h2>3. Create transfer draft</h2><div class="grid">
+<div><label>Source currency</label><input id="from" value="CAD"></div>
+<div><label>Destination currency</label><input id="to" value="USDC"></div>
+<div><label>Amount</label><input id="amount" type="number" min="0.01" step="0.01" value="100"></div>
+</div><button id="createDraft" disabled>Create draft transfer</button><p id="draftState" class="status">No transfer created.</p>
+</section>
+<section class="card">
+<h2>4. Get live provider quotes</h2><button id="getQuotes" disabled>Request quotes</button><div id="quotes"></div>
+</section>
+<section class="card">
+<h2>5. Paytrie customer transaction</h2>
+<p class="muted">Register or connect your own Paytrie account, complete profile requirements and KYC, and link your Base wallet in the <a href="/paytrie-onboarding.html">Paytrie onboarding page</a>. Once Paytrie has verified you and authorised StableX's platform integration, you can submit a selected live quote here. Each order may require you to complete an Interac e-Transfer through your Canadian bank.</p>
+<button id="paytrieCreateOrder" disabled>Create Paytrie order</button>
+<button id="paytrieRefresh" disabled>Refresh Paytrie order</button>
+<p id="paytrieState" class="status">Sign in and complete Paytrie onboarding before submitting an order.</p>
+</section>
+<section class="card">
+<h2>6. Recover an existing transfer</h2>
+<p class="muted">Transfers are saved in PostgreSQL. Load an earlier transfer to restore its Paytrie order after a refresh or when opening another tab. This does not create a new order.</p>
+<div class="grid"><div><label for="savedTransfers">Saved transfers</label><select id="savedTransfers"><option value="">Sign in to load transfers</option></select></div><div><label for="recoverTransferId">Transfer ID</label><input id="recoverTransferId" placeholder="Select a transfer or paste its ID"></div></div>
+<button id="loadExistingTransfer" disabled>Load saved transaction</button>
+<button id="refreshRecoveredOrder" disabled>Refresh provider status</button>
+<p id="recoveryState" class="status">Sign in to retrieve your saved transfers.</p>
+<div id="transactionSummary" class="grid"></div>
+<h3>Charges and conversion breakdown</h3>
+<div id="chargeSummary" class="status">No transaction loaded.</div>
+<details><summary>Technical transaction response</summary><pre id="result" class="status">No transfer yet.</pre></details>
+</section>
+</main>
+<script type="module">
+const API="";
+let token=localStorage.getItem("stablex_session")||localStorage.getItem("stablex_session")||"",account=null,beneficiaryId=null,transferId=localStorage.getItem("stablex_active_transfer_id")||null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false;
+const $=id=>document.getElementById(id);
+async function api(path,{method="GET",body,headers={}}={}){const h={"Content-Type":"application/json",...headers};if(token)h.Authorization="Bearer "+token;const r=await fetch(API+path,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({error:"Invalid server response"}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
+function show(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className=cls;}
+function authUI(){const ok=!!token;$("saveBeneficiary").disabled=!ok;$("createDraft").disabled=!ok;$("authState").textContent=account?"Signed in as "+account.email+" · "+account.accountId:ok?"Session token loaded.":"Not signed in.";}
+$("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;localStorage.setItem("stablex_session",token);show("authError","");authUI();await loadPaytrieTestState();await loadSavedTransfers();if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch(e){show("authError",e.message,"error");}};
+$("logout").onclick=async()=>{try{if(token){await api("/api/auth/logout",{method:"POST"});}}catch{}token="";account=null;paytrieAuthenticated=false;paytrieTestEnabled=false;baseWalletReady=false;paytrieOrderCreated=false;localStorage.removeItem("stablex_session");authUI();updatePaytrieOrderControls();show("authError","");};
+$("saveBeneficiary").onclick=async()=>{try{const details={name:$("benName").value.trim(),country:$("benCountry").value.trim().toUpperCase(),currency:$("benCurrency").value.trim().toUpperCase(),...( $("benWallet").value.trim()?{walletAddress:$("benWallet").value.trim(),network:$("benNetwork").value.trim()}:{}),...( $("benAccount").value.trim()?{accountNumber:$("benAccount").value.trim()}:{}),...( $("benIban").value.trim()?{iban:$("benIban").value.trim()}:{}),...( $("benBank").value.trim()?{bankName:$("benBank").value.trim()}: {})};const d=await api("/api/transfers/beneficiaries",{method:"POST",body:{details}});beneficiaryId=d.beneficiary.beneficiaryId;show("benState","Saved beneficiary "+beneficiaryId,"success");$("createDraft").disabled=false;}catch(e){show("benState",e.message,"error");}};
+$("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;localStorage.setItem("stablex_active_transfer_id",transferId);issuedQuotes=[];paytrieOrderCreated=false;$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";selectedQuoteProvider=null;updatePaytrieOrderControls();}catch(e){show("draftState",e.message,"error");}};
+$("getQuotes").onclick=async()=>{try{if(!transferId)throw new Error("Create a draft first.");const d=await api("/api/routing/quotes",{method:"POST",body:{from:$("from").value.trim().toUpperCase(),to:$("to").value.trim().toUpperCase(),amount:Number($("amount").value)}});issuedQuotes=d.candidates||[];$("quotes").innerHTML="";if(!issuedQuotes.length){$("quotes").textContent=(d.disclaimer||"No provider quotes returned.")+"\n"+JSON.stringify(d.unavailableProviders||[],null,2);return;}for(const q of issuedQuotes){const card=document.createElement("div");card.className="quote";const title=document.createElement("strong");title.textContent=q.provider+" · "+q.providerClass+" · "+q.quoteType;const details=document.createElement("p");details.textContent=String(q.sourceAmount)+" "+q.from+" → "+(q.destinationAmount??"Not supplied")+" "+q.to+" · rate "+(q.rate??"n/a")+" · expires "+q.expiresAt+" · execution "+(q.executionEnabled?"enabled":"disabled");const feeDetails=document.createElement("p");feeDetails.className="muted";if(q.provider==="Paytrie"){const b=q.feeBreakdown||q.providerData?.breakdown||{};const parts=[];if(b.paytrieFee!==undefined&&b.paytrieFee!==null)parts.push("Paytrie fee: "+b.paytrieFee+" "+(b.paytrieFeeCurrency||b.feeCurrency||"(currency not specified)"));if(b.gasFee!==undefined&&b.gasFee!==null)parts.push("Gas fee: "+b.gasFee+" "+(b.gasFeeCurrency||b.feeCurrency||"(currency not specified)"));if(q.pricingPolicy){const p=q.pricingPolicy;parts.push("Pricing rule estimate: "+p.feeRatePercent+"% (60 bps), minimum "+p.minimumFee+" "+p.minimumFeeCurrency+"; estimated fee "+p.estimatedFee+" "+p.minimumFeeCurrency+"; estimated source amount left for conversion "+p.estimatedNetSourceAmount+" "+q.from+".");}feeDetails.textContent=parts.length?parts.join(" · "):"Paytrie fee details were not itemized in this quote response.";}else{feeDetails.textContent=q.fee!==null&&q.fee!==undefined?"Reported fee: "+q.fee+" "+(q.feeCurrency||"(currency not specified)"):"Fee not separately reported by provider.";}const button=document.createElement("button");button.textContent="Select this quote";button.onclick=()=>selectQuote(q.quoteId,button);card.append(title,details,feeDetails,button);$("quotes").append(card);}}catch(e){$("quotes").textContent=e.message;}};
+async function selectQuote(quoteId,button){try{button.disabled=true;const d=await api("/api/routing/select",{method:"POST",body:{transferId,quoteId}});$("result").textContent=JSON.stringify(d.transfer,null,2);selectedQuoteProvider=(issuedQuotes.find(q=>q.quoteId===quoteId)||{}).provider||null;localStorage.setItem("stablex_active_transfer_id",transferId);updatePaytrieOrderControls();show("draftState","Quote selected and transfer persisted as "+d.transfer.status+" · "+d.transfer.transferId,"success");$("getQuotes").disabled=true;for(const b of $("quotes").querySelectorAll("button"))b.disabled=true;}catch(e){button.disabled=false;$("result").textContent=e.message+"\nIf compliance is not APPROVED, complete KYC/KYB and retry with a fresh quote.";}}
+async function loadSavedTransfers(){
+  const select=$("savedTransfers");
+  select.innerHTML="";
+  try{
+    const d=await api("/api/transfers");
+    const transfers=d.transfers||[];
+    if(!transfers.length){select.add(new Option("No saved transfers",""));return;}
+    for(const t of transfers){
+      const label=[t.sourceAmount,t.sourceCurrency,"→",t.destinationCurrency,"·",t.status,"·",t.transferId].join(" ");
+      select.add(new Option(label,t.transferId));
+    }
+    const preferred=transferId&&transfers.some(t=>t.transferId===transferId)?transferId:transfers[0].transferId;
+    select.value=preferred;
+    if(!transferId) $("recoverTransferId").value=preferred;
+    $("loadExistingTransfer").disabled=false;
+    if(transferId) $("recoverTransferId").value=transferId;
+  }catch(e){select.add(new Option("Could not load transfers",""));show("recoveryState",e.message,"error");}
+}
+function addSummaryCard(parent,label,value){
+  const card=document.createElement("div");card.className="quote";
+  const small=document.createElement("div");small.className="muted";small.textContent=label;
+  const strong=document.createElement("strong");strong.textContent=value??"Not supplied";
+  card.append(small,strong);parent.append(card);
+}
+function renderRecoveredTransaction(data){
+  const t=data.transfer||{},o=data.order,summary=$("transactionSummary"),charges=$("chargeSummary");
+  summary.innerHTML="";charges.textContent="";
+  addSummaryCard(summary,"Transfer status",t.status||"Unknown");
+  addSummaryCard(summary,"Paytrie status",o?.providerStatus||"No Paytrie order");
+  addSummaryCard(summary,"Amount paid / source",t.sourceAmount!=null?Number(t.sourceAmount).toFixed(2)+" "+t.sourceCurrency:"Not supplied");
+  addSummaryCard(summary,"Provider-reported amount delivered",o?.providerResponse?.rightSideValue!=null?String(o.providerResponse.rightSideValue)+" "+(o.providerResponse.rightSideLabel||t.destinationCurrency||""):t.destinationAmount!=null?String(t.destinationAmount)+" "+t.destinationCurrency:"Not supplied");
+  addSummaryCard(summary,"Base transaction hash",o?.transactionHash||o?.providerResponse?.paymentId||"Not supplied by provider");
+  addSummaryCard(summary,"Base settlement verification",t.status==="COMPLETED"?"Completed in StableX":data.settlementVerified===true?"Verified on Base Mainnet":data.verification?.reason||o?.failureReason||"Not yet independently verified by StableX");
+  const quote=t.quote||{};
+  selectedQuoteProvider=quote.provider||selectedQuoteProvider;
+  const provider=o?.providerResponse||{};
+  const breakdown=quote.feeBreakdown||quote.providerData?.breakdown||quote.raw?.breakdown||{};
+  let policy=quote.pricingPolicy||null;
+  if(!policy&&t.sourceCurrency==="CAD"&&t.destinationCurrency==="USDC"&&Number.isFinite(Number(t.sourceAmount))){
+    const amount=Number(t.sourceAmount),percentageFee=Number((amount*0.006).toFixed(8)),minimumFee=5,estimatedFee=Number(Math.max(amount*0.006,minimumFee).toFixed(8));
+    policy={feeRateBps:60,feeRatePercent:0.6,minimumFee,minimumFeeCurrency:"CAD",percentageFee,estimatedFee,estimatedNetSourceAmount:Number(Math.max(0,amount-estimatedFee).toFixed(8)),minimumFeeApplies:percentageFee<minimumFee,estimateOnly:true,note:"Reconstructed from Paytrie support's 60 bps / $5 minimum pricing rule. This is an estimate, not proof of the exact historical fee; use the original quote breakdown as the source of truth."};
+  }
+  const rows=[
+    "Original provider quote ID: "+(quote.providerQuoteId??quote.providerData?.quoteId??"Not retained"),
+    "Original quote timestamp: "+(quote.observedAt??quote.providerData?.timestamp??"Not retained"),
+    "Quoted destination: "+(quote.destinationAmount??t.destinationAmount??"Not supplied")+" "+(t.destinationCurrency||""),
+    "Provider-reported completed amount: "+(provider.rightSideValue??"Not supplied")+" "+(provider.rightSideLabel||""),
+    "Effective rate on full source amount: "+(quote.rate??(Number(t.sourceAmount)>0&&Number(quote.destinationAmount??provider.rightSideValue)>0?(Number(quote.destinationAmount??provider.rightSideValue)/Number(t.sourceAmount)).toFixed(8):"Not supplied")),
+    "USD/CAD factor from original quote: "+(breakdown.usdToCad??"Not supplied")
+  ];
+  const actualPaytrieFee=breakdown.paytrieFee;
+  const actualGasFee=breakdown.gasFee;
+  if(actualPaytrieFee!==undefined&&actualPaytrieFee!==null){
+    rows.push("Paytrie fee reported in original quote: "+actualPaytrieFee+" "+(breakdown.paytrieFeeCurrency||breakdown.feeCurrency||"currency/unit not specified by Paytrie"));
+  }
+  if(actualGasFee!==undefined&&actualGasFee!==null){
+    rows.push("Gas/network fee reported in original quote: "+actualGasFee+" "+(breakdown.gasFeeCurrency||breakdown.feeCurrency||"currency/unit not specified by Paytrie"));
+  }
+  if(quote.fee!==undefined&&quote.fee!==null){
+    rows.push("Normalized quote fee: "+quote.fee+" "+(quote.feeCurrency||"currency/unit not specified by provider"));
+  }
+  if(policy){
+    rows.push(
+      "",
+      "PAYTRIE PRICING-RULE RECONCILIATION (estimate, not a substitute for the original quote breakdown)",
+      "Support-confirmed rate: "+policy.feeRateBps+" bps ("+policy.feeRatePercent+"%)",
+      "Minimum fee used for this CAD-funded estimate: "+policy.minimumFee+" "+policy.minimumFeeCurrency,
+      "Percentage calculation: "+t.sourceCurrency+" "+t.sourceAmount+" × 0.006 = "+policy.percentageFee+" "+policy.minimumFeeCurrency,
+      "Fee selected by rule: "+policy.estimatedFee+" "+policy.minimumFeeCurrency+(policy.minimumFeeApplies?" (minimum applies)":" (percentage fee applies)"),
+      "Estimated source amount remaining for FX: "+policy.estimatedNetSourceAmount+" "+t.sourceCurrency,
+      "Implied rate on estimated net amount: "+(Number(policy.estimatedNetSourceAmount)>0&&Number(provider.rightSideValue??quote.destinationAmount)>0?(Number(provider.rightSideValue??quote.destinationAmount)/Number(policy.estimatedNetSourceAmount)).toFixed(8)+" "+t.destinationCurrency+"/"+t.sourceCurrency:"Not calculable"),
+      policy.note||""
+    );
+  }
+  rows.push(
+    "",
+    "Payment method: "+(o?.paymentMethod||"Not supplied"),
+    "Interac reference: "+(o?.paymentDetails?.rmtId||"Not supplied"),
+    "Fee interpretation: the provider's rightSideValue is the quoted/delivered destination amount. Do not subtract the Paytrie fee from that USDC amount again; use the original quote breakdown to identify deductions."
+  );
+  if(actualPaytrieFee===undefined&&actualGasFee===undefined){
+    rows.push("Historical fee evidence: no separate paytrieFee/gasFee values are present in the saved original quote breakdown. The pricing-rule calculation above is an estimate; the exact historical charge cannot be proven from the order response alone.");
+  }
+  charges.textContent=rows.join("\n");
+  $("result").textContent=JSON.stringify(data,null,2);
+  show("recoveryState",o?"Saved Paytrie order loaded. Use Refresh provider status for the latest provider response.":(data.message||"No Paytrie order is saved for this transfer."),o?"success":"status");
+  paytrieOrderCreated=Boolean(o);
+  transferId=t.transferId||transferId;
+  if(transferId){localStorage.setItem("stablex_active_transfer_id",transferId);$("recoverTransferId").value=transferId;}
+  $("refreshRecoveredOrder").disabled=!(o&&paytrieAuthenticated);
+  updatePaytrieOrderControls();
+}
+async function loadExistingTransaction(){
+  try{
+    const id=$("recoverTransferId").value.trim()||$("savedTransfers").value;
+    if(!id)throw new Error("Choose or enter a saved transfer ID.");
+    transferId=id;localStorage.setItem("stablex_active_transfer_id",id);
+    const d=await api("/api/paytrie/transfers/"+encodeURIComponent(id)+"/order");
+    renderRecoveredTransaction(d);
+  }catch(e){show("recoveryState",e.message,"error");}
+}
+$("loadExistingTransfer").onclick=loadExistingTransaction;
+$("savedTransfers").onchange=()=>{$("recoverTransferId").value=$("savedTransfers").value;};
+$("refreshRecoveredOrder").onclick=async()=>{
+  try{
+    if(!transferId)throw new Error("Load a saved transfer first.");
+    const d=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/refresh",{method:"POST",body:{}});
+    const saved=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order");
+    renderRecoveredTransaction({...saved,settlementVerified:d.settlementVerified,verification:d.verification});
+    show("recoveryState",d.message||"Provider status refreshed.",d.settlementVerified?"success":"status");
+  }catch(e){show("recoveryState",e.message,"error");}
+};
+async function loadPaytrieTestState(){
+  paytrieTestEnabled=false;paytrieAuthenticated=false;baseWalletReady=false;paytrieOrderCreated=false;
+  updatePaytrieOrderControls();
+  try{
+    const onboarding=await api("/api/paytrie/customer/onboarding");
+    const readiness=onboarding.readiness||{};
+    paytrieTestEnabled=Boolean(readiness.enabled&&readiness.apiKeyPresent&&readiness.eligibleStableXAccount&&readiness.platformExecutionApproved);
+    paytrieAuthenticated=Boolean(onboarding.authenticated);
+    const wallets=await api("/api/paytrie/customer/onboarding/base-wallet");
+    const baseWallet=(wallets.wallets||[]).find((wallet)=>Number(wallet.chainId)===8453);
+    baseWalletReady=Boolean(baseWallet);
+    const providerVerified=String(onboarding.customer?.providerStatus||"").toLowerCase()==="verified";
+    if(!readiness.enabled){
+      show("paytrieState","Paytrie in-app onboarding is not enabled in this StableX environment. The provider integration must be configured first.","status");
+    }else if(!providerVerified){
+      show("paytrieState","Complete Paytrie registration and KYC at /paytrie-onboarding.html. Your Paytrie status is "+(onboarding.customer?.providerStatus||"not linked")+".","status");
+    }else if(!readiness.platformExecutionApproved){
+      show("paytrieState","Your Paytrie identity is verified, but StableX live order submission is disabled until Paytrie approves the platform integration.","status");
+    }else if(!paytrieAuthenticated){
+      show("paytrieState","Paytrie profile is verified. Reconnect from the Paytrie onboarding page to refresh your one-hour customer session.","status");
+    }else if(!baseWalletReady){
+      show("paytrieState","Link a Base Mainnet wallet in the Paytrie onboarding page before requesting USDC.","status");
+    }else{
+      show("paytrieState","Paytrie account verified and connected. Base Mainnet receiving wallet: "+baseWallet.address,"success");
+    }
+    if(transferId){
+      const saved=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order");
+      if(saved.order){paytrieOrderCreated=true;renderRecoveredTransaction(saved);}
+    }
+  }catch(e){
+    show("paytrieState",e.message,"error");
+  }
+  updatePaytrieOrderControls();
+}
+function updatePaytrieOrderControls(){
+  $("paytrieCreateOrder").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&baseWalletReady&&transferId&&selectedQuoteProvider==="Paytrie"&&!paytrieOrderCreated);
+  $("paytrieRefresh").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&transferId&&paytrieOrderCreated);
+}
+$("paytrieCreateOrder").onclick=async()=>{
+  const amount=$("amount").value+" CAD";
+  if(!window.confirm("This submits a REAL Paytrie transaction for "+amount+". Paytrie will provide an Interac payment reference for you to complete through your Canadian bank. Continue?"))return;
+  try{
+    $("paytrieCreateOrder").disabled=true;
+    const d=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order",{method:"POST",body:{confirm:true}});
+    paytrieOrderCreated=Boolean(d.order);
+    $("result").textContent=JSON.stringify(d,null,2);
+    const reference=d.funding?.reference||d.order?.paymentDetails?.rmtId;
+    const fundingText=reference
+      ? "\\nInterac reference: "+reference+"\\nPayment type: "+(d.funding?.paymentType||"INTERAC")+". Complete the payment using Paytrie's instructions and your own Canadian bank."
+      : "";
+    show("paytrieState",(d.message||"Paytrie order request completed.")+fundingText,d.created?"success":"status");
+    if(paytrieOrderCreated)$("paytrieRefresh").disabled=false;
+  }catch(e){show("paytrieState",e.message,"error");}
+  updatePaytrieOrderControls();
+};
+$("paytrieRefresh").onclick=async()=>{
+  try{
+    const d=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/refresh",{method:"POST",body:{}});
+    const saved=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order");
+    renderRecoveredTransaction({...saved,settlementVerified:d.settlementVerified,verification:d.verification});
+    show("paytrieState",d.message||"Paytrie order status refreshed.",d.settlementVerified?"success":"status");
+  }catch(e){show("paytrieState",e.message,"error");}
+  updatePaytrieOrderControls();
+};
+authUI();
+if(token){try{const d=await api("/api/auth/session");account=d.account;authUI();await loadPaytrieTestState();await loadSavedTransfers();if(transferId)$("recoverTransferId").value=transferId;if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch{token="";localStorage.removeItem("stablex_session");authUI();}}
+</script></body></html>

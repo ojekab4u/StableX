@@ -59,6 +59,31 @@ export const PARTNER_CATALOG = [
     ],
   },
   {
+    name: "Netcoins",
+    role: "CAD/USD crypto trading rail — USDC quotes, instant/limit trades and balances (Netcoins API v4)",
+    corridors: ["CAD", "USD", "USDC"],
+    docsUrl: "https://developers.netcoins.app/",
+    docsNote: "Netcoins API v4 (Trading & Balances): bearer-token auth, `data` envelope, RFQ quote sessions (quoteReqId → quoteId → execute). Staging https://api-staging.netcoins.app/api/v4, production https://api.netcoins.com/api/v4. Rate limits per token. Regulated: FINTRAC MSB M15560893, BCSC.",
+    requiredCredentials: [
+      "NETCOINS_ENVIRONMENT",
+      "NETCOINS_API_KEY",
+    ],
+    capabilities: ["CAD_ONRAMP", "CAD_OFFRAMP", "USD_ONRAMP", "USD_OFFRAMP", "CUSTODY"],
+    capabilitiesPlanned: ["LIVE_QUOTE", "INSTANT_TRADE_EXECUTION", "LIMIT_ORDERS", "PUSHER_WEBSOCKET_QUOTES"],
+    configurationTasks: [
+      "Retrieve staging + production credentials from the Bitwarden sends (account email + 2FA)",
+      "Set NETCOINS_ENVIRONMENT=staging with the staging token; keep the production token out of .env until staging passes",
+      "Confirm the whitelisted public IP matches the machine running StableX (403 'IP Address not whitelisted' otherwise)",
+      "Confirm sandbox behaviour: whether staging orders move real funds or are simulated",
+      "v4 has no withdrawal/deposit endpoints — confirm how funds move in and out of the account (app, desk or legacy v2 endpoints)",
+    ],
+    openQuestions: [
+      "Does the staging environment fully simulate funding + settlement?",
+      "Are crypto withdrawals to arbitrary Base addresses supported via API?",
+      "Is a Pusher WebSocket (trading.{userUuid}) needed for production quote freshness, or is polling acceptable?",
+    ],
+  },
+  {
     name: "Circle",
     role: "USDC mint / redemption and programmatic wallet infrastructure",
     corridors: ["USD", "USDC"],
