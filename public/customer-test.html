@@ -291,22 +291,45 @@
       return found;
     }
 
+    function unwrapProviderTransaction(value) {
+      let current = value;
+      for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+        if (current.transaction && typeof current.transaction === "object") current = current.transaction;
+        else if (current.data && typeof current.data === "object") current = current.data;
+        else break;
+      }
+      return current && typeof current === "object" ? current : {};
+    }
+
     function renderSession(data) {
-      const s = data.session;
-      let html = "<table><tr><th>Reference</th><td class='mono'>" + (s.reference || "-") + "</td></tr>" +
-        "<tr><th>You pay</th><td>" + s.amount + "</td></tr>" +
-        "<tr><th>Rate</th><td class='mono'>" + (s.rate || "-") + " NGN per USDC</td></tr>" +
-        "<tr><th>You receive</th><td class='mono'>" + (s.payoutAmount || "-") + "</td></tr>" +
-        "<tr><th>Status</th><td>" + statusBadge(s.status) + "</td></tr></table>";
+      const s = data.session || {};
+      // The status endpoint returns the latest fetched provider transaction
+      // separately. Merge it here: previously the UI ignored this object.
+      const tx = unwrapProviderTransaction(data.transaction);
+      const settlement = { ...(s.settlement || {}) };
+      const pick = (...values) => values.find(v => v !== undefined && v !== null && String(v).trim() !== "");
+      const bankName = pick(tx.link_bank_name, tx.bank_name, tx.bankName);
+      const accountNumber = pick(tx.link_account_number, tx.account_number, tx.accountNumber);
+      const accountName = pick(tx.link_account_name, tx.account_name, tx.accountName);
+      const vendorDetails = pick(tx.vendorDetails, tx.vendor_details);
+      if (bankName) settlement.bankName = bankName;
+      if (accountNumber) settlement.accountNumber = accountNumber;
+      if (accountName) settlement.accountName = accountName;
+      if (vendorDetails) settlement.vendorDetails = vendorDetails;
+      const status = tx.transaction_status || tx.status || s.status;
+      const amount = tx.amount ?? s.amount;
+      const rate = tx.onramp_rate ?? tx.rate ?? s.rate;
+      const payoutAmount = tx.payout_amount ?? tx.payoutAmount ?? s.payoutAmount;
+      let html = "<table><tr><th>Reference</th><td class='mono'>" + (s.reference || tx.reference || "-") + "</td></tr>" +
+        "<tr><th>You pay</th><td>" + (amount || "-") + "</td></tr>" +
+        "<tr><th>Rate</th><td class='mono'>" + (rate || "-") + " NGN per USDC</td></tr>" +
+        "<tr><th>You receive</th><td class='mono'>" + (payoutAmount || "-") + "</td></tr>" +
+        "<tr><th>Status</th><td>" + statusBadge(status) + "</td></tr></table>";
 
-      const done = ["successful", "completed", "cancelled", "failed"].includes(String(s.status).toLowerCase());
-
-      // LINK's payment account (from the onramp response or webhook events)
+      const done = ["successful", "completed", "cancelled", "failed"].includes(String(status).toLowerCase());
       let details = [];
-      if (s.settlement) {
-        for (const [k, v] of Object.entries(s.settlement)) {
-          if (v) details.push({ k, v });
-        }
+      for (const [k, v] of Object.entries(settlement)) {
+        if (v) details.push({ k, v });
       }
       for (const ev of data.events || []) details = findBankDetails(ev.payload, details);
       if (details.length) {
@@ -314,10 +337,12 @@
         for (const d of details) html += "<tr><th>" + d.k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()) + "</th><td class='mono'>" + d.v + "</td></tr>";
         html += "</table><p class='hint'>After paying, the status below updates automatically.</p>";
       } else if (!done) {
-        html += "<p class='hint' style='margin-top:0.6rem'>Waiting for the payment account…</p>";
+        html += "<p class='hint' style='margin-top:0.6rem'>Payment account details have not been returned yet. Check the provider response or webhook below.</p>";
       }
 
-      // Event timeline
+      if (data.transactionRefreshError) {
+        html += "<p class='msg err'>Could not refresh transaction from Linkio: " + data.transactionRefreshError + "</p>";
+      }
       const events = data.events || [];
       if (events.length) {
         html += "<p class='hint' style='margin-top:0.6rem'><strong>Live events</strong></p><table>";
@@ -339,7 +364,9 @@
         const done = renderSession(data);
         setMsg("l-msg", done ? "Session finished." : "Watching for updates every 5 seconds…");
         if (done) stopPolling();
-      } catch { /* transient — keep polling */ }
+      } catch (error) {
+        setMsg("l-msg", "Could not refresh Linkio status: " + error.message, "err");
+      }
     }
 
     function stopPolling() {
