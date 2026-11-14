@@ -114,6 +114,29 @@
         <div id="quotes-out"></div>
         <div class="msg" id="quotes-msg"></div>
       </section>
+
+      <!-- Step 5 -->
+      <section class="step">
+        <h2><span class="num">5</span> Real settlement — NGN → USDC (Linkio)</h2>
+        <p class="hint">Creates a real Linkio onramp. Linkio sends a real NGN account to pay into; you pay from your bank app; USDC lands in your wallet. Fees are baked into the rate (~0.5%).</p>
+        <div class="row">
+          <input id="l-amount" placeholder="NGN amount (e.g. 5000)" style="width:11rem" />
+        </div>
+        <div class="row" style="margin-top:0.4rem">
+          <input id="l-bank" placeholder="Your bank name (e.g. GTBank)" style="width:11rem" />
+          <input id="l-acctnum" placeholder="Your account number" style="width:11rem" />
+          <input id="l-acctname" placeholder="Your account name" style="width:14rem" />
+        </div>
+        <div class="row" style="margin-top:0.4rem">
+          <input id="l-wallet" placeholder="Your Base USDC wallet address (0x…)" style="flex:1;min-width:16rem" />
+        </div>
+        <div class="row" style="margin-top:0.6rem">
+          <button id="l-start">Start onramp</button>
+          <button id="l-stop" class="secondary" hidden>Stop watching</button>
+        </div>
+        <div id="l-out"></div>
+        <div class="msg" id="l-msg"></div>
+      </section>
     </div>
   </main>
 
@@ -249,6 +272,107 @@
     });
 
     loadSession();
+
+    // ------------------------------------------------------------------
+    // Step 5 — real Linkio onramp session
+    // ------------------------------------------------------------------
+    let pollTimer = null;
+    let activeReference = null;
+
+    function statusBadge(status) {
+      const s = String(status || "").toLowerCase();
+      const tone = s === "successful" || s === "completed" ? "ok" : s === "cancelled" || s === "failed" ? "bad" : "warn";
+      return "<span class='badge " + tone + "'>" + (status || "pending") + "</span>";
+    }
+
+    function findBankDetails(obj, found) {
+      if (!obj || typeof obj !== "object" || found.length > 4) return found;
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === "object" && value) findBankDetails(value, found);
+        else if (/account_?number|bank_?name|account_?name/i.test(key) && value && typeof value === "string") {
+          if (!found.some((f) => f.k === key)) found.push({ k: key, v: value });
+        }
+      }
+      return found;
+    }
+
+    function renderSession(data) {
+      const s = data.session;
+      let html = "<table><tr><th>Reference</th><td class='mono'>" + (s.reference || "-") + "</td></tr>" +
+        "<tr><th>You pay</th><td>" + Number(s.amount).toLocaleString() + " " + s.currency + "</td></tr>" +
+        "<tr><th>Rate</th><td class='mono'>" + (s.rate || "-") + " " + s.currency + " per USDC</td></tr>" +
+        "<tr><th>You receive</th><td class='mono'>" + (s.payoutAmount || "-") + " USDC</td></tr>" +
+        "<tr><th>Status</th><td>" + statusBadge(s.status) + "</td></tr></table>";
+
+      const done = ["successful", "completed", "cancelled", "failed"].includes(String(s.status).toLowerCase());
+
+      // Settlement details extracted from webhook events
+      let details = [];
+      for (const ev of data.events || []) {
+        details = findBankDetails(ev.payload, details);
+      }
+      if (details.length) {
+        html += "<p class='hint' style='margin-top:0.6rem'><strong>Pay into this account:</strong></p><table>";
+        for (const d of details) html += "<tr><th>" + d.k.replace(/_/g, " ") + "</th><td class='mono'>" + d.v + "</td></tr>";
+        html += "</table>";
+      } else if (!done) {
+        html += "<p class='hint' style='margin-top:0.6rem'>Waiting for Linkio to send the payment account details…</p>";
+      }
+
+      // Event timeline
+      const events = data.events || [];
+      if (events.length) {
+        html += "<p class='hint' style='margin-top:0.6rem'><strong>Live events</strong></p><table>";
+        for (const ev of events) {
+          html += "<tr><th>" + new Date(ev.receivedAt).toLocaleTimeString() + "</th><td>" +
+            ev.event.replace("bridge.events.transaction_request.", "") +
+            (ev.notification ? " — " + ev.notification : "") + "</td></tr>";
+        }
+        html += "</table>";
+      }
+      el("l-out").innerHTML = html;
+      return done;
+    }
+
+    async function poll() {
+      if (!activeReference) return;
+      try {
+        const data = await api("/api/linkio/onramp-sessions/" + encodeURIComponent(activeReference));
+        const done = renderSession(data);
+        setMsg("l-msg", done ? "Session finished." : "Watching for updates every 5 seconds…");
+        if (done) stopPolling();
+      } catch { /* transient — keep polling */ }
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      el("l-stop").hidden = true;
+    }
+
+    el("l-start").addEventListener("click", async () => {
+      setMsg("l-msg", "");
+      el("l-start").disabled = true;
+      stopPolling();
+      try {
+        const body = {
+          amount: Number(el("l-amount").value),
+          walletAddress: el("l-wallet").value.trim(),
+          bankDetails: {
+            bankName: el("l-bank").value.trim(),
+            accountNumber: el("l-acctnum").value.trim(),
+            accountName: el("l-acctname").value.trim(),
+          },
+        };
+        const d = await api("/api/linkio/onramp-sessions", { method: "POST", body });
+        activeReference = d.session.reference;
+        renderSession({ session: d.session, events: [] });
+        el("l-stop").hidden = false;
+        pollTimer = setInterval(poll, 5000);
+        setMsg("l-msg", "Onramp created. Now watch for the payment account below.", "ok");
+      } catch (e) { setMsg("l-msg", e.message, "err"); }
+      el("l-start").disabled = false;
+    });
+    el("l-stop").addEventListener("click", () => { stopPolling(); setMsg("l-msg", "Stopped watching. The onramp keeps running on Linkio's side."); });
   </script>
 </body>
 </html>

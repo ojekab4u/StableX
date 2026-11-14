@@ -420,3 +420,52 @@ export function recordLinkioEvent(event) {
 export function listLinkioEvents() {
   return linkioEvents;
 }
+
+export function linkioEventsForReference(reference) {
+  return linkioEvents.filter((entry) => entry.reference === reference);
+}
+
+// ---------------------------------------------------------------------------
+// Customer onramp sessions (signed-in customers only). A session wraps one
+// Linkio B2B onramp: the customer supplies their payout wallet and the NGN bank
+// account they will pay FROM, the server creates the onramp, and the fiat
+// settlement account details arrive via the banking_details_received webhook.
+// ---------------------------------------------------------------------------
+const onrampSessions = new Map();
+
+export async function startLinkioCustomerOnramp({
+  customerId, currency, amount, stables, network, walletAddress, bankDetails,
+}) {
+  const quote = await getLinkioB2BRateQuote({ currency, trxType: "onramp", amount });
+  const transaction = await requestLinkioB2BOnramp({
+    customerId,
+    currency,
+    amount,
+    stables,
+    walletAddress,
+    network,
+    paymentDetails: bankDetails,
+  });
+  const reference = transaction?.reference || transaction?.data?.reference || null;
+  const session = {
+    reference,
+    transactionId: transaction?.transaction_id || transaction?.data?.transaction_id || null,
+    customerId,
+    currency,
+    amount,
+    stables,
+    network,
+    walletAddress,
+    rate: transaction?.rate ?? quote?.rate ?? null,
+    payoutAmount: transaction?.payout_amount ?? quote?.payout_amount ?? null,
+    paymentMethod: quote?.paymentMethod || null,
+    status: transaction?.transaction_status || transaction?.data?.transaction_status || "pending",
+    startedAt: new Date().toISOString(),
+  };
+  if (reference) onrampSessions.set(reference, session);
+  return session;
+}
+
+export function getLinkioOnrampSession(reference) {
+  return onrampSessions.get(String(reference || "")) || null;
+}

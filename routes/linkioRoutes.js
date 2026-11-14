@@ -16,7 +16,11 @@ import {
   getLinkioPayoutStatus,
   recordLinkioEvent,
   listLinkioEvents,
+  linkioEventsForReference,
+  startLinkioCustomerOnramp,
+  getLinkioOnrampSession,
 } from "../services/providers/linkioService.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 
 export const linkioRouter = Router();
 
@@ -185,4 +189,40 @@ linkioRouter.post("/webhooks", (req, res) => {
 // Operator view of the last events received (banking_details_received etc.).
 linkioRouter.get("/webhooks", requireOperator, (_req, res) => {
   return res.json({ provider: "Linkio", events: listLinkioEvents() });
+});
+
+// Customer test flow: signed-in customers create a real NGN→USDC onramp and
+// follow its progress (webhook events + live transaction status) by reference.
+linkioRouter.post("/onramp-sessions", requireAuth, async (req, res) => {
+  try {
+    const bankDetails = req.body?.bankDetails;
+    if (!bankDetails?.bankName || !bankDetails?.accountNumber || !bankDetails?.accountName) {
+      return res.status(400).json({ error: "bankDetails requires bankName, accountNumber and accountName (the account you will pay FROM)." });
+    }
+    const session = await startLinkioCustomerOnramp({
+      customerId: req.account.accountId,
+      currency: req.body?.currency || "NGN",
+      amount: req.body?.amount,
+      stables: req.body?.stables || "USDC",
+      network: req.body?.network || "BASE",
+      walletAddress: req.body?.walletAddress,
+      bankDetails,
+    });
+    return res.status(201).json({ provider: "Linkio", session });
+  } catch (error) { return fail(res, error); }
+});
+
+linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) => {
+  const session = getLinkioOnrampSession(req.params.reference);
+  if (!session || session.customerId !== req.account.accountId) {
+    return res.status(404).json({ error: "Onramp session not found. Sessions are cleared when the server restarts." });
+  }
+  let transaction = null;
+  try { transaction = await getLinkioTransaction(req.params.reference); } catch { /* keep webhook events as the source of truth */ }
+  return res.json({
+    provider: "Linkio",
+    session,
+    events: linkioEventsForReference(req.params.reference),
+    transaction,
+  });
 });
