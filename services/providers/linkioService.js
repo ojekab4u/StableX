@@ -117,6 +117,7 @@ async function linkioJson(path, { method = "GET", query, body } = {}) {
   for (const [key, value] of Object.entries(query || {})) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
   }
+  console.log(`[linkio] ${method} ${path}`, body ? { body } : "");
   const response = await fetch(url, {
     method,
     headers: {
@@ -130,7 +131,11 @@ async function linkioJson(path, { method = "GET", query, body } = {}) {
   if (response.status === 204) return {};
   // Retail endpoints can answer errors with an empty text/plain body.
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw linkioError(response, payload);
+  if (!response.ok) {
+    console.log(`[linkio] ${method} ${path} -> ERROR ${response.status}`, payload);
+    throw linkioError(response, payload);
+  }
+  console.log(`[linkio] ${method} ${path} -> ${response.status}`, payload);
   // B2B wraps in `data`; retail returns the object directly.
   return payload?.data ?? payload;
 }
