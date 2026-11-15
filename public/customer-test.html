@@ -133,6 +133,7 @@
         <div class="row" style="margin-top:0.6rem">
           <button id="l-start" type="button" disabled>Start onramp</button>
           <button id="l-stop" class="secondary" hidden>Stop watching</button>
+          <button id="l-watch" class="secondary" hidden>Start watching</button>
         </div>
         <div id="l-out"></div>
         <div class="msg" id="l-msg"></div>
@@ -373,7 +374,7 @@
         const data = await api("/api/linkio/onramp-sessions/" + encodeURIComponent(activeReference));
         const done = renderSession(data);
         setMsg("l-msg", done ? "Session finished." : "Watching for updates every 5 seconds…");
-        if (done) stopPolling();
+        if (done) { stopPolling(); localStorage.removeItem("stablex_linkio_reference"); }
       } catch (error) {
         setMsg("l-msg", "Could not refresh Linkio status: " + error.message, "err");
       }
@@ -382,6 +383,22 @@
     function stopPolling() {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       el("l-stop").hidden = true;
+      el("l-watch").hidden = false;
+    }
+
+    function startPolling() {
+      el("l-stop").hidden = false;
+      el("l-watch").hidden = true;
+      pollTimer = setInterval(poll, 5000);
+      poll();
+    }
+
+    // Resume watching an in-progress onramp after a page refresh
+    const storedRef = localStorage.getItem("stablex_linkio_reference");
+    if (storedRef) {
+      activeReference = storedRef;
+      el("l-msg").textContent = "Resuming watch on existing onramp…";
+      startPolling();
     }
 
     // Load payment vendors (banks) the customer can pay into
@@ -438,6 +455,7 @@
         };
         const d = await api("/api/linkio/onramp-sessions", { method: "POST", body });
         activeReference = d.session.reference;
+        localStorage.setItem("stablex_linkio_reference", activeReference);
         renderSession({ session: d.session, events: [] });
         el("l-stop").hidden = false;
         pollTimer = setInterval(poll, 5000);
@@ -445,7 +463,8 @@
       } catch (e) { setMsg("l-msg", e.message, "err"); }
       el("l-start").disabled = false;
     });
-    el("l-stop").addEventListener("click", () => { stopPolling(); setMsg("l-msg", "Stopped watching. The onramp keeps running on Linkio's side."); });
+    el("l-stop").addEventListener("click", () => { stopPolling(); localStorage.removeItem("stablex_linkio_reference"); setMsg("l-msg", "Stopped watching. Refresh won't lose the onramp — click Start watching to resume."); });
+    el("l-watch").addEventListener("click", () => { startPolling(); setMsg("l-msg", "Watching for updates every 5 seconds…"); });
   </script>
 </body>
 </html>

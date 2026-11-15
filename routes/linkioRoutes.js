@@ -270,7 +270,7 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
 linkioRouter.get("/payment-vendors", requireAuth, async (_req, res) => {
   try {
     const data = await getLinkioPaymentVendors({ currency: "NGN" });
-    // Linkio returns { Vendors: [{ venderName, vendorNumber, vendorBank }] }
+    // Linkio returns { Vendors: [{ vendorName, vendorNumber, vendorBank }] }
     const vendors = data?.Vendors || data?.VendorList || data?.vendors || [];
     return res.json({ provider: "Linkio", vendors });
   } catch (error) { return fail(res, error); }
