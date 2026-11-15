@@ -540,11 +540,6 @@ export async function startLinkioCustomerOnramp({
   return session;
 }
 
-export function mergeLinkioOnrampSessionTransaction(reference, response) {
-  const session = getLinkioOnrampSession(reference);
-  return session ? mergeLinkioTransactionIntoSession(session, response) : null;
-}
-
 export function getLinkioOnrampSession(reference) {
   return onrampSessions.get(String(reference || "")) || null;
 }

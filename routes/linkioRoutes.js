@@ -19,10 +19,8 @@ import {
   listLinkioEvents,
   linkioEventsForReference,
   startLinkioCustomerOnramp,
-  getLinkioOnrampSession,
   getLinkioPaymentVendors,
   unwrapLinkioTransaction,
-  mergeLinkioOnrampSessionTransaction,
 } from "../services/providers/linkioService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
@@ -248,7 +246,6 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
     // Always fetch live data from Linkio — never depend on in-memory sessions
     // which are cleared when the server restarts.
     const transaction = await getLinkioTransaction(reference);
-    console.log(`[linkio] status lookup for ${reference}:`, JSON.stringify(transaction).slice(0, 300));
 
     if (!transaction || Object.keys(transaction).length === 0) {
       return res.status(404).json({ error: "Onramp session not found.", reference });
