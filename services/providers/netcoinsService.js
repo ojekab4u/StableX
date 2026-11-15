@@ -67,10 +67,6 @@ export function getNetcoinsReadiness() {
     executionEnabled: false,
     executionNote:
       "Quote → execute calls are implemented server-side. Execution stays disabled until a staging trade test passes and the operator explicitly enables it.",
-    openQuestions: [
-      "v4 documents no withdrawal/deposit endpoints — confirm how crypto leaves the Netcoins account (separate endpoint set, app or desk).",
-      "Confirm USDC:CAD and USDC:USD pairs and instant buy/sell permissions on the provisioned account.",
-    ],
   };
 }
 

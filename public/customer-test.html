@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>StableX — Customer Test Flow</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body { background:#0d1126; color:#e8eaf6; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; }
+    .topbar { display:flex; align-items:center; gap:1.5rem; padding:0.9rem 1.5rem; background:#10152a; border-bottom:1px solid #232949; }
+    .topbar .brand { font-weight:700; color:#fff; text-decoration:none; font-size:1.1rem; }
+    .topbar .brand span { color:#4f7cff; }
+    .topbar nav { display:flex; gap:1rem; }
+    .topbar nav a { color:#9aa3c7; text-decoration:none; font-size:0.9rem; }
+    .topbar nav a:hover, .topbar nav a[aria-current="page"] { color:#fff; }
+    main { max-width:860px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+    h1 { font-size:1.5rem; margin:0.2rem 0 0.3rem; }
+    .eyebrow { color:#4f7cff; font-size:0.72rem; letter-spacing:0.12em; margin:0; }
+    .lead { color:#9aa3c7; margin:0.2rem 0 1.5rem; }
+    .step { background:#151b36; border:1px solid #232949; border-radius:12px; padding:1.1rem 1.25rem; margin-bottom:1rem; }
+    .step h2 { font-size:1rem; margin:0 0 0.4rem; display:flex; align-items:center; gap:0.55rem; }
+    .step h2 .num { background:#4f7cff; color:#fff; border-radius:50%; width:1.5rem; height:1.5rem; display:inline-flex; align-items:center; justify-content:center; font-size:0.8rem; flex:none; }
+    .step p.hint { color:#9aa3c7; font-size:0.85rem; margin:0 0 0.7rem; }
+    .row { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
+    input, select { background:#0d1126; border:1px solid #2c335c; color:#e8eaf6; border-radius:8px; padding:0.5rem 0.7rem; font-size:0.9rem; }
+    button { background:#4f7cff; color:#fff; border:0; border-radius:8px; padding:0.55rem 1rem; font-size:0.9rem; cursor:pointer; }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    button.secondary { background:#232949; }
+    .badge { display:inline-block; padding:0.2rem 0.6rem; border-radius:999px; font-size:0.75rem; border:1px solid #2c335c; color:#9aa3c7; }
+    .badge.ok { color:#5be3a4; border-color:#245c43; }
+    .badge.warn { color:#ffb35c; border-color:#6b4a1d; }
+    .badge.bad { color:#ff7a7a; border-color:#6b2323; }
+    table { width:100%; border-collapse:collapse; font-size:0.85rem; margin-top:0.6rem; }
+    th, td { text-align:left; padding:0.45rem 0.6rem; border-bottom:1px solid #232949; }
+    th { color:#9aa3c7; font-weight:500; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; }
+    .msg { margin-top:0.6rem; font-size:0.85rem; white-space:pre-wrap; word-break:break-word; }
+    .msg.err { color:#ff9a9a; }
+    .msg.ok { color:#5be3a4; }
+    .mono { font-family:ui-monospace,Consolas,monospace; }
+    .wallet-list li { margin-bottom:0.25rem; }
+    .signin-note { text-align:center; margin-top:3rem; }
+    .signin-note a { color:#4f7cff; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stable<span>X</span></a>
+    <nav>
+      <a href="/customer-dashboard.html">Dashboard</a>
+      <a href="/bridge-funding.html">Bridge funding</a>
+      <a href="/providers.html">Providers</a>
+      <a href="/customer-test.html" aria-current="page">Test flow</a>
+    </nav>
+  </header>
+
+  <main>
+    <p class="eyebrow">STABLEX / GUIDED TEST</p>
+    <h1>Customer end-to-end test flow</h1>
+    <p class="lead">Sign in, create wallets, get funding details, then see every provider compete on a live conversion quote.</p>
+
+    <div id="signed-out" class="signin-note" hidden>
+      <p>You need to sign in first.</p>
+      <a href="/auth.html"><button type="button">Go to sign in</button></a>
+    </div>
+
+    <div id="flow" hidden>
+      <!-- Step 1 -->
+      <section class="step">
+        <h2><span class="num">1</span> Session &amp; approval check</h2>
+        <p class="hint">Identifies you from your login session. No manual IDs.</p>
+        <div id="session-out"></div>
+      </section>
+
+      <!-- Step 2 -->
+      <section class="step">
+        <h2><span class="num">2</span> Wallets</h2>
+        <p class="hint">Internal balances per currency. Create the wallet for the currency you want to test.</p>
+        <div class="row">
+          <select id="wallet-currency">
+            <option value="NGN">NGN — Naira</option>
+            <option value="USD">USD — US Dollar</option>
+            <option value="USDC">USDC — Stablecoin</option>
+            <option value="EUR">EUR — Euro</option>
+          </select>
+          <button id="wallet-create">Create wallet</button>
+          <button id="wallet-refresh" class="secondary">Refresh list</button>
+        </div>
+        <ul id="wallet-list" class="wallet-list"></ul>
+        <div class="msg" id="wallet-msg"></div>
+      </section>
+
+      <!-- Step 3 -->
+      <section class="step">
+        <h2><span class="num">3</span> Funding details</h2>
+        <p class="hint">NGN: a Nomba virtual bank account you can transfer into. USD: Bridge virtual account (opens the funding page).</p>
+        <div class="row">
+          <button id="nomba-get">Get NGN account details</button>
+          <a href="/bridge-funding.html"><button type="button" class="secondary">USD via Bridge →</button></a>
+        </div>
+        <div id="funding-out"></div>
+        <div class="msg" id="funding-msg"></div>
+      </section>
+
+      <!-- Step 4 -->
+      <section class="step">
+        <h2><span class="num">4</span> Convert — watch providers compete</h2>
+        <p class="hint">One request fans out to every provider (Netcoins, Linkio, Nomba, Honeycoin, Paycrest, Bridge, on-chain). Ranked best first.</p>
+        <div class="row">
+          <input id="q-from" placeholder="From (NGN, USD, USDC…)" style="width:9rem" />
+          <input id="q-to" placeholder="To (USDC, NGN…)" style="width:9rem" />
+          <input id="q-amount" placeholder="Amount" style="width:7rem" />
+          <button id="q-run">Get quotes</button>
+        </div>
+        <div id="quotes-out"></div>
+        <div class="msg" id="quotes-msg"></div>
+      </section>
+
+      <!-- Step 5 -->
+      <section class="step">
+        <h2><span class="num">5</span> Real settlement — NGN → USDC (Linkio)</h2>
+        <p class="hint">Creates a real onramp. Linkio shows you a bank account to pay into; you pay from your bank app; USDC lands in your wallet. Fee is baked into the rate.</p>
+        <div class="row">
+          <input id="l-amount" placeholder="NGN amount (e.g. 2000)" style="width:11rem" />
+        </div>
+        <div class="row" style="margin-top:0.4rem">
+          <input id="l-wallet" placeholder="Your Base USDC wallet address (0x…)" style="flex:1;min-width:16rem" />
+        </div>
+        <div class="row" style="margin-top:0.6rem">
+          <button id="l-start">Start onramp</button>
+          <button id="l-stop" class="secondary" hidden>Stop watching</button>
+        </div>
+        <div id="l-out"></div>
+        <div class="msg" id="l-msg"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const TOKEN_KEY = "stablex_session";
+    const token = () => localStorage.getItem(TOKEN_KEY) || "";
+    let customerId = null;
+    let customerName = "";
+
+    async function api(path, opts = {}) {
+      const r = await fetch(path, {
+        method: opts.method || "GET",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token() },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); location.href = "/auth.html"; throw new Error("Session expired. Sign in again."); }
+      if (!r.ok) throw new Error(d.error || ("Request failed (" + r.status + ")"));
+      return d;
+    }
+
+    const el = (id) => document.getElementById(id);
+    const setMsg = (id, text, tone) => { const n = el(id); n.textContent = text || ""; n.className = "msg" + (tone ? " " + tone : ""); };
+
+    async function loadSession() {
+      if (!token()) { el("signed-out").hidden = false; return; }
+      try {
+        const s = await api("/api/auth/session");
+        const account = s.account || {};
+        customerId = account.accountId;
+        customerName = account.name || account.fullName || account.email || customerId;
+        const gate = s.complianceGate || {};
+        const approved = gate.approved === true;
+        el("session-out").innerHTML =
+          "<span class='badge " + (approved ? "ok" : "warn") + "'>" + (approved ? "Compliance approved" : "Compliance: " + (gate.status || "pending")) + "</span> " +
+          "<span class='badge'>Signed in: " + (account.email || customerId) + "</span>";
+        el("flow").hidden = false;
+        await loadWallets();
+      } catch (e) {
+        el("signed-out").hidden = false;
+      }
+    }
+
+    async function loadWallets() {
+      el("wallet-list").replaceChildren();
+      try {
+        const d = await api("/api/customer/wallets/" + encodeURIComponent(customerId));
+        const wallets = d.wallets || [];
+        if (!wallets.length) { el("wallet-list").innerHTML = "<li class='hint'>No wallets yet — create one above.</li>"; return; }
+        for (const w of wallets) {
+          const li = document.createElement("li");
+          li.innerHTML = "<span class='mono'>" + w.currency + "</span> — balance " + w.balance;
+          el("wallet-list").append(li);
+        }
+      } catch (e) { setMsg("wallet-msg", e.message, "err"); }
+    }
+
+    el("wallet-create").addEventListener("click", async () => {
+      setMsg("wallet-msg", "");
+      el("wallet-create").disabled = true;
+      try {
+        const currency = el("wallet-currency").value;
+        await api("/api/customer/wallets", { method: "POST", body: { customerId, currency } });
+        setMsg("wallet-msg", currency + " wallet created.", "ok");
+        await loadWallets();
+      } catch (e) { setMsg("wallet-msg", e.message, "err"); }
+      el("wallet-create").disabled = false;
+    });
+    el("wallet-refresh").addEventListener("click", loadWallets);
+
+    el("nomba-get").addEventListener("click", async () => {
+      el("funding-out").replaceChildren();
+      setMsg("funding-msg", "Requesting…");
+      el("nomba-get").disabled = true;
+      try {
+        const d = await api("/api/nomba/virtual-accounts", {
+          method: "POST",
+          body: { customerId, customerName, email: undefined },
+        });
+        const a = d.account || {};
+        el("funding-out").innerHTML =
+          "<table><tr><th>Bank</th><td>" + (a.bankName || "-") + "</td></tr>" +
+          "<tr><th>Account number</th><td class='mono'>" + (a.accountNumber || "-") + "</td></tr>" +
+          "<tr><th>Account name</th><td>" + (a.accountHolderName || customerName) + "</td></tr></table>" +
+          "<p class='hint'>Fund this account from any Nigerian bank. A verified Nomba webhook credits your NGN wallet.</p>";
+        setMsg("funding-msg", "");
+      } catch (e) { setMsg("funding-msg", e.message, "err"); }
+      el("nomba-get").disabled = false;
+    });
+
+    function renderQuote(q, best) {
+      const cls = q.available === false ? "warn" : (best ? "ok" : "");
+      const badge = q.available === false
+        ? "<span class='badge bad'>unavailable</span>"
+        : (q.executionEnabled ? "<span class='badge ok'>executable</span>" : "<span class='badge " + cls + "'>indicative</span>");
+      const dest = (q.destinationAmount !== undefined && q.destinationAmount !== null)
+        ? Number(q.destinationAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })
+        : (q.rate ? Number(q.rate).toLocaleString() + " rate" : "-");
+      const row = document.createElement("tr");
+      row.innerHTML = "<td><strong>" + q.provider + "</strong></td><td>" + (q.quoteType || "").replaceAll("_", " ").toLowerCase() +
+        "</td><td class='mono'>" + dest + "</td><td>" + badge + "</td><td class='mono' style='font-size:0.72rem'>" +
+        (q.available === false ? (q.reason || "") : (q.note || "").slice(0, 90)) + "</td>";
+      return row;
+    }
+
+    el("q-run").addEventListener("click", async () => {
+      el("quotes-out").replaceChildren();
+      setMsg("quotes-msg", "Asking every provider…");
+      el("q-run").disabled = true;
+      try {
+        const body = {
+          from: el("q-from").value.trim().toUpperCase(),
+          to: el("q-to").value.trim().toUpperCase(),
+          amount: Number(el("q-amount").value),
+        };
+        const d = await api("/api/routing/quotes", { method: "POST", body });
+        const quotes = d.quotes || d.candidates || [];
+        if (!quotes.length) { setMsg("quotes-msg", "No quotes returned.", "err"); return; }
+        const table = document.createElement("table");
+        table.innerHTML = "<tr><th>Provider</th><th>Type</th><th>You get</th><th>Status</th><th>Note</th></tr>";
+        quotes.forEach((q, i) => table.append(renderQuote(q, i === 0)));
+        el("quotes-out").append(table);
+        const unavailable = d.unavailableProviders || [];
+        if (unavailable.length) {
+          const p = document.createElement("p");
+          p.className = "hint";
+          p.textContent = "Did not respond: " + unavailable.map((u) => u.provider).join(", ");
+          el("quotes-out").append(p);
+        }
+        setMsg("quotes-msg", quotes.length + " quote(s). Best offer first. No funds moved yet — selecting a quote is the next step in a real transfer.", "ok");
+      } catch (e) { setMsg("quotes-msg", e.message, "err"); }
+      el("q-run").disabled = false;
+    });
+
+    loadSession();
+
+    // ------------------------------------------------------------------
+    // Step 5 — real Linkio onramp session
+    // ------------------------------------------------------------------
+    let pollTimer = null;
+    let activeReference = null;
+
+    function statusBadge(status) {
+      const s = String(status || "").toLowerCase();
+      const tone = ["success", "successful", "completed"].includes(s) ? "ok" : ["cancelled", "failed"].includes(s) ? "bad" : "warn";
+      return "<span class='badge " + tone + "'>" + (status || "pending") + "</span>";
+    }
+
+    function findBankDetails(obj, found) {
+      if (!obj || typeof obj !== "object" || found.length > 4) return found;
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === "object" && value) findBankDetails(value, found);
+        else if (/account_?number|bank_?name|account_?name/i.test(key) && value && typeof value === "string") {
+          if (!found.some((f) => f.k === key)) found.push({ k: key, v: value });
+        }
+      }
+      return found;
+    }
+
+    function unwrapProviderTransaction(value) {
+      let current = value;
+      for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+        if (current.transaction && typeof current.transaction === "object") current = current.transaction;
+        else if (current.transactions && typeof current.transactions === "object" && !Array.isArray(current.transactions)) current = current.transactions;
+        else if (current.data && typeof current.data === "object") current = current.data;
+        else break;
+      }
+      return current && typeof current === "object" ? current : {};
+    }
+
+    function renderSession(data) {
+      const s = data.session || {};
+      // The status endpoint returns the latest fetched provider transaction
+      // separately. Merge it here: previously the UI ignored this object.
+      const tx = unwrapProviderTransaction(data.transaction);
+      const settlement = { ...(s.settlement || {}) };
+      const pick = (...values) => values.find(v => v !== undefined && v !== null && String(v).trim() !== "");
+      const bankName = pick(tx.link_bank_name, tx.bank_name, tx.bankName);
+      const accountNumber = pick(tx.link_account_number, tx.account_number, tx.accountNumber);
+      const accountName = pick(tx.link_account_name, tx.account_name, tx.accountName);
+      const vendorDetails = pick(tx.vendorDetails, tx.vendor_details);
+      if (bankName) settlement.bankName = bankName;
+      if (accountNumber) settlement.accountNumber = accountNumber;
+      if (accountName) settlement.accountName = accountName;
+      if (vendorDetails) settlement.vendorDetails = vendorDetails;
+      const status = tx.transaction_status || s.status;
+      const amount = tx.amount ?? s.amount;
+      const rate = tx.onramp_rate ?? tx.rate ?? s.rate;
+      const payoutAmount = tx.payout_amount ?? tx.payoutAmount ?? s.payoutAmount;
+      let html = "<table><tr><th>Reference</th><td class='mono'>" + (s.reference || tx.reference || "-") + "</td></tr>" +
+        "<tr><th>You pay</th><td>" + (amount || "-") + "</td></tr>" +
+        "<tr><th>Rate</th><td class='mono'>" + (rate || "-") + " NGN per USDC</td></tr>" +
+        "<tr><th>You receive</th><td class='mono'>" + (payoutAmount || "-") + "</td></tr>" +
+        "<tr><th>Status</th><td>" + statusBadge(status) + "</td></tr></table>";
+
+      const done = ["successful", "completed", "cancelled", "failed"].includes(String(status).toLowerCase());
+      let details = [];
+      for (const [k, v] of Object.entries(settlement)) {
+        if (v) details.push({ k, v });
+      }
+      for (const ev of data.events || []) details = findBankDetails(ev.payload, details);
+      if (details.length) {
+        html += "<p class='hint' style='margin-top:0.6rem'><strong>Pay into this account:</strong></p><table>";
+        for (const d of details) html += "<tr><th>" + d.k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()) + "</th><td class='mono'>" + d.v + "</td></tr>";
+        html += "</table><p class='hint'>After paying, the status below updates automatically.</p>";
+      } else if (!done) {
+        html += "<p class='hint' style='margin-top:0.6rem'>Payment account details have not been returned yet. Check the provider response or webhook below.</p>";
+      }
+
+      if (data.transactionRefreshError) {
+        html += "<p class='msg err'>Could not refresh transaction from Linkio: " + data.transactionRefreshError + "</p>";
+      }
+      const events = data.events || [];
+      if (events.length) {
+        html += "<p class='hint' style='margin-top:0.6rem'><strong>Live events</strong></p><table>";
+        for (const ev of events) {
+          html += "<tr><th>" + new Date(ev.receivedAt).toLocaleTimeString() + "</th><td>" +
+            ev.event.replace("bridge.events.transaction_request.", "") +
+            (ev.notification ? " — " + ev.notification : "") + "</td></tr>";
+        }
+        html += "</table>";
+      }
+      el("l-out").innerHTML = html;
+      return done;
+    }
+
+    async function poll() {
+      if (!activeReference) return;
+      try {
+        const data = await api("/api/linkio/onramp-sessions/" + encodeURIComponent(activeReference));
+        const done = renderSession(data);
+        setMsg("l-msg", done ? "Session finished." : "Watching for updates every 5 seconds…");
+        if (done) stopPolling();
+      } catch (error) {
+        setMsg("l-msg", "Could not refresh Linkio status: " + error.message, "err");
+      }
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      el("l-stop").hidden = true;
+    }
+
+    el("l-start").addEventListener("click", async () => {
+      setMsg("l-msg", "");
+      el("l-start").disabled = true;
+      stopPolling();
+      try {
+        const body = {
+          amount: Number(el("l-amount").value),
+          walletAddress: el("l-wallet").value.trim(),
+        };
+        const d = await api("/api/linkio/onramp-sessions", { method: "POST", body });
+        activeReference = d.session.reference;
+        renderSession({ session: d.session, events: [] });
+        el("l-stop").hidden = false;
+        pollTimer = setInterval(poll, 5000);
+        setMsg("l-msg", "Onramp created. Now watch for the payment account below.", "ok");
+      } catch (e) { setMsg("l-msg", e.message, "err"); }
+      el("l-start").disabled = false;
+    });
+    el("l-stop").addEventListener("click", () => { stopPolling(); setMsg("l-msg", "Stopped watching. The onramp keeps running on Linkio's side."); });
+  </script>
+</body>
+</html>

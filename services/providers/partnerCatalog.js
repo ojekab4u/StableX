@@ -28,12 +28,26 @@ export const PARTNER_CATALOG = [
   },
   {
     name: "Nomba",
-    role: "NGN collections (virtual accounts) and payouts",
-    corridors: ["NGN"],
-    docsUrl: "https://nomba.com/",
-    requiredCredentials: ["NOMBA_API_BASE_URL", "NOMBA_API_KEY"],
+    role: "Nigeria-native local rails (NGN virtual accounts, collections, bank payouts) plus the cross-border Global Payout API (BANK, MobileMoney, INTERAC, FASTER_PAYMENTS, SEPA, ACH, WIRE) with multi-currency wallets (CAD, USD)",
+    corridors: ["NGN", "CAD", "USD", "GHS", "KES", "XAF", "XOF"],
+    docsUrl: "https://developer.nomba.com/",
+    docsNote:
+      "OAuth2 client-credentials: POST /v1/auth/token/issue with client_id + client_secret and an `accountId` header; tokens expire after ~30 minutes and refresh via /v1/auth/token/refresh. " +
+      "Sandbox (https://sandbox.nomba.com) accepts requests without credentials. Global Payout supports INTERAC (CAD) — candidate for the CAD fiat leg.",
+    requiredCredentials: [
+      "NOMBA_API_BASE_URL",
+      "NOMBA_CLIENT_ID",
+      "NOMBA_CLIENT_SECRET",
+      "NOMBA_ACCOUNT_ID",
+      "NOMBA_WEBHOOK_SECRET",
+    ],
     requiredWebhooks: true,
-    capabilities: ["NGN_COLLECTION", "NGN_PAYOUT"],
+    capabilities: ["NGN_COLLECTION", "NGN_PAYOUT", "GLOBAL_PAYOUT", "MULTI_CURRENCY_WALLETS", "CAD_PAYOUT_INTERAC"],
+    capabilitiesPlanned: ["DRC_MOBILE_MONEY_COLLECTIONS"],
+    configurationTasks: [
+      "Map Global Payout endpoints (payment methods, authorize transfer, convert money, fetch accounts) into the adapter",
+      "Configure the webhook secret once dashboard access is recovered",
+    ],
   },
   {
     name: "Fincra",
@@ -71,17 +85,53 @@ export const PARTNER_CATALOG = [
     capabilities: ["CAD_ONRAMP", "CAD_OFFRAMP", "USD_ONRAMP", "USD_OFFRAMP", "CUSTODY"],
     capabilitiesPlanned: ["LIVE_QUOTE", "INSTANT_TRADE_EXECUTION", "LIMIT_ORDERS", "PUSHER_WEBSOCKET_QUOTES"],
     configurationTasks: [
-      "Retrieve staging + production credentials from the Bitwarden sends (account email + 2FA)",
-      "Set NETCOINS_ENVIRONMENT=staging with the staging token; keep the production token out of .env until staging passes",
-      "Confirm the whitelisted public IP matches the machine running StableX (403 'IP Address not whitelisted' otherwise)",
-      "Confirm sandbox behaviour: whether staging orders move real funds or are simulated",
-      "v4 has no withdrawal/deposit endpoints — confirm how funds move in and out of the account (app, desk or legacy v2 endpoints)",
+      "Whitelist the integration machine IP with Netcoins (staging 403s until confirmed)",
+      "Set NETCOINS_ENVIRONMENT=staging with the staging token",
+      "v4 documents no withdrawal/deposit endpoints — funding and settlement happen on the Netcoins side",
     ],
-    openQuestions: [
-      "Does the staging environment fully simulate funding + settlement?",
-      "Are crypto withdrawals to arbitrary Base addresses supported via API?",
-      "Is a Pusher WebSocket (trading.{userUuid}) needed for production quote freshness, or is polling acceptable?",
+  },
+  {
+    name: "Linkio",
+    role: "Primary global FX engine — B2B fiat↔stablecoin ramps across 25 fiat currencies plus retail Direct FX (NGN/USD, Interac corridor), settling to USDC/USDT on Base, Ethereum, BSC, Polygon, Solana and Stellar",
+    corridors: [
+      "USD", "EUR", "GBP", "NGN", "GHS", "KES", "UGX", "TZS", "XAF", "XOF",
+      "MAD", "EGP", "AOA", "BIF", "CDF", "DZD", "ETB", "LYD", "MUR", "MWK",
+      "MZN", "SGD", "SLE", "SSP", "TRY", "AED", "USDC", "USDT",
     ],
+    docsUrl: "https://docs.linkio.world/",
+    docsNote:
+      "One `ngnc-sec-key` header authenticates both the Retail and B2B APIs. B2B fiat enum has no CAD (CAD is a Retail/Direct-FX corridor). " +
+      "USDC networks: ETHEREUM, BSC, POLYGON, BASE, SOLANA, STELLAR; USDT: TRON, POLYGON, SOLANA. B2B onramp settlement details arrive via the banking_details_received webhook. " +
+      "Fees are baked into the rate (~0.5% B2B markup). Regulated: FINTRAC MSB N300000211, US FinCEN MSB 31000339351347.",
+    requiredCredentials: ["LINKIO_SECRET_KEY", "LINKIO_API_BASE_URL"],
+    capabilities: ["FIAT_ONRAMP", "FIAT_OFFRAMP", "FX_RATE_QUOTES", "CROSS_BORDER_PAYOUTS", "TRANSACTION_STATUS"],
+    capabilitiesPlanned: ["VIRTUAL_ACCOUNTS", "PREFUNDED_BUSINESS_WALLET", "LIQUIDATION_ADDRESSES"],
+    configurationTasks: [
+      "Configure the banking_details_received webhook before enabling B2B onramp execution",
+      "Verify per-currency minimums/maximums for every corridor we enable",
+    ],
+  },
+  {
+    name: "Quidax",
+    role: "DISQUALIFIED — not to be integrated",
+    corridors: [],
+    docsUrl: "https://ramp-merchant.quidax.io/",
+    lifecycleStatus: "DISQUALIFIED",
+    lifecycleNote:
+      "NGN-concentrated ramp; duplicates Linkio's scope without its multi-currency breadth or payout infrastructure.",
+    requiredCredentials: [],
+    capabilities: [],
+  },
+  {
+    name: "Honeycoin",
+    role: "Temporary fallback and sandbox test corridor only — demoted from primary scaling engine",
+    corridors: ["NGN"],
+    docsUrl: "https://b2b.honeycoin.app/",
+    lifecycleStatus: "FALLBACK",
+    lifecycleNote:
+      "Backup corridor and sandbox test fixture only; local rails go through Nomba, global FX through Linkio.",
+    requiredCredentials: [],
+    capabilities: ["NGN_ONRAMP_TEST_CORRIDOR"],
   },
   {
     name: "Circle",
@@ -101,9 +151,6 @@ export const PARTNER_CATALOG = [
     docsUrl: "https://www.coingecko.com/",
     requiredCredentials: ["COINGECKO_API_BASE_URL", "COINGECKO_API_KEY"],
     capabilities: ["REFERENCE_PRICES"],
-    openQuestions: [
-      "Confirm whether it is a price source only, not a liquidity provider",
-    ],
   },
 ];
 
@@ -119,6 +166,8 @@ function catalogReadiness(entry) {
     corridors: entry.corridors,
     docsUrl: entry.docsUrl,
     docsNote: entry.docsNote ?? null,
+    lifecycleStatus: entry.lifecycleStatus ?? "ACTIVE",
+    lifecycleNote: entry.lifecycleNote ?? null,
     configured: missing.length === 0,
     missingVariables: missing,
     status: missing.length === 0
@@ -129,7 +178,6 @@ function catalogReadiness(entry) {
     capabilitiesPlanned: entry.capabilitiesPlanned ?? [],
     requiredWebhooks: Boolean(entry.requiredWebhooks),
     configurationTasks: entry.configurationTasks ?? [],
-    openQuestions: entry.openQuestions ?? [],
   };
 }
 

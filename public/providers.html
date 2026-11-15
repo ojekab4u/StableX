@@ -32,6 +32,36 @@
     </section>
 
     <section class="provider-section">
+      <p class="eyebrow">00 / HOW MONEY MOVES</p>
+      <h2>The flow</h2>
+      <div class="flow-map">
+        <div class="flow-col">
+          <h3>Money in (fiat)</h3>
+          <span class="flow-chip" title="NGN virtual accounts, collections">Nomba — NGN</span>
+          <span class="flow-chip" title="B2B ramps: USD, EUR, GBP, GHS and 20+ more">Linkio — 25+ currencies</span>
+          <span class="flow-chip" title="Retail corridor: NGN, USD, Interac">Linkio retail — NGN / USD</span>
+          <span class="flow-chip" title="Staging pending IP whitelist">Netcoins — CAD / USD</span>
+          <span class="flow-chip" title="USD / EUR virtual accounts">Bridge — USD / EUR</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-col hub">
+          <h3>Stablecoin hub</h3>
+          <span class="flow-chip hub-chip">USDC on Base</span>
+          <p class="provider-muted">Internal wallets, Bridge custody, conversion engine picks the best provider per quote.</p>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-col">
+          <h3>Money out</h3>
+          <span class="flow-chip" title="Bank transfers, Interac / SEPA / ACH / WIRE via Global Payout">Nomba — NGN banks, Interac</span>
+          <span class="flow-chip" title="B2B offramp to bank accounts">Linkio — fiat payout</span>
+          <span class="flow-chip" title="On-chain sends to any wallet">Bridge — on-chain USDC</span>
+          <span class="flow-chip" title="Fiat offramp">Linkio retail — NGN / USD banks</span>
+        </div>
+      </div>
+      <p class="provider-muted">Quidax: disqualified (NGN-only overlap). Honeycoin: fallback corridor only.</p>
+    </section>
+
+    <section class="provider-section">
       <div class="provider-section-heading">
         <div><p class="eyebrow">01 / CONNECTIONS</p><h2>Provider readiness</h2></div>
         <button id="refresh-readiness" class="secondary-btn" type="button">Refresh status</button>
