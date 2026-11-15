@@ -7,7 +7,7 @@ import "dotenv/config";
 
 const reference = String(process.argv[2] || "").trim();
 const secret = String(process.env.LINKIO_SECRET_KEY || "").trim();
-const base = String(process.env.LINKIO_API_BASE_URL || "https://api.linkio.world").trim().replace(/\\/+$/, "");
+const base = String(process.env.LINKIO_API_BASE_URL || "https://api.linkio.world").trim().replace(/\/+$/, "");
 
 if (!reference) {
   console.error("Usage: node scripts/inspect-linkio-transaction.js <transaction-reference>");
