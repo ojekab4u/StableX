@@ -60,6 +60,7 @@ function walk(value, path = "$", depth = 0, out = []) {
 let unwrapped = payload;
 for (let depth = 0; depth < 5 && unwrapped && typeof unwrapped === "object"; depth += 1) {
   if (unwrapped.transaction && typeof unwrapped.transaction === "object") unwrapped = unwrapped.transaction;
+  else if (unwrapped.transactions && typeof unwrapped.transactions === "object" && !Array.isArray(unwrapped.transactions)) unwrapped = unwrapped.transactions;
   else if (unwrapped.data && typeof unwrapped.data === "object") unwrapped = unwrapped.data;
   else break;
 }
