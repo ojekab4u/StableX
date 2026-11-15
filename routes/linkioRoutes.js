@@ -242,24 +242,66 @@ linkioRouter.post("/onramp-sessions", requireAuth, async (req, res) => {
 });
 
 linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) => {
-  const session = getLinkioOnrampSession(req.params.reference);
-  if (!session || session.customerId !== req.account.accountId) {
-    return res.status(404).json({ error: "Onramp session not found. Sessions are cleared when the server restarts." });
-  }
+  const reference = req.params.reference;
+  let session = getLinkioOnrampSession(reference);
   let transaction = null;
   let transactionRefreshError = null;
+
+  // If the session was cleared on server restart, fetch live data from Linkio
+  // and rebuild the session so customers can still trace their onramps.
+  if (!session) {
+    try {
+      transaction = await getLinkioTransaction(reference);
+      if (transaction) {
+        const syntheticSession = {
+          reference,
+          transactionId: transaction.transaction_id || null,
+          customerId: req.account.accountId,
+          currency: "NGN",
+          amount: transaction.amount || null,
+          stables: "USDC",
+          network: "Base",
+          walletAddress: transaction.wallet_address || null,
+          rate: transaction.onramp_rate || transaction.rate || null,
+          payoutAmount: transaction.payout_amount || null,
+          settlement: {
+            bankName: transaction.link_bank_name || null,
+            accountNumber: transaction.link_account_number || null,
+            accountName: transaction.link_account_name || null,
+          },
+          status: transaction.transaction_status || null,
+          startedAt: transaction.date_created || new Date().toISOString(),
+        };
+        onrampSessions.set(reference, syntheticSession);
+        session = syntheticSession;
+      }
+    } catch (error) {
+      transactionRefreshError = error.message;
+    }
+  } else if (session.customerId !== req.account.accountId) {
+    return res.status(404).json({ error: "Onramp session not found." });
+  }
+
+  if (!session) {
+    return res.status(404).json({ error: "Onramp session not found." });
+  }
+
+  // Always refresh live status from Linkio
   try {
-    transaction = await getLinkioTransaction(req.params.reference);
-    mergeLinkioOnrampSessionTransaction(req.params.reference, transaction);
+    const live = await getLinkioTransaction(reference);
+    if (live) {
+      mergeLinkioOnrampSessionTransaction(reference, { transaction: live });
+      session = getLinkioOnrampSession(reference);
+      transaction = live;
+    }
   } catch (error) {
-    // Keep the customer session available, but report why live transaction
-    // reconciliation did not return details instead of silently hiding it.
     transactionRefreshError = error.message;
   }
+
   return res.json({
     provider: "Linkio",
-    session: getLinkioOnrampSession(req.params.reference),
-    events: linkioEventsForReference(req.params.reference),
+    session,
+    events: linkioEventsForReference(reference),
     transaction,
     transactionRefreshError,
   });
