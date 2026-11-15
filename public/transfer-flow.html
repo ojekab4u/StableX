@@ -205,7 +205,9 @@ async function loadPaytrieTestState(){
     }else{
       const onboarding=await api("/api/paytrie/customer/onboarding"),readiness=onboarding.readiness||{};paytrieMode="canadian-onboarding";$("paytrieCanadianMode").classList.remove("paytrie-hidden");
       paytrieTestEnabled=Boolean(readiness.enabled&&readiness.apiKeyPresent&&readiness.eligibleStableXAccount&&readiness.platformExecutionApproved);paytrieAuthenticated=Boolean(onboarding.authenticated);
-      const wallets=await api("/api/paytrie/customer/onboarding/base-wallet"),baseWallet=(wallets.wallets||[]).find(wallet=>Number(wallet.chainId)===8453);baseWalletReady=Boolean(baseWallet);
+      let baseWallet=null;
+      if(readiness.eligibleStableXAccount){const wallets=await api("/api/paytrie/customer/onboarding/base-wallet");baseWallet=(wallets.wallets||[]).find(wallet=>Number(wallet.chainId)===8453)||null;}
+      baseWalletReady=Boolean(baseWallet);
       const providerVerified=String(onboarding.customer?.providerStatus||"").toLowerCase()==="verified";
       if(!readiness.enabled)show("paytrieState","Paytrie in-app onboarding is not enabled in this StableX environment.","status");
       else if(!readiness.eligibleStableXAccount)show("paytrieState","Standard Paytrie onboarding is for eligible Canadian PERSONAL customers. This account is not eligible; restricted test mode is not enabled for it.","status");
