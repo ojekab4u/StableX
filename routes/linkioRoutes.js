@@ -20,6 +20,7 @@ import {
   linkioEventsForReference,
   startLinkioCustomerOnramp,
   getLinkioOnrampSession,
+  getLinkioPaymentVendors,
   mergeLinkioOnrampSessionTransaction,
 } from "../services/providers/linkioService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -262,4 +263,13 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
     transaction,
     transactionRefreshError,
   });
+});
+
+// Customer test flow: list Linkio payment vendors (banks) the customer can pay into.
+// GET /api/linkio/payment-vendors?currency=NGN
+linkioRouter.get("/payment-vendors", requireAuth, async (_req, res) => {
+  try {
+    const vendors = await getLinkioPaymentVendors({ currency: "NGN" });
+    return res.json({ provider: "Linkio", vendors });
+  } catch (error) { return fail(res, error); }
 });

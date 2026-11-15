@@ -316,8 +316,17 @@ function requireRetailCurrency(currency) {
   return normalized;
 }
 
-export async function requestLinkioRetailOnramp({ currency, amount, stables, walletAddress, network, vendor }) {
-  const body = {
+// Fetch the list of supported payment vendors (banks) for retail onramps.
+// GET /transactions/v2/payment_vendors
+// Returns vendor banks with account details the customer pays into.
+export async function getLinkioPaymentVendors({ currency = "NGN" } = {}) {
+  return linkioJson("/transactions/v2/payment_vendors", {
+    method: "GET",
+    query: { currency },
+  });
+}
+
+export async function requestLinkioRetailOnramp({ currency, amount, stables, walletAddress, network, vendor }) {  const body = {
     currency: requireRetailCurrency(currency),
     amount: String(requirePositiveAmount(amount)),
     stables: String(stables || "").trim().toUpperCase(),

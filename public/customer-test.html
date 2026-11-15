@@ -118,15 +118,20 @@
       <!-- Step 5 -->
       <section class="step">
         <h2><span class="num">5</span> Real settlement — NGN → USDC (Linkio)</h2>
-        <p class="hint">Creates a real onramp. Linkio shows you a bank account to pay into; you pay from your bank app; USDC lands in your wallet. Fee is baked into the rate.</p>
+        <p class="hint">Select a Linkio payment vendor (bank), then create the onramp. Pay into the vendor account; USDC lands in your wallet.</p>
         <div class="row">
-          <input id="l-amount" placeholder="NGN amount (e.g. 2000)" style="width:11rem" />
+          <input id="l-amount" placeholder="NGN amount (e.g. 2000)" style="width:10rem" />
         </div>
         <div class="row" style="margin-top:0.4rem">
           <input id="l-wallet" placeholder="Your Base USDC wallet address (0x…)" style="flex:1;min-width:16rem" />
         </div>
         <div class="row" style="margin-top:0.6rem">
-          <button id="l-start">Start onramp</button>
+          <button id="l-load-vendors" type="button">Load payment vendors</button>
+          <select id="l-vendor" disabled style="margin-left:0.5rem; flex:1;min-width:14rem"></select>
+        </div>
+        <div id="l-vendor-details" style="margin-top:0.6rem"></div>
+        <div class="row" style="margin-top:0.6rem">
+          <button id="l-start" type="button" disabled>Start onramp</button>
           <button id="l-stop" class="secondary" hidden>Stop watching</button>
         </div>
         <div id="l-out"></div>
@@ -273,6 +278,7 @@
     // ------------------------------------------------------------------
     let pollTimer = null;
     let activeReference = null;
+    let selectedVendor = null;
 
     function statusBadge(status) {
       const s = String(status || "").toLowerCase();
@@ -304,8 +310,6 @@
 
     function renderSession(data) {
       const s = data.session || {};
-      // The status endpoint returns the latest fetched provider transaction
-      // separately. Merge it here: previously the UI ignored this object.
       const tx = unwrapProviderTransaction(data.transaction);
       const settlement = { ...(s.settlement || {}) };
       const pick = (...values) => values.find(v => v !== undefined && v !== null && String(v).trim() !== "");
@@ -380,6 +384,44 @@
       el("l-stop").hidden = true;
     }
 
+    // Load payment vendors (banks) the customer can pay into
+    el("l-load-vendors").addEventListener("click", async () => {
+      el("l-load-vendors").disabled = true;
+      el("l-msg").textContent = "Loading vendors…";
+      try {
+        const d = await api("/api/linkio/payment-vendors?currency=NGN");
+        const vendors = d.vendors || [];
+        const select = el("l-vendor");
+        select.innerHTML = "<option value=''>Select a bank</option>";
+        for (const v of vendors) {
+          const label = (v.bank_name || v.bankName || v.name || "Bank") + " — " + (v.account_number || v.accountNumber || "");
+          const opt = document.createElement("option");
+          opt.value = JSON.stringify(v);
+          opt.textContent = label;
+          select.append(opt);
+        }
+        select.disabled = false;
+        el("l-vendor-details").textContent = "";
+        el("l-start").disabled = true;
+        selectedVendor = null;
+        el("l-msg").textContent = vendors.length + " vendor(s) loaded. Select one to pay into.";
+      } catch (e) {
+        el("l-msg").textContent = "Failed to load vendors: " + e.message;
+      }
+      el("l-load-vendors").disabled = false;
+    });
+
+    el("l-vendor").addEventListener("change", () => {
+      const val = el("l-vendor").value;
+      if (!val) { selectedVendor = null; el("l-start").disabled = true; el("l-vendor-details").textContent = ""; return; }
+      selectedVendor = JSON.parse(val);
+      const details = el("l-vendor-details");
+      details.innerHTML = "<strong>Pay into:</strong> " + (selectedVendor.bank_name || selectedVendor.bankName || "") + "<br>" +
+        "<strong>Account:</strong> " + (selectedVendor.account_number || selectedVendor.accountNumber || "") + "<br>" +
+        "<strong>Name:</strong> " + (selectedVendor.account_name || selectedVendor.accountName || "");
+      el("l-start").disabled = false;
+    });
+
     el("l-start").addEventListener("click", async () => {
       setMsg("l-msg", "");
       el("l-start").disabled = true;
@@ -388,13 +430,18 @@
         const body = {
           amount: Number(el("l-amount").value),
           walletAddress: el("l-wallet").value.trim(),
+          vendor: {
+            bank: selectedVendor?.bank_name || selectedVendor?.bankName || "",
+            number: selectedVendor?.account_number || selectedVendor?.accountNumber || "",
+            name: selectedVendor?.account_name || selectedVendor?.accountName || "",
+          },
         };
         const d = await api("/api/linkio/onramp-sessions", { method: "POST", body });
         activeReference = d.session.reference;
         renderSession({ session: d.session, events: [] });
         el("l-stop").hidden = false;
         pollTimer = setInterval(poll, 5000);
-        setMsg("l-msg", "Onramp created. Now watch for the payment account below.", "ok");
+        setMsg("l-msg", "Onramp created. Pay into the vendor account above.", "ok");
       } catch (e) { setMsg("l-msg", e.message, "err"); }
       el("l-start").disabled = false;
     });
