@@ -467,7 +467,7 @@ function mergeLinkioTransactionIntoSession(session, response) {
   session.amount = transaction.amount ?? session.amount;
   session.rate = transaction.onramp_rate ?? transaction.rate ?? session.rate;
   session.payoutAmount = transaction.payout_amount ?? transaction.payoutAmount ?? session.payoutAmount;
-  session.status = transaction.transaction_status || transaction.status || session.status;
+  session.status = transaction.transaction_status || session.status;
   const incoming = linkioSettlementDetails(transaction);
   session.settlement = Object.fromEntries(
     Object.entries({ ...(session.settlement || {}), ...incoming })
