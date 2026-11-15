@@ -57,8 +57,13 @@ function walk(value, path = "$", depth = 0, out = []) {
   }
   return out;
 }
-const unwrapped = payload?.data ?? payload;
-const flat = walk(unwrapped);
+let unwrapped = payload;
+for (let depth = 0; depth < 5 && unwrapped && typeof unwrapped === "object"; depth += 1) {
+  if (unwrapped.transaction && typeof unwrapped.transaction === "object") unwrapped = unwrapped.transaction;
+  else if (unwrapped.data && typeof unwrapped.data === "object") unwrapped = unwrapped.data;
+  else break;
+}
+const flat = walk(payload);
 const candidates = {
   bankName: ["link_bank_name", "bank_name", "bankName"],
   accountNumber: ["link_account_number", "account_number", "accountNumber"],
