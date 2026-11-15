@@ -284,7 +284,7 @@
       if (!obj || typeof obj !== "object" || found.length > 4) return found;
       for (const [key, value] of Object.entries(obj)) {
         if (typeof value === "object" && value) findBankDetails(value, found);
-        else if (/account_?number|bank_?name|account_?name/i.test(key) && value && typeof value === "string") {
+        else if (/account_?number|bank_?name|account_?name|vendor_details?/i.test(key) && value && typeof value === "string") {
           if (!found.some((f) => f.k === key)) found.push({ k: key, v: value });
         }
       }

@@ -414,6 +414,16 @@ export function recordLinkioEvent(event) {
   };
   linkioEvents.unshift(record);
   if (linkioEvents.length > WEBHOOK_EVENT_LIMIT) linkioEvents.pop();
+
+  // Merge webhook data into any matching customer onramp session so live
+  // status (and settlement details) are visible without a page refresh.
+  if (record.reference) {
+    const session = onrampSessions.get(String(record.reference));
+    if (session) {
+      mergeLinkioTransactionIntoSession(session, { transaction: payload });
+      session.status = record.status || session.status;
+    }
+  }
   return record;
 }
 
@@ -435,6 +445,10 @@ const onrampSessions = new Map();
 
 function unwrapLinkioTransaction(response) {
   let value = response;
+  // Already a transaction object (has reference or transaction_id)?
+  if (value && typeof value === "object" && (value.transaction_id || value.reference)) {
+    return value;
+  }
   for (let depth = 0; depth < 4 && value && typeof value === "object"; depth += 1) {
     if (value.transaction && typeof value.transaction === "object") {
       value = value.transaction;
