@@ -275,7 +275,7 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
       status: tx.transaction_status || null,
       startedAt: tx.transaction_date || new Date().toISOString(),
     };
-    onrampSessions.set(reference, session);
+    // onrampSessions.set(reference, session);
 
     return res.json({
       provider: "Linkio",
