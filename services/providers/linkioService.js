@@ -317,10 +317,10 @@ function requireRetailCurrency(currency) {
 }
 
 // Fetch the list of supported payment vendors (banks) for retail onramps.
-// GET /transactions/v2/payment_vendors
+// GET /static/v2/payment_vendors?currency=NGN
 // Returns vendor banks with account details the customer pays into.
 export async function getLinkioPaymentVendors({ currency = "NGN" } = {}) {
-  return linkioJson("/transactions/v2/payment_vendors", {
+  return linkioJson("/static/v2/payment_vendors", {
     method: "GET",
     query: { currency },
   });

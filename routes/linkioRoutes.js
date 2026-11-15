@@ -269,7 +269,8 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
 // GET /api/linkio/payment-vendors?currency=NGN
 linkioRouter.get("/payment-vendors", requireAuth, async (_req, res) => {
   try {
-    const vendors = await getLinkioPaymentVendors({ currency: "NGN" });
+    const data = await getLinkioPaymentVendors({ currency: "NGN" });
+    const vendors = data?.VendorList || data?.vendors || [];
     return res.json({ provider: "Linkio", vendors });
   } catch (error) { return fail(res, error); }
 });

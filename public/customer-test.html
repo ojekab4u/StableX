@@ -394,7 +394,7 @@
         const select = el("l-vendor");
         select.innerHTML = "<option value=''>Select a bank</option>";
         for (const v of vendors) {
-          const label = (v.bank_name || v.bankName || v.name || "Bank") + " — " + (v.account_number || v.accountNumber || "");
+          const label = (v.vendorBank || v.bankName || v.name || "Bank") + " — " + (v.vendorNumber || v.accountNumber || "");
           const opt = document.createElement("option");
           opt.value = JSON.stringify(v);
           opt.textContent = label;
@@ -416,9 +416,9 @@
       if (!val) { selectedVendor = null; el("l-start").disabled = true; el("l-vendor-details").textContent = ""; return; }
       selectedVendor = JSON.parse(val);
       const details = el("l-vendor-details");
-      details.innerHTML = "<strong>Pay into:</strong> " + (selectedVendor.bank_name || selectedVendor.bankName || "") + "<br>" +
-        "<strong>Account:</strong> " + (selectedVendor.account_number || selectedVendor.accountNumber || "") + "<br>" +
-        "<strong>Name:</strong> " + (selectedVendor.account_name || selectedVendor.accountName || "");
+      details.innerHTML = "<strong>Pay into:</strong> " + (selectedVendor.vendorBank || selectedVendor.bankName || "") + "<br>" +
+        "<strong>Account number:</strong> " + (selectedVendor.vendorNumber || selectedVendor.accountNumber || "") + "<br>" +
+        "<strong>Account name:</strong> " + (selectedVendor.vendorName || selectedVendor.accountName || "");
       el("l-start").disabled = false;
     });
 
@@ -431,9 +431,9 @@
           amount: Number(el("l-amount").value),
           walletAddress: el("l-wallet").value.trim(),
           vendor: {
-            bank: selectedVendor?.bank_name || selectedVendor?.bankName || "",
-            number: selectedVendor?.account_number || selectedVendor?.accountNumber || "",
-            name: selectedVendor?.account_name || selectedVendor?.accountName || "",
+            bank: selectedVendor?.vendorBank || selectedVendor?.bankName || "",
+            number: selectedVendor?.vendorNumber || selectedVendor?.accountNumber || "",
+            name: selectedVendor?.vendorName || selectedVendor?.accountName || "",
           },
         };
         const d = await api("/api/linkio/onramp-sessions", { method: "POST", body });
