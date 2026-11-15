@@ -243,56 +243,49 @@ linkioRouter.post("/onramp-sessions", requireAuth, async (req, res) => {
 
 linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) => {
   const reference = req.params.reference;
-  let transaction = null;
-  let transactionRefreshError = null;
-
-  // Always fetch live data from Linkio — never depend on in-memory sessions
-  // which are cleared when the server restarts.
   try {
-    transaction = await getLinkioTransaction(reference);
+    // Always fetch live data from Linkio — never depend on in-memory sessions
+    // which are cleared when the server restarts.
+    const transaction = await getLinkioTransaction(reference);
     console.log(`[linkio] status lookup for ${reference}:`, JSON.stringify(transaction).slice(0, 300));
-  } catch (error) {
-    transactionRefreshError = error.message;
-    console.log(`[linkio] status lookup threw for ${reference}: ${error.message}`);
-  }
 
-  if (!transaction || Object.keys(transaction).length === 0) {
-    return res.status(404).json({
-      error: transactionRefreshError || "Onramp session not found.",
+    if (!transaction || Object.keys(transaction).length === 0) {
+      return res.status(404).json({ error: "Onramp session not found.", reference });
+    }
+
+    // Linkio returns {status, message, transactions: {...}} — unwrap to the transaction object
+    const tx = unwrapLinkioTransaction(transaction);
+    const session = {
       reference,
+      transactionId: tx.transaction_id || null,
+      customerId: req.account.accountId,
+      currency: tx.currency || "NGN",
+      amount: tx.amount || null,
+      stables: tx.stable || "USDC",
+      network: tx.network || "Base",
+      walletAddress: tx.wallet_address || null,
+      rate: tx.onramp_rate || tx.rate || null,
+      payoutAmount: tx.payout_amount || null,
+      settlement: {
+        bankName: tx.link_bank_name || null,
+        accountNumber: tx.link_account_number || null,
+        accountName: tx.link_account_name || null,
+      },
+      status: tx.transaction_status || null,
+      startedAt: tx.transaction_date || new Date().toISOString(),
+    };
+    onrampSessions.set(reference, session);
+
+    return res.json({
+      provider: "Linkio",
+      session,
+      events: linkioEventsForReference(reference),
+      transaction: tx,
     });
+  } catch (error) {
+    console.log(`[linkio] status lookup threw for ${reference}: ${error.message}`);
+    return res.status(500).json({ error: error.message, reference });
   }
-
-  // Linkio returns {status, message, transactions: {...}} — unwrap to the transaction object
-  const tx = unwrapLinkioTransaction(transaction);
-  const session = {
-    reference,
-    transactionId: tx.transaction_id || null,
-    customerId: req.account.accountId,
-    currency: tx.currency || "NGN",
-    amount: tx.amount || null,
-    stables: tx.stable || "USDC",
-    network: tx.network || "Base",
-    walletAddress: tx.wallet_address || null,
-    rate: tx.onramp_rate || tx.rate || null,
-    payoutAmount: tx.payout_amount || null,
-    settlement: {
-      bankName: tx.link_bank_name || null,
-      accountNumber: tx.link_account_number || null,
-      accountName: tx.link_account_name || null,
-    },
-    status: tx.transaction_status || null,
-    startedAt: tx.transaction_date || new Date().toISOString(),
-  };
-  onrampSessions.set(reference, session);
-
-  return res.json({
-    provider: "Linkio",
-    session,
-    events: linkioEventsForReference(reference),
-    transaction: tx,
-    transactionRefreshError,
-  });
 });
 
 // Customer test flow: list Linkio payment vendors (banks) the customer can pay into.
