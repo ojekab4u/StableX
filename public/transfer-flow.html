@@ -5,7 +5,7 @@
 <title>StableX · Transfer</title>
 <link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/customer-dashboard.css">
 <style>
-body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}.wrap{max-width:980px;margin:32px auto;padding:20px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:22px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}label{display:block;font-size:13px;color:#475569;margin:10px 0 5px}input,select{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:7px}button{padding:11px 16px;border:0;border-radius:7px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;margin-top:12px}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#64748b;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}.success{color:#047857;white-space:pre-wrap}.quote{border:1px solid #cbd5e1;border-radius:8px;padding:14px;margin:10px 0}.quote button{margin-left:8px}.status{padding:10px;background:#eff6ff;border-radius:8px;white-space:pre-wrap}a{color:#1d4ed8}
+body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}.wrap{width:min(980px,100%);margin:32px auto;padding:20px;box-sizing:border-box}.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:22px;margin:16px 0;min-width:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px}label{display:block;font-size:13px;color:#475569;margin:10px 0 5px}input,select{width:100%;min-width:0;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:7px}button{padding:11px 16px;border:0;border-radius:7px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;margin:8px 8px 0 0;max-width:100%}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#64748b;font-size:13px;line-height:1.5}.error{color:#b91c1c;white-space:pre-wrap}.success{color:#047857;white-space:pre-wrap}.quote{border:1px solid #cbd5e1;border-radius:8px;padding:14px;margin:10px 0;overflow-wrap:anywhere}.quote button{margin-left:0}.status{padding:10px;background:#eff6ff;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}a{color:#1d4ed8}.paytrie-mode{border:1px solid #dbe4f0;border-radius:10px;padding:16px;margin:14px 0;min-width:0}.paytrie-mode h3{margin:0 0 8px;font-size:1rem}.paytrie-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.paytrie-fields>div{min-width:0}.paytrie-hidden{display:none!important}.paytrie-hint{font-size:12px;color:#64748b;line-height:1.45;margin:6px 0 0}@media(max-width:600px){.wrap{margin:12px auto;padding:12px}.card{padding:16px;margin:12px 0}.paytrie-mode{padding:12px}.paytrie-fields{grid-template-columns:1fr}button{width:100%;margin-right:0}.quote button{width:auto}}
 </style></head>
 <body><main class="wrap">
 <h1>StableX transfer</h1><p class="muted">Customer-first flow: sign in → beneficiary → draft transfer → live provider quotes → select quote. Paytrie registration, customer authentication, KYC and Base wallet linking are handled inside StableX before a supported order can be submitted.</p>
@@ -38,11 +38,15 @@ body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}
 </section>
 <section class="card">
 <h2>5. Paytrie customer transaction</h2>
-<p class="muted">Register or connect your own Paytrie account, complete profile requirements and KYC, and link your Base wallet in the <a href="/paytrie-onboarding.html">Paytrie onboarding page</a>. Once Paytrie has verified you and authorised StableX's platform integration, you can submit a selected live quote here. Each order may require you to complete an Interac e-Transfer through your Canadian bank.</p>
-<button id="paytrieCreateOrder" disabled>Create Paytrie order</button>
-<button id="paytrieRefresh" disabled>Refresh Paytrie order</button>
-<p id="paytrieState" class="status">Sign in and complete Paytrie onboarding before submitting an order.</p>
-</section>
+<p class="muted">StableX supports two separately controlled Paytrie paths. The restricted personal test is available only to the single StableX PERSONAL account configured by the operator. Canadian customers use the standard onboarding path.</p>
+<div id="paytriePersonalTest" class="paytrie-mode paytrie-hidden">
+<h3>Restricted personal-account test</h3><p class="muted">Enter the email address of the authorised existing Paytrie account. Paytrie sends its one-time code to that mailbox; the account holder must provide the code to the person operating this test. This does not enable Paytrie for other StableX customers.</p>
+<div class="paytrie-fields"><div><label for="paytrieTestEmail">Authorised Paytrie account email</label><input id="paytrieTestEmail" type="email" autocomplete="email" placeholder="Email registered with Paytrie"></div><div><label for="paytrieTestCode">4-digit Paytrie email code</label><input id="paytrieTestCode" inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="0000"></div></div>
+<button id="paytrieRequestCode" type="button">Request Paytrie email code</button><button id="paytrieVerifyCode" type="button" disabled>Verify code and connect</button><button id="paytrieDisconnect" type="button" class="secondary">Disconnect Paytrie session</button>
+<div class="paytrie-mode" style="margin:14px 0 0"><h3>Base Mainnet receiving wallet</h3><p class="paytrie-hint">USDC is delivered to the Base wallet saved against this StableX test account. If no wallet is linked, connect the authorised receiving wallet below.</p><button id="paytrieLinkBaseWallet" type="button">Connect / verify Base wallet</button><p id="paytrieWalletState" class="status">Checking the saved Base wallet…</p></div>
+<p id="paytrieAuthState" class="status">Checking restricted test access…</p></div>
+<div id="paytrieCanadianMode" class="paytrie-mode paytrie-hidden"><h3>Canadian customer onboarding</h3><p class="muted">Canadian customers register or connect their own Paytrie identity, complete the profile/KYC requirements and link their Base wallet in the <a href="/paytrie-onboarding.html">Paytrie onboarding page</a>. Live order submission remains subject to Paytrie's platform approval.</p></div>
+<button id="paytrieCreateOrder" disabled>Create Paytrie order</button><button id="paytrieRefresh" disabled>Refresh Paytrie order</button><p id="paytrieState" class="status">Sign in to check Paytrie access.</p></section>
 <section class="card">
 <h2>6. Recover an existing transfer</h2>
 <p class="muted">Transfers are saved in PostgreSQL. Load an earlier transfer to restore its Paytrie order after a refresh or when opening another tab. This does not create a new order.</p>
@@ -58,13 +62,13 @@ body{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0}
 </main>
 <script type="module">
 const API="";
-let token=localStorage.getItem("stablex_session")||localStorage.getItem("stablex_session")||"",account=null,beneficiaryId=null,transferId=localStorage.getItem("stablex_active_transfer_id")||null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false;
+let token=localStorage.getItem("stablex_session")||"",account=null,beneficiaryId=null,transferId=localStorage.getItem("stablex_active_transfer_id")||null,issuedQuotes=[],selectedQuoteProvider=null,paytrieTestEnabled=false,paytrieAuthenticated=false,baseWalletReady=false,paytrieOrderCreated=false,paytrieMode="none",paytrieTestWallet=null;
 const $=id=>document.getElementById(id);
 async function api(path,{method="GET",body,headers={}}={}){const h={"Content-Type":"application/json",...headers};if(token)h.Authorization="Bearer "+token;const r=await fetch(API+path,{method,headers:h,body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({error:"Invalid server response"}));if(!r.ok)throw new Error(d.error||"Request failed ("+r.status+")");return d;}
 function show(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className=cls;}
 function authUI(){const ok=!!token;$("saveBeneficiary").disabled=!ok;$("createDraft").disabled=!ok;$("authState").textContent=account?"Signed in as "+account.email+" · "+account.accountId:ok?"Session token loaded.":"Not signed in.";}
 $("login").onclick=async()=>{try{const d=await api("/api/auth/login",{method:"POST",body:{email:$("email").value.trim(),password:$("password").value}});token=d.token;account=d.account;localStorage.setItem("stablex_session",token);show("authError","");authUI();await loadPaytrieTestState();await loadSavedTransfers();if($("recoverTransferId").value.trim())await loadExistingTransaction();}catch(e){show("authError",e.message,"error");}};
-$("logout").onclick=async()=>{try{if(token){await api("/api/auth/logout",{method:"POST"});}}catch{}token="";account=null;paytrieAuthenticated=false;paytrieTestEnabled=false;baseWalletReady=false;paytrieOrderCreated=false;localStorage.removeItem("stablex_session");authUI();updatePaytrieOrderControls();show("authError","");};
+$("logout").onclick=async()=>{try{if(token){await api("/api/auth/logout",{method:"POST"});}}catch{}token="";account=null;paytrieAuthenticated=false;paytrieTestEnabled=false;baseWalletReady=false;paytrieOrderCreated=false;paytrieMode="none";paytrieTestWallet=null;localStorage.removeItem("stablex_session");authUI();updatePaytrieOrderControls();$("paytriePersonalTest").classList.add("paytrie-hidden");$("paytrieCanadianMode").classList.add("paytrie-hidden");show("authError","");};
 $("saveBeneficiary").onclick=async()=>{try{const details={name:$("benName").value.trim(),country:$("benCountry").value.trim().toUpperCase(),currency:$("benCurrency").value.trim().toUpperCase(),...( $("benWallet").value.trim()?{walletAddress:$("benWallet").value.trim(),network:$("benNetwork").value.trim()}:{}),...( $("benAccount").value.trim()?{accountNumber:$("benAccount").value.trim()}:{}),...( $("benIban").value.trim()?{iban:$("benIban").value.trim()}:{}),...( $("benBank").value.trim()?{bankName:$("benBank").value.trim()}: {})};const d=await api("/api/transfers/beneficiaries",{method:"POST",body:{details}});beneficiaryId=d.beneficiary.beneficiaryId;show("benState","Saved beneficiary "+beneficiaryId,"success");$("createDraft").disabled=false;}catch(e){show("benState",e.message,"error");}};
 $("createDraft").onclick=async()=>{try{if(!beneficiaryId)throw new Error("Save a beneficiary first.");const from=$("from").value.trim().toUpperCase(),to=$("to").value.trim().toUpperCase(),amount=Number($("amount").value);const d=await api("/api/transfers",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:{beneficiaryId,from,to,amount}});transferId=d.transfer.transferId;localStorage.setItem("stablex_active_transfer_id",transferId);issuedQuotes=[];paytrieOrderCreated=false;$("getQuotes").disabled=false;show("draftState","Draft persisted: "+transferId+" · "+d.transfer.status,"success");$("result").textContent=JSON.stringify(d.transfer,null,2);$("quotes").innerHTML="";selectedQuoteProvider=null;updatePaytrieOrderControls();}catch(e){show("draftState",e.message,"error");}};
 $("getQuotes").onclick=async()=>{try{if(!transferId)throw new Error("Create a draft first.");const d=await api("/api/routing/quotes",{method:"POST",body:{from:$("from").value.trim().toUpperCase(),to:$("to").value.trim().toUpperCase(),amount:Number($("amount").value)}});issuedQuotes=d.candidates||[];$("quotes").innerHTML="";if(!issuedQuotes.length){$("quotes").textContent=(d.disclaimer||"No provider quotes returned.")+"\n"+JSON.stringify(d.unavailableProviders||[],null,2);return;}for(const q of issuedQuotes){const card=document.createElement("div");card.className="quote";const title=document.createElement("strong");title.textContent=q.provider+" · "+q.providerClass+" · "+q.quoteType;const details=document.createElement("p");details.textContent=String(q.sourceAmount)+" "+q.from+" → "+(q.destinationAmount??"Not supplied")+" "+q.to+" · rate "+(q.rate??"n/a")+" · expires "+q.expiresAt+" · execution "+(q.executionEnabled?"enabled":"disabled");const feeDetails=document.createElement("p");feeDetails.className="muted";if(q.provider==="Paytrie"){const b=q.feeBreakdown||q.providerData?.breakdown||{};const parts=[];if(b.paytrieFee!==undefined&&b.paytrieFee!==null)parts.push("Paytrie fee: "+b.paytrieFee+" "+(b.paytrieFeeCurrency||b.feeCurrency||"(currency not specified)"));if(b.gasFee!==undefined&&b.gasFee!==null)parts.push("Gas fee: "+b.gasFee+" "+(b.gasFeeCurrency||b.feeCurrency||"(currency not specified)"));if(q.pricingPolicy){const p=q.pricingPolicy;parts.push("Pricing rule estimate: "+p.feeRatePercent+"% (60 bps), minimum "+p.minimumFee+" "+p.minimumFeeCurrency+"; estimated fee "+p.estimatedFee+" "+p.minimumFeeCurrency+"; estimated source amount left for conversion "+p.estimatedNetSourceAmount+" "+q.from+".");}feeDetails.textContent=parts.length?parts.join(" · "):"Paytrie fee details were not itemized in this quote response.";}else{feeDetails.textContent=q.fee!==null&&q.fee!==undefined?"Reported fee: "+q.fee+" "+(q.feeCurrency||"(currency not specified)"):"Fee not separately reported by provider.";}const button=document.createElement("button");button.textContent="Select this quote";button.onclick=()=>selectQuote(q.quoteId,button);card.append(title,details,feeDetails,button);$("quotes").append(card);}}catch(e){$("quotes").textContent=e.message;}};
@@ -182,43 +186,55 @@ $("refreshRecoveredOrder").onclick=async()=>{
   }catch(e){show("recoveryState",e.message,"error");}
 };
 async function loadPaytrieTestState(){
-  paytrieTestEnabled=false;paytrieAuthenticated=false;baseWalletReady=false;paytrieOrderCreated=false;
+  paytrieTestEnabled=false;paytrieAuthenticated=false;baseWalletReady=false;paytrieOrderCreated=false;paytrieMode="none";paytrieTestWallet=null;
+  $("paytriePersonalTest").classList.add("paytrie-hidden");$("paytrieCanadianMode").classList.add("paytrie-hidden");
   updatePaytrieOrderControls();
+  if(!token){show("paytrieState","Sign in to check Paytrie access.","status");return;}
   try{
-    const onboarding=await api("/api/paytrie/customer/onboarding");
-    const readiness=onboarding.readiness||{};
-    paytrieTestEnabled=Boolean(readiness.enabled&&readiness.apiKeyPresent&&readiness.eligibleStableXAccount&&readiness.platformExecutionApproved);
-    paytrieAuthenticated=Boolean(onboarding.authenticated);
-    const wallets=await api("/api/paytrie/customer/onboarding/base-wallet");
-    const baseWallet=(wallets.wallets||[]).find((wallet)=>Number(wallet.chainId)===8453);
-    baseWalletReady=Boolean(baseWallet);
-    const providerVerified=String(onboarding.customer?.providerStatus||"").toLowerCase()==="verified";
-    if(!readiness.enabled){
-      show("paytrieState","Paytrie in-app onboarding is not enabled in this StableX environment. The provider integration must be configured first.","status");
-    }else if(!providerVerified){
-      show("paytrieState","Complete Paytrie registration and KYC at /paytrie-onboarding.html. Your Paytrie status is "+(onboarding.customer?.providerStatus||"not linked")+".","status");
-    }else if(!readiness.platformExecutionApproved){
-      show("paytrieState","Your Paytrie identity is verified, but StableX live order submission is disabled until Paytrie approves the platform integration.","status");
-    }else if(!paytrieAuthenticated){
-      show("paytrieState","Paytrie profile is verified. Reconnect from the Paytrie onboarding page to refresh your one-hour customer session.","status");
-    }else if(!baseWalletReady){
-      show("paytrieState","Link a Base Mainnet wallet in the Paytrie onboarding page before requesting USDC.","status");
+    const testReadiness=await api("/api/paytrie/customer/test-readiness");
+    if(testReadiness.personalTestModeEnabled){
+      paytrieMode="personal-test";paytrieTestEnabled=Boolean(testReadiness.apiKeyPresent&&testReadiness.transactionCreationEnabled);
+      $("paytriePersonalTest").classList.remove("paytrie-hidden");
+      $("paytrieTestEmail").disabled=!paytrieTestEnabled;$("paytrieRequestCode").disabled=!paytrieTestEnabled;
+      const [auth,wallets]=await Promise.all([api("/api/paytrie/customer/auth"),api("/api/paytrie/customer/base-wallet")]);
+      paytrieAuthenticated=Boolean(auth.authenticated);paytrieTestWallet=(wallets.wallets||[]).find(wallet=>Number(wallet.chainId)===8453)||null;baseWalletReady=Boolean(paytrieTestWallet);
+      $("paytrieVerifyCode").disabled=!paytrieTestEnabled||!$("paytrieTestEmail").value.trim()||!/^\d{4}$/.test($("paytrieTestCode").value.trim());
+      show("paytrieWalletState",paytrieTestWallet?"Base Mainnet wallet linked: "+paytrieTestWallet.address:"No Base Mainnet wallet is linked to this test account. Connect the authorised receiving wallet below.",paytrieTestWallet?"success":"status");
+      show("paytrieAuthState",!paytrieTestEnabled?"Restricted test access detected, but the API key is missing or order creation is disabled.":paytrieAuthenticated?"Paytrie session is connected. Session expiry: "+(auth.expiresAt||"not supplied")+".":"Enter the authorised Paytrie account email and request its one-time code.",paytrieAuthenticated?"success":"status");
+      show("paytrieState",paytrieAuthenticated?(baseWalletReady?"Restricted personal test ready. Base receiving wallet: "+paytrieTestWallet.address:"Paytrie is connected; link a Base Mainnet receiving wallet to continue."):"Restricted personal-account test mode detected. Authenticate the authorised Paytrie account below.",paytrieAuthenticated&&baseWalletReady?"success":"status");
     }else{
-      show("paytrieState","Paytrie account verified and connected. Base Mainnet receiving wallet: "+baseWallet.address,"success");
+      const onboarding=await api("/api/paytrie/customer/onboarding"),readiness=onboarding.readiness||{};paytrieMode="canadian-onboarding";$("paytrieCanadianMode").classList.remove("paytrie-hidden");
+      paytrieTestEnabled=Boolean(readiness.enabled&&readiness.apiKeyPresent&&readiness.eligibleStableXAccount&&readiness.platformExecutionApproved);paytrieAuthenticated=Boolean(onboarding.authenticated);
+      let baseWallet=null;
+      if(readiness.eligibleStableXAccount){const wallets=await api("/api/paytrie/customer/onboarding/base-wallet");baseWallet=(wallets.wallets||[]).find(wallet=>Number(wallet.chainId)===8453)||null;}
+      baseWalletReady=Boolean(baseWallet);
+      const providerVerified=String(onboarding.customer?.providerStatus||"").toLowerCase()==="verified";
+      if(!readiness.enabled)show("paytrieState","Paytrie in-app onboarding is not enabled in this StableX environment.","status");
+      else if(!readiness.eligibleStableXAccount)show("paytrieState","Standard Paytrie onboarding is for eligible Canadian PERSONAL customers. This account is not eligible; restricted test mode is not enabled for it.","status");
+      else if(!providerVerified)show("paytrieState","Complete Paytrie registration and KYC at /paytrie-onboarding.html. Provider status: "+(onboarding.customer?.providerStatus||"not linked")+".","status");
+      else if(!readiness.platformExecutionApproved)show("paytrieState","Your Paytrie identity is verified, but live order submission remains disabled pending platform approval.","status");
+      else if(!paytrieAuthenticated)show("paytrieState","Paytrie profile is verified. Reconnect from the onboarding page to refresh your session.","status");
+      else if(!baseWalletReady)show("paytrieState","Link a Base Mainnet wallet in the Paytrie onboarding page before requesting USDC.","status");
+      else show("paytrieState","Paytrie account verified and connected. Base receiving wallet: "+baseWallet.address,"success");
     }
-    if(transferId){
-      const saved=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order");
-      if(saved.order){paytrieOrderCreated=true;renderRecoveredTransaction(saved);}
-    }
-  }catch(e){
-    show("paytrieState",e.message,"error");
-  }
+    if(transferId){const saved=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order");if(saved.order){paytrieOrderCreated=true;renderRecoveredTransaction(saved);}}
+  }catch(e){show("paytrieState",e.message,"error");if(paytrieMode==="personal-test")show("paytrieAuthState",e.message,"error");}
   updatePaytrieOrderControls();
 }
 function updatePaytrieOrderControls(){
   $("paytrieCreateOrder").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&baseWalletReady&&transferId&&selectedQuoteProvider==="Paytrie"&&!paytrieOrderCreated);
   $("paytrieRefresh").disabled=!(paytrieTestEnabled&&paytrieAuthenticated&&transferId&&paytrieOrderCreated);
 }
+$("paytrieRequestCode").onclick=async()=>{try{const email=$("paytrieTestEmail").value.trim();if(!email)throw new Error("Enter the email registered with the authorised Paytrie account.");$("paytrieRequestCode").disabled=true;const d=await api("/api/paytrie/customer/auth/login-code",{method:"POST",body:{email}});$("paytrieVerifyCode").disabled=false;show("paytrieAuthState",d.message+" Requested email: "+(d.email||email)+". API acceptance does not guarantee delivery; check the mailbox.","success");$("paytrieTestCode").focus();}catch(e){show("paytrieAuthState",e.message,"error");}finally{$("paytrieRequestCode").disabled=!paytrieTestEnabled;}};
+$("paytrieTestCode").addEventListener("input",()=>{$("paytrieVerifyCode").disabled=!(paytrieTestEnabled&&$("paytrieTestEmail").value.trim()&&/^\d{4}$/.test($("paytrieTestCode").value.trim()));});
+$("paytrieVerifyCode").onclick=async()=>{try{const email=$("paytrieTestEmail").value.trim(),code=$("paytrieTestCode").value.trim();if(!email||!/^\d{4}$/.test(code))throw new Error("Enter the Paytrie account email and its 4-digit code.");$("paytrieVerifyCode").disabled=true;const d=await api("/api/paytrie/customer/auth/verify",{method:"POST",body:{email,code}});paytrieAuthenticated=Boolean(d.authenticated);show("paytrieAuthState",d.message+" Session expiry: "+(d.expiresAt||"not supplied")+".","success");$("paytrieTestCode").value="";await loadPaytrieTestState();}catch(e){show("paytrieAuthState",e.message,"error");}finally{updatePaytrieOrderControls();}};
+$("paytrieDisconnect").onclick=async()=>{try{await api("/api/paytrie/customer/auth",{method:"DELETE"});paytrieAuthenticated=false;show("paytrieAuthState","Paytrie session disconnected from this StableX test account. The Paytrie account itself is not deleted.","status");}catch(e){show("paytrieAuthState",e.message,"error");}await loadPaytrieTestState();};
+$("paytrieLinkBaseWallet").onclick=async()=>{try{if(!window.ethereum)throw new Error("Enable MetaMask or another EVM wallet first.");const accounts=await window.ethereum.request({method:"eth_requestAccounts"});if(!accounts?.length)throw new Error("No wallet account was selected.");const address=accounts[0];let chain=String(await window.ethereum.request({method:"eth_chainId"})).toLowerCase();if(chain!=="0x2105"){try{await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:"0x2105"}]});}catch(error){if(error.code!==4902)throw error;await window.ethereum.request({method:"wallet_addEthereumChain",params:[{chainId:"0x2105",chainName:"Base",nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},rpcUrls:["https://mainnet.base.org"],blockExplorerUrls:["https://basescan.org"]}]});}chain=String(await window.ethereum.request({method:"eth_chainId"})).toLowerCase();}if(chain!=="0x2105")throw new Error("Switch your wallet to Base Mainnet (chain ID 8453).");const message="StableX wallet connection\nCustomer: "+account.accountId+"\nAddress: "+address.toLowerCase()+"\nChain ID: 8453";const signature=await window.ethereum.request({method:"personal_sign",params:[message,address]});const d=await api("/api/paytrie/customer/base-wallet",{method:"POST",body:{address,chainId:8453,walletProvider:window.ethereum.isMetaMask?"MetaMask":"EVM Wallet",message,signature}});paytrieTestWallet=d.wallet;baseWalletReady=true;show("paytrieWalletState","Base Mainnet wallet linked: "+d.wallet.address,"success");}catch(e){show("paytrieWalletState",e.message,"error");}updatePaytrieOrderControls();};
+$("paytrieCreateOrder").onclick=async()=>{
+  const amount=$("amount").value+" CAD",context=paytrieMode==="personal-test"?"This submits a REAL Paytrie transaction using the authorised personal Paytrie account. The account holder must complete the Interac payment through their Canadian bank. ":"This submits a REAL Paytrie transaction. The customer must complete the Interac payment through their Canadian bank. ";
+  if(!window.confirm(context+"Amount: "+amount+". Continue?"))return;
+  try{$("paytrieCreateOrder").disabled=true;const d=await api("/api/paytrie/transfers/"+encodeURIComponent(transferId)+"/order",{method:"POST",body:{confirm:true}});paytrieOrderCreated=Boolean(d.order);$("result").textContent=JSON.stringify(d,null,2);const reference=d.funding?.reference||d.order?.paymentDetails?.rmtId;const fundingText=reference?"\nInterac reference: "+reference+"\nPayment type: "+(d.funding?.paymentType||"INTERAC")+". The authorised account holder must complete payment using Paytrie's instructions and their Canadian bank.":"";show("paytrieState",(d.message||"Paytrie order request completed.")+fundingText,d.created?"success":"status");}catch(e){show("paytrieState",e.message,"error");}updatePaytrieOrderControls();
+};
 $("paytrieCreateOrder").onclick=async()=>{
   const amount=$("amount").value+" CAD";
   if(!window.confirm("This submits a REAL Paytrie transaction for "+amount+". Paytrie will provide an Interac payment reference for you to complete through your Canadian bank. Continue?"))return;
@@ -229,7 +245,7 @@ $("paytrieCreateOrder").onclick=async()=>{
     $("result").textContent=JSON.stringify(d,null,2);
     const reference=d.funding?.reference||d.order?.paymentDetails?.rmtId;
     const fundingText=reference
-      ? "\\nInterac reference: "+reference+"\\nPayment type: "+(d.funding?.paymentType||"INTERAC")+". Complete the payment using Paytrie's instructions and your own Canadian bank."
+      ? "\nInterac reference: "+reference+"\nPayment type: "+(d.funding?.paymentType||"INTERAC")+". Complete the payment using Paytrie's instructions and your own Canadian bank."
       : "";
     show("paytrieState",(d.message||"Paytrie order request completed.")+fundingText,d.created?"success":"status");
     if(paytrieOrderCreated)$("paytrieRefresh").disabled=false;
