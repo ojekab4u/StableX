@@ -295,6 +295,7 @@
       let current = value;
       for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
         if (current.transaction && typeof current.transaction === "object") current = current.transaction;
+        else if (current.transactions && typeof current.transactions === "object" && !Array.isArray(current.transactions)) current = current.transactions;
         else if (current.data && typeof current.data === "object") current = current.data;
         else break;
       }
