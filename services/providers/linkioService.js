@@ -401,14 +401,16 @@ const linkioEvents = [];
 // Linkio envelope: { event: "bridge.events.transaction_request.updated"|"...successful",
 // payload: { reference, payment_type, transaction_status, Notification?, ... } }.
 export function recordLinkioEvent(event) {
-  const payload = event?.payload || {};
+  const data = event?.data || {};
   const record = {
     receivedAt: new Date().toISOString(),
-    event: event?.event || event?.type || "unknown",
-    reference: payload.reference || event?.trx_reference || event?.reference || null,
-    paymentType: payload.payment_type || null,
-    status: payload.transaction_status || null,
-    notification: payload.Notification || null,
+    event: event?.event_type || event?.event || event?.type || "unknown",
+    eventId: event?.event_id || null,
+    reference: data?.reference_id || data?.payment_id || event?.reference || null,
+    paymentId: data?.payment_id || null,
+    state: data?.state || null,
+    status: data?.status || null,
+    paymentType: event?.payment_type || null,
     signaturePresent: Boolean(event?._signatureHeader),
     payload: event,
   };
@@ -420,8 +422,8 @@ export function recordLinkioEvent(event) {
   if (record.reference) {
     const session = onrampSessions.get(String(record.reference));
     if (session) {
-      mergeLinkioTransactionIntoSession(session, { transaction: payload });
-      session.status = record.status || session.status;
+      mergeLinkioTransactionIntoSession(session, { transaction: data });
+      session.status = record.status || record.state || session.status;
     }
   }
   return record;

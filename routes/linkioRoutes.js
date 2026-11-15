@@ -2,7 +2,8 @@
 // Every state-changing endpoint is gated behind the StableX operator token:
 // Linkio transactions are initiated against the StableX business account, so
 // they are operator decisions, not individual customer actions.
-import { Router } from "express";
+import express, { Router } from "express";
+import crypto from "node:crypto";
 import {
   getLinkioReadiness,
   getLinkioBaseUrl,
@@ -171,23 +172,53 @@ linkioRouter.get("/payout-status/:reference", requireOperator, async (req, res) 
   } catch (error) { return fail(res, error); }
 });
 
-// Inbound Linkio webhooks. This endpoint must stay public (Linkio's servers
-// authenticate by knowing the URL; events are logged verbatim for audit).
-linkioRouter.post("/webhooks", (req, res) => {
-  const signatureHeaders = Object.keys(req.headers).filter((h) => h.includes("sign"));
-  const event = req.body || {};
-  if (signatureHeaders.length) event._signatureHeader = signatureHeaders.join(",");
-  const record = recordLinkioEvent(event);
-  console.log(
-    `[linkio] webhook: ${record.event}` +
-      `${record.reference ? ` ref=${record.reference}` : ""}` +
-      `${record.status ? ` status=${record.status}` : ""}` +
-      `${record.notification ? ` | ${record.notification}` : ""}`
-  );
-  return res.json({ received: true, event: record.event });
-});
+// Inbound Linkio (Bridge) webhooks.
+// Signature verification: HMAC-SHA256 of the raw body with the endpoint's
+// signing secret, sent as the `X-Webhook-Signature` header.
+// Must stay public; we reject anything with a bad signature.
+linkioRouter.post(
+  "/webhooks",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const secret = String(process.env.LINKIO_WEBHOOK_SECRET_KEY || "").trim();
+    const received = req.get("X-Webhook-Signature") || "";
+    if (!secret) {
+      console.log("[linkio] webhook: no secret configured, accepting unverified");
+    } else if (!received) {
+      console.log("[linkio] webhook: missing signature, rejecting");
+      return res.status(401).send("Missing webhook signature");
+    } else {
+      const expected = crypto
+        .createHmac("sha256", secret)
+        .update(req.body)
+        .digest("hex");
+      if (
+        received.length !== expected.length ||
+        !crypto.timingSafeEqual(Buffer.from(received, "hex"), Buffer.from(expected, "hex"))
+      ) {
+        console.log("[linkio] webhook: bad signature, rejecting");
+        return res.status(401).send("Invalid webhook signature");
+      }
+    }
 
-// Operator view of the last events received (banking_details_received etc.).
+    let event;
+    try {
+      event = JSON.parse(req.body.toString("utf8"));
+    } catch {
+      return res.status(400).send("Invalid JSON body");
+    }
+
+    const record = recordLinkioEvent(event);
+    console.log(
+      `[linkio] webhook: ${record.event}` +
+        `${record.reference ? ` ref=${record.reference}` : ""}` +
+        `${record.status ? ` status=${record.status}` : ""}`
+    );
+    return res.json({ received: true, event: record.event });
+  }
+);
+
+// Operator view of the last events received (payment.onramp.* etc.).
 linkioRouter.get("/webhooks", requireOperator, (_req, res) => {
   return res.json({ provider: "Linkio", events: listLinkioEvents() });
 });
