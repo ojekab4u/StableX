@@ -135,6 +135,10 @@
           <button id="l-stop" class="secondary" hidden>Stop watching</button>
           <button id="l-watch" class="secondary" hidden>Start watching</button>
         </div>
+        <div class="row" style="margin-top:0.6rem">
+          <input id="l-check-ref" placeholder="Paste an existing reference to check status" style="flex:1;min-width:16rem" />
+          <button id="l-check-btn" type="button">Check status</button>
+        </div>
         <div id="l-out"></div>
         <div class="msg" id="l-msg"></div>
       </section>
@@ -465,6 +469,29 @@
     });
     el("l-stop").addEventListener("click", () => { stopPolling(); localStorage.removeItem("stablex_linkio_reference"); setMsg("l-msg", "Stopped watching. Refresh won't lose the onramp — click Start watching to resume."); });
     el("l-watch").addEventListener("click", () => { startPolling(); setMsg("l-msg", "Watching for updates every 5 seconds…"); });
+
+    // Manually check the status of an existing onramp by reference (no new transaction)
+    el("l-check-btn").addEventListener("click", async () => {
+      const ref = el("l-check-ref").value.trim();
+      if (!ref) { setMsg("l-msg", "Enter a reference first.", "err"); return; }
+      el("l-check-btn").disabled = true;
+      el("l-check-btn").textContent = "Checking…";
+      try {
+        const data = await api("/api/linkio/onramp-sessions/" + encodeURIComponent(ref));
+        activeReference = ref;
+        localStorage.setItem("stablex_linkio_reference", ref);
+        el("l-out").innerHTML = "";
+        renderSession({ session: data.session, events: data.events, transaction: data.transaction });
+        el("l-stop").hidden = false;
+        el("l-watch").hidden = true;
+        startPolling();
+        setMsg("l-msg", "Tracking reference " + ref + ".", "ok");
+      } catch (e) {
+        setMsg("l-msg", "Could not check reference " + ref + ": " + e.message, "err");
+      }
+      el("l-check-btn").disabled = false;
+      el("l-check-btn").textContent = "Check status";
+    });
   </script>
 </body>
 </html>
