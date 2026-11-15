@@ -440,6 +440,10 @@ function unwrapLinkioTransaction(response) {
       value = value.transaction;
       continue;
     }
+    if (value.transactions && typeof value.transactions === "object" && !Array.isArray(value.transactions)) {
+      value = value.transactions;
+      continue;
+    }
     if (value.data && typeof value.data === "object") {
       value = value.data;
       continue;
