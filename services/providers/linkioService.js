@@ -459,7 +459,7 @@ export function linkioEventsForReference(reference) {
 // ---------------------------------------------------------------------------
 const onrampSessions = new Map();
 
-function unwrapLinkioTransaction(response) {
+export function unwrapLinkioTransaction(response) {
   let value = response;
   // Already a transaction object (has reference or transaction_id)?
   if (value && typeof value === "object" && (value.transaction_id || value.reference)) {
