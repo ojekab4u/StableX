@@ -252,7 +252,7 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
   if (!session) {
     try {
       transaction = await getLinkioTransaction(reference);
-      if (transaction) {
+      if (transaction && Object.keys(transaction).length > 0) {
         const syntheticSession = {
           reference,
           transactionId: transaction.transaction_id || null,
@@ -274,9 +274,13 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
         };
         onrampSessions.set(reference, syntheticSession);
         session = syntheticSession;
+        console.log(`[linkio] rebuilt session for ${reference}: status=${session.status}`);
+      } else {
+        console.log(`[linkio] getLinkioTransaction returned empty for ${reference}:`, JSON.stringify(transaction).slice(0, 200));
       }
     } catch (error) {
       transactionRefreshError = error.message;
+      console.log(`[linkio] getLinkioTransaction threw for ${reference}: ${error.message}`);
     }
   } else if (session.customerId !== req.account.accountId) {
     return res.status(404).json({ error: "Onramp session not found." });
@@ -289,13 +293,15 @@ linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) =>
   // Always refresh live status from Linkio
   try {
     const live = await getLinkioTransaction(reference);
-    if (live) {
+    console.log(`[linkio] refresh getLinkioTransaction for ${reference}:`, JSON.stringify(live).slice(0, 300));
+    if (live && Object.keys(live).length > 0) {
       mergeLinkioOnrampSessionTransaction(reference, { transaction: live });
       session = getLinkioOnrampSession(reference);
       transaction = live;
     }
   } catch (error) {
     transactionRefreshError = error.message;
+    console.log(`[linkio] refresh getLinkioTransaction threw for ${reference}: ${error.message}`);
   }
 
   return res.json({
