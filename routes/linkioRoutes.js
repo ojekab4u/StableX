@@ -243,72 +243,54 @@ linkioRouter.post("/onramp-sessions", requireAuth, async (req, res) => {
 
 linkioRouter.get("/onramp-sessions/:reference", requireAuth, async (req, res) => {
   const reference = req.params.reference;
-  let session = getLinkioOnrampSession(reference);
   let transaction = null;
   let transactionRefreshError = null;
 
-  // If the session was cleared on server restart, fetch live data from Linkio
-  // and rebuild the session so customers can still trace their onramps.
-  if (!session) {
-    try {
-      transaction = await getLinkioTransaction(reference);
-      if (transaction && Object.keys(transaction).length > 0) {
-        const syntheticSession = {
-          reference,
-          transactionId: transaction.transaction_id || null,
-          customerId: req.account.accountId,
-          currency: "NGN",
-          amount: transaction.amount || null,
-          stables: "USDC",
-          network: "Base",
-          walletAddress: transaction.wallet_address || null,
-          rate: transaction.onramp_rate || transaction.rate || null,
-          payoutAmount: transaction.payout_amount || null,
-          settlement: {
-            bankName: transaction.link_bank_name || null,
-            accountNumber: transaction.link_account_number || null,
-            accountName: transaction.link_account_name || null,
-          },
-          status: transaction.transaction_status || null,
-          startedAt: transaction.date_created || new Date().toISOString(),
-        };
-        onrampSessions.set(reference, syntheticSession);
-        session = syntheticSession;
-        console.log(`[linkio] rebuilt session for ${reference}: status=${session.status}`);
-      } else {
-        console.log(`[linkio] getLinkioTransaction returned empty for ${reference}:`, JSON.stringify(transaction).slice(0, 200));
-      }
-    } catch (error) {
-      transactionRefreshError = error.message;
-      console.log(`[linkio] getLinkioTransaction threw for ${reference}: ${error.message}`);
-    }
-  } else if (session.customerId !== req.account.accountId) {
-    return res.status(404).json({ error: "Onramp session not found." });
-  }
-
-  if (!session) {
-    return res.status(404).json({ error: "Onramp session not found." });
-  }
-
-  // Always refresh live status from Linkio
+  // Always fetch live data from Linkio — never depend on in-memory sessions
+  // which are cleared when the server restarts.
   try {
-    const live = await getLinkioTransaction(reference);
-    console.log(`[linkio] refresh getLinkioTransaction for ${reference}:`, JSON.stringify(live).slice(0, 300));
-    if (live && Object.keys(live).length > 0) {
-      mergeLinkioOnrampSessionTransaction(reference, { transaction: live });
-      session = getLinkioOnrampSession(reference);
-      transaction = live;
-    }
+    transaction = await getLinkioTransaction(reference);
+    console.log(`[linkio] status lookup for ${reference}:`, JSON.stringify(transaction).slice(0, 300));
   } catch (error) {
     transactionRefreshError = error.message;
-    console.log(`[linkio] refresh getLinkioTransaction threw for ${reference}: ${error.message}`);
+    console.log(`[linkio] status lookup threw for ${reference}: ${error.message}`);
   }
+
+  if (!transaction || Object.keys(transaction).length === 0) {
+    return res.status(404).json({
+      error: transactionRefreshError || "Onramp session not found.",
+      reference,
+    });
+  }
+
+  // Linkio returns {status, message, transactions: {...}} — unwrap to the transaction object
+  const tx = unwrapLinkioTransaction(transaction);
+  const session = {
+    reference,
+    transactionId: tx.transaction_id || null,
+    customerId: req.account.accountId,
+    currency: tx.currency || "NGN",
+    amount: tx.amount || null,
+    stables: tx.stable || "USDC",
+    network: tx.network || "Base",
+    walletAddress: tx.wallet_address || null,
+    rate: tx.onramp_rate || tx.rate || null,
+    payoutAmount: tx.payout_amount || null,
+    settlement: {
+      bankName: tx.link_bank_name || null,
+      accountNumber: tx.link_account_number || null,
+      accountName: tx.link_account_name || null,
+    },
+    status: tx.transaction_status || null,
+    startedAt: tx.transaction_date || new Date().toISOString(),
+  };
+  onrampSessions.set(reference, session);
 
   return res.json({
     provider: "Linkio",
     session,
     events: linkioEventsForReference(reference),
-    transaction,
+    transaction: tx,
     transactionRefreshError,
   });
 });
