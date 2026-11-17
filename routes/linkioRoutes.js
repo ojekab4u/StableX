@@ -172,38 +172,57 @@ linkioRouter.get("/payout-status/:reference", requireOperator, async (req, res) 
   } catch (error) { return fail(res, error); }
 });
 
+// Checks an HMAC-SHA256 hex signature against any one of the configured
+// endpoint secrets. Returns true as soon as one matches.
+function verifyWebhookSignature(rawBody, receivedHex, secrets) {
+  for (const secret of secrets) {
+    const expected = crypto
+      .createHmac("sha256", secret)
+      .update(rawBody)
+      .digest("hex");
+    if (
+      receivedHex.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(receivedHex, "hex"), Buffer.from(expected, "hex"))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Inbound Linkio (Bridge) webhooks.
 // Signature verification: HMAC-SHA256 of the raw body with the endpoint's
 // signing secret, sent as the `X-Webhook-Signature` header.
 // Must stay public; we reject anything with a bad signature.
 linkioRouter.post(
   "/webhooks",
-  express.raw({ type: "application/json" }),
   (req, res) => {
-    const secret = String(process.env.LINKIO_WEBHOOK_SECRET_KEY || "").trim();
+    // Two senders use this endpoint: the Linkio dashboard webhook and the
+    // Bridge by LINK webhook. Each has its own signing secret, so a valid
+    // signature against either secret is accepted.
+    const secrets = [
+      process.env.BRIDGE_LINK_WEBHOOK_SECRET,
+      process.env.LINKIO_WEBHOOK_SECRET_KEY,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
     const received = req.get("X-Webhook-Signature") || "";
-    if (!secret) {
+    // req.rawBody is the exact request text (captured by the global JSON
+    // parser), so the signature check covers the real bytes Bridge signed.
+    const rawText = typeof req.rawBody === "string" ? req.rawBody : "";
+    if (secrets.length === 0) {
       console.log("[linkio] webhook: no secret configured, accepting unverified");
     } else if (!received) {
       console.log("[linkio] webhook: missing signature, rejecting");
       return res.status(401).send("Missing webhook signature");
-    } else {
-      const expected = crypto
-        .createHmac("sha256", secret)
-        .update(req.body)
-        .digest("hex");
-      if (
-        received.length !== expected.length ||
-        !crypto.timingSafeEqual(Buffer.from(received, "hex"), Buffer.from(expected, "hex"))
-      ) {
-        console.log("[linkio] webhook: bad signature, rejecting");
-        return res.status(401).send("Invalid webhook signature");
-      }
+    } else if (!verifyWebhookSignature(rawText, received, secrets)) {
+      console.log("[linkio] webhook: bad signature, rejecting");
+      return res.status(401).send("Invalid webhook signature");
     }
 
     let event;
     try {
-      event = JSON.parse(req.body.toString("utf8"));
+      event = JSON.parse(rawText);
     } catch {
       return res.status(400).send("Invalid JSON body");
     }
