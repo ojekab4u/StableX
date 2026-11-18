@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StableX — Flow of Funds</title>
+<style>
+  body { font-family: "Segoe UI", Arial, sans-serif; background: #f4f6f8; color: #1c2733; margin: 0; padding: 24px; }
+  .sheet { max-width: 1020px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 28px 32px 36px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+  h1 { font-size: 24px; margin: 0 0 2px; }
+  .sub { color: #5b6b7b; font-size: 13.5px; margin: 0 0 14px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; margin: 0 0 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  svg { display: block; margin: 4px auto; width: 100%; max-width: 960px; height: auto; }
+  svg text { font-family: "Segoe UI", Arial, sans-serif; }
+  .foot { font-size: 12.5px; color: #5b6b7b; text-align: center; margin-top: 8px; }
+  @media (max-width: 640px) {
+    body { padding: 10px; }
+    .sheet { padding: 16px 12px 22px; border-radius: 8px; }
+    h1 { font-size: 19px; }
+    .sub, .legend { font-size: 11.5px; }
+    .legend { gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>StableX — Flow of Funds</h1>
+  <p class="sub">One customer. Money in &rarr; wallets &rarr; convert &rarr; money out. USDC on Base is the bridge asset.</p>
+
+  <div class="legend">
+    <span><i class="dot" style="background:#2e7d43"></i> Proven</span>
+    <span><i class="dot" style="background:#2f6fde"></i> Test pending</span>
+    <span><i class="dot" style="background:#c98a1b"></i> Staging / planned</span>
+    <span><i class="dot" style="background:#9aa7b2"></i> Provider TBD</span>
+    <span><i class="dot" style="background:#6a4fa3"></i> StableX owned</span>
+  </div>
+
+  <svg viewBox="0 0 960 600">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#41505e"/></marker>
+      <marker id="astart" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#41505e"/></marker>
+    </defs>
+
+    <!-- customer bank -->
+    <rect x="380" y="14" width="200" height="52" rx="10" fill="#eef1f4" stroke="#9aa7b2" stroke-width="2"/>
+    <text x="480" y="46" text-anchor="middle" font-size="15" font-weight="600">Customer's bank</text>
+
+    <!-- arrows bank -> two rails -->
+    <path d="M 415 66 C 340 100 280 110 220 136" fill="none" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M 545 66 C 620 100 680 110 740 136" fill="none" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+
+    <!-- rail A: permanent wallets -->
+    <rect x="60" y="142" width="300" height="78" rx="10" fill="#e8f0fd" stroke="#2f6fde" stroke-width="2"/>
+    <text x="210" y="168" text-anchor="middle" font-size="14.5" font-weight="600">Permanent wallets</text>
+    <text x="210" y="189" text-anchor="middle" font-size="12" fill="#5b6b7b">USD · EUR · GBP &mdash; Bridge.xyz</text>
+    <text x="210" y="207" text-anchor="middle" font-size="12" fill="#5b6b7b">NGN &mdash; Nomba</text>
+
+    <!-- rail B: direct onramp -->
+    <rect x="600" y="142" width="300" height="78" rx="10" fill="#e8f5ec" stroke="#2e7d43" stroke-width="2"/>
+    <text x="750" y="168" text-anchor="middle" font-size="14.5" font-weight="600">Direct on-ramp</text>
+    <text x="750" y="189" text-anchor="middle" font-size="12" fill="#5b6b7b">NGN · GHS &rarr; USDC</text>
+    <text x="750" y="207" text-anchor="middle" font-size="12" fill="#5b6b7b">Bridge by LINK &middot; one-time deposit</text>
+
+    <!-- arrows rails -> wallets -->
+    <line x1="210" y1="220" x2="262" y2="252" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+    <line x1="750" y1="220" x2="698" y2="252" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+
+    <!-- wallets -->
+    <rect x="120" y="258" width="290" height="74" rx="10" fill="#f1ecfa" stroke="#6a4fa3" stroke-width="2"/>
+    <text x="265" y="286" text-anchor="middle" font-size="14.5" font-weight="600">Fiat ledger</text>
+    <text x="265" y="307" text-anchor="middle" font-size="12" fill="#5b6b7b">NGN · USD · EUR · GBP</text>
+    <text x="265" y="324" text-anchor="middle" font-size="11.5" fill="#8a76b5">funds can sit and route later</text>
+
+    <rect x="550" y="258" width="290" height="74" rx="10" fill="#f1ecfa" stroke="#6a4fa3" stroke-width="2"/>
+    <text x="695" y="286" text-anchor="middle" font-size="14.5" font-weight="600">USDC on Base</text>
+    <text x="695" y="307" text-anchor="middle" font-size="12" fill="#5b6b7b">StableX wallet · bridge asset</text>
+    <text x="695" y="324" text-anchor="middle" font-size="11.5" fill="#8a76b5">on-chain, ours to control</text>
+
+    <!-- convert double arrow -->
+    <line x1="414" y1="295" x2="546" y2="295" stroke="#41505e" stroke-width="2" marker-start="url(#astart)" marker-end="url(#a)"/>
+    <text x="480" y="281" text-anchor="middle" font-size="12" fill="#41505e" font-weight="600">convert</text>
+    <text x="480" y="312" text-anchor="middle" font-size="10.5" fill="#5b6b7b">best rate per leg</text>
+
+    <!-- arrows wallets -> send-out bar -->
+    <line x1="265" y1="332" x2="265" y2="368" stroke="#41505e" stroke-width="2"/>
+    <line x1="695" y1="332" x2="695" y2="368" stroke="#41505e" stroke-width="2"/>
+    <line x1="107" y1="368" x2="851" y2="368" stroke="#41505e" stroke-width="2"/>
+    <text x="480" y="360" text-anchor="middle" font-size="12.5" font-weight="600" fill="#41505e">send out</text>
+
+    <!-- drops into payout boxes -->
+    <line x1="107" y1="368" x2="107" y2="396" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+    <line x1="293" y1="368" x2="293" y2="396" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+    <line x1="479" y1="368" x2="479" y2="396" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+    <line x1="665" y1="368" x2="665" y2="396" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+    <line x1="851" y1="368" x2="851" y2="396" stroke="#41505e" stroke-width="2" marker-end="url(#a)"/>
+
+    <!-- payout boxes (five, evenly spaced) -->
+    <rect x="20" y="402" width="174" height="64" rx="10" fill="#e8f0fd" stroke="#2f6fde" stroke-width="2"/>
+    <text x="107" y="426" text-anchor="middle" font-size="13" font-weight="600">NGN · GHS</text>
+    <text x="107" y="443" text-anchor="middle" font-size="11.5" fill="#5b6b7b">bank / momo</text>
+    <text x="107" y="459" text-anchor="middle" font-size="10.5" fill="#5b6b7b">Bridge by LINK</text>
+
+    <rect x="206" y="402" width="174" height="64" rx="10" fill="#fdf3df" stroke="#c98a1b" stroke-width="2"/>
+    <text x="293" y="426" text-anchor="middle" font-size="13" font-weight="600">CAD convert</text>
+    <text x="293" y="443" text-anchor="middle" font-size="11.5" fill="#8a6a1d">Netcoins</text>
+    <text x="293" y="459" text-anchor="middle" font-size="10.5" fill="#8a6a1d">staging</text>
+
+    <rect x="392" y="402" width="174" height="64" rx="10" fill="#e8f0fd" stroke="#2f6fde" stroke-width="2"/>
+    <text x="479" y="426" text-anchor="middle" font-size="13" font-weight="600">CAD payout</text>
+    <text x="479" y="443" text-anchor="middle" font-size="11.5" fill="#4a5b6b">Nomba Bank / EFT</text>
+    <text x="479" y="459" text-anchor="middle" font-size="10.5" fill="#4a5b6b">Interac · $1–25k</text>
+
+    <rect x="578" y="402" width="174" height="64" rx="10" fill="#e8f0fd" stroke="#2f6fde" stroke-width="2"/>
+    <text x="665" y="426" text-anchor="middle" font-size="13" font-weight="600">Global payout</text>
+    <text x="665" y="443" text-anchor="middle" font-size="11.5" fill="#4a5b6b">Nomba · US UK EU</text>
+    <text x="665" y="459" text-anchor="middle" font-size="10.5" fill="#4a5b6b">ACH · Wire · SEPA · FPS</text>
+
+    <rect x="764" y="402" width="176" height="64" rx="10" fill="#f1ecfa" stroke="#6a4fa3" stroke-width="2"/>
+    <text x="852" y="426" text-anchor="middle" font-size="13" font-weight="600">Any Base wallet</text>
+    <text x="852" y="443" text-anchor="middle" font-size="11.5" fill="#8a76b5">USDC out · instant</text>
+    <text x="852" y="459" text-anchor="middle" font-size="10.5" fill="#8a76b5">StableX owned</text>
+
+    <!-- fee note -->
+    <text x="480" y="502" text-anchor="middle" font-size="12" fill="#5b6b7b">provider fee is inside the quoted rate &mdash; no separate charge</text>
+
+    <!-- Africa coverage note -->
+    <text x="480" y="530" text-anchor="middle" font-size="12" fill="#9aa7b2">KES · TZS · UGX · XAF · XOF · ZAR — planned: Fincra candidate + Nomba payout routes, to confirm</text>
+  </svg>
+
+  <p class="foot">Live corridors: NGN &middot; GHS &middot; USD &middot; EUR &middot; GBP &middot; CAD (staging)</p>
+</div>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getCustomerGateStatus } from "../services/complianceService.js";
+import { verifyBridgeSignature, applyBridgeVirtualAccountEvent } from "../services/bridgeWebhookService.js";
 import { saveBridgeTosLink, saveBridgeSignedAgreement, getBridgeOnboarding, saveBridgeCustomerId, saveBridgeCustomerStatus } from "../repositories/providerCustomerRepository.js";
 import {
   getBridgeReadiness,
@@ -26,6 +27,30 @@ const fail = (res, e) => res.status(e.statusCode || 503).json({
 });
 
 bridgeRouter.get("/readiness", (_req, res) => res.json(getBridgeReadiness()));
+
+// Inbound Bridge webhooks. Public by design: the signature is the only check,
+// and we reject anything that does not verify. Stale deliveries get 400 so
+// Bridge retries them with a fresh timestamp.
+bridgeRouter.post("/webhooks", async (req, res) => {
+  const publicKeyPem = String(process.env.BRIDGE_WEBHOOK_PUBLIC_KEY || "").replace(/\\n/g, "\n").trim();
+  if (!publicKeyPem) return res.status(503).json({ error: "BRIDGE_WEBHOOK_PUBLIC_KEY is not configured." });
+  const rawBody = typeof req.rawBody === "string" ? req.rawBody : "";
+  const check = verifyBridgeSignature({ rawBody, header: req.get("X-Webhook-Signature"), publicKeyPem });
+  if (!check.ok) {
+    console.log(`[bridge] webhook rejected: ${check.reason}`);
+    return res.status(check.reason === "stale_timestamp" ? 400 : 401).json({ error: check.reason });
+  }
+  let event;
+  try { event = JSON.parse(rawBody); } catch { return res.status(400).json({ error: "Invalid JSON body." }); }
+  try {
+    const result = await applyBridgeVirtualAccountEvent(event);
+    console.log(`[bridge] webhook ${event.event_type} -> ${result.reason || (result.credited ? "credited" : "duplicate")}`);
+    return res.json({ received: true, handled: Boolean(result.handled) });
+  } catch (error) {
+    console.log(`[bridge] webhook credit failed: ${error.message}`);
+    return res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
 
 // Read-only provider lookup. Match locally by client_reference_id so no
 // assumptions are made about undocumented server-side filtering parameters.

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
+import { getDepositDestination } from "../services/depositDestinationService.js";
+import { createWallet } from "../services/walletService.js";
 import {
   getBridgeOnboarding,
   saveBridgeTosLink,
@@ -588,13 +590,21 @@ bridgeSelfServeRouter.get("/virtual-accounts", async (req, res) => {
   } catch (error) { return fail(res, error); }
 });
 
+// Where this customer's Bridge deposits will settle. Read-only: the browser
+// cannot choose it.
+bridgeSelfServeRouter.get("/deposit-destination", (req, res) => {
+  try {
+    return res.json({ destination: getDepositDestination(req.account.accountId) });
+  } catch (error) { return fail(res, error); }
+});
+
 // Create dummy Sandbox deposit instructions for the signed-in customer. The
 // Idempotency-Key comes from the browser so a retry cannot double-create.
 bridgeSelfServeRouter.post("/virtual-accounts", async (req, res) => {
   try {
     const customerId = req.account.accountId;
     const currency = String(req.body?.currency || "").trim().toUpperCase();
-    const destinationAddress = String(req.body?.destinationAddress || "").trim();
+    const destination = getDepositDestination(customerId);
     const readiness = getBridgeReadiness();
     if (readiness.environment !== "Sandbox") {
       return res.status(409).json({ error: "This workspace is restricted to Bridge Sandbox. Live accounts need the separately approved production workflow.", environment: readiness.environment });
@@ -607,16 +617,19 @@ bridgeSelfServeRouter.post("/virtual-accounts", async (req, res) => {
     if (!idempotencyKey || idempotencyKey.length > 128) {
       return res.status(400).json({ error: "Provide an Idempotency-Key header (maximum 128 characters)." });
     }
+    try { await createWallet({ customerId, currency: "USDC" }); }
+    catch (error) { if (error.statusCode !== 409) throw error; }
     const result = await createBridgeVirtualAccount({
       bridgeCustomerId: onboarding.providerCustomerId,
       currency,
-      destinationAddress,
+      destinationAddress: destination.address,
       idempotencyKey,
     });
     const account = result.data || result;
     return res.status(201).json({
       provider: "Bridge", environment: readiness.environment, customerId,
       bridgeCustomerId: onboarding.providerCustomerId, virtualAccount: account,
+      destination: { address: destination.address, mode: destination.mode },
       sandboxOnly: true, dummyDepositInstructions: true, fundsMoved: false,
       nextStep: "Use the returned source_deposit_instructions to display the simulated funding details. Sandbox does not fire payment webhooks or move real money.",
     });

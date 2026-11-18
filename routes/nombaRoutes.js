@@ -11,6 +11,7 @@ import {
   transferToNigerianBank,
 } from "../services/nombaService.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 
 export const nombaRouter = Router();
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
@@ -28,12 +29,15 @@ nombaRouter.get("/readiness", (_req, res) => {
   return res.json(getNombaReadiness());
 });
 
-// Create NGN virtual account for a customer
-nombaRouter.post("/virtual-accounts", async (req, res) => {
+// Create NGN virtual account for the signed-in customer. The customer is taken
+// from the session, never from the request body.
+nombaRouter.post("/virtual-accounts", requireAuth, async (req, res) => {
   try {
-    const { customerId, customerName, email, phone, bvn } = req.body || {};
-    if (!customerId || !customerName) {
-      return res.status(400).json({ error: "customerId and customerName are required." });
+    const customerId = req.account.accountId;
+    const { email, phone, bvn } = req.body || {};
+    const customerName = req.body?.customerName || req.account.fullName || req.account.email;
+    if (!customerName) {
+      return res.status(400).json({ error: "A customer name is required." });
     }
     const gate = await getCustomerGateStatus(customerId);
     if (!gate.gate.approved) return res.status(403).json({ error: "Complete identity verification before requesting payment details.", verification: gate.gate });
@@ -44,10 +48,13 @@ nombaRouter.post("/virtual-accounts", async (req, res) => {
   }
 });
 
-// List all virtual accounts for a customer
-nombaRouter.get("/virtual-accounts/:customerId", async (_req, res) => {
+// List the signed-in customer's own virtual accounts.
+nombaRouter.get("/virtual-accounts/:customerId", requireAuth, async (req, res) => {
+  const customerId = req.params.customerId;
+  if (customerId !== req.account.accountId) {
+    return res.status(403).json({ error: "You can only access your own customer records." });
+  }
   try {
-    const customerId = _req.params.customerId;
     const accounts = await getNombaAccountsByCustomer(customerId);
     return res.json({ customerId, accounts });
   } catch (e) {
@@ -55,12 +62,12 @@ nombaRouter.get("/virtual-accounts/:customerId", async (_req, res) => {
   }
 });
 
-// Get a single virtual account
-nombaRouter.get("/virtual-accounts/:refId/details", async (_req, res) => {
+// Get one virtual account. Returned only when it belongs to the signed-in
+// customer; anything else gets the same 404 as a missing account.
+nombaRouter.get("/virtual-accounts/:refId/details", requireAuth, async (req, res) => {
   try {
-    const refId = _req.params.refId;
-    const account = await getNombaAccount(refId);
-    if (!account) {
+    const account = await getNombaAccount(req.params.refId);
+    if (!account || account.customerId !== req.account.accountId) {
       return res.status(404).json({ error: "Virtual account not found." });
     }
     return res.json({ account });
@@ -70,7 +77,8 @@ nombaRouter.get("/virtual-accounts/:refId/details", async (_req, res) => {
 });
 
 // Verify a recipient bank account before payout (returns the holder's name).
-nombaRouter.post("/bank-lookup", async (req, res) => {
+// Requires a session so account names cannot be looked up anonymously.
+nombaRouter.post("/bank-lookup", requireAuth, async (req, res) => {
   try {
     const result = await lookupNombaBankAccount(req.body?.accountNumber, req.body?.bankCode);
     return res.json({ lookup: result });

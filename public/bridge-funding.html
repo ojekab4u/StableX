@@ -26,7 +26,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fc;border:1px so
 <div id="fundingStatus" class="muted">Checking your linked Bridge customer…</div>
 <div class="grid">
 <div><label for="currency">Deposit currency</label><select id="currency"><option value="USD">USD · US virtual account</option><option value="EUR">EUR · SEPA virtual account</option><option value="GBP">GBP · GBP virtual account (availability subject to account access)</option></select></div>
-<div><label for="address">Base destination wallet address</label><input id="address" placeholder="0x..."></div>
+<div><label for="address">Base destination wallet address (StableX-controlled)</label><input id="address" readonly placeholder="Loading…"></div>
 </div>
 <p class="muted">Bridge's virtual account needs a destination for the converted USDC. Use a Base address you control or an approved test destination. This does not create a Bridge custodial wallet.</p>
 <button id="create" disabled>Create dummy deposit instructions</button>
@@ -55,6 +55,8 @@ async function loadFunding(){
       show({onboarding:data});return;
     }
     bridgeCustomerId=data.bridgeCustomerId;
+    const dest=await api("/api/bridge/self/deposit-destination");
+    $("address").value=dest.destination.address;
     const endorsement=data.baseEndorsementStatus||"—";
     status("Signed in customer: "+data.customerId.slice(0,8)+"… · Linked Bridge customer: "+bridgeCustomerId+" · Status: "+(data.bridgeStatus||"unknown")+" · Base endorsement: "+endorsement+" · Environment: "+data.environment,"success");
     $("create").disabled=currentEnvironment!=="Sandbox";
@@ -67,9 +69,8 @@ async function loadFunding(){
 }
 $("create").onclick=async()=>{try{
   if(!bridgeCustomerId)throw new Error("Load the linked Bridge customer first.");
-  if(!/^0x[a-fA-F0-9]{40}$/.test($("address").value.trim()))throw new Error("Enter a valid Base (EVM) destination address, e.g. 0x followed by 40 hex characters.");
   $("create").disabled=true;
-  const data=await api("/api/bridge/self/virtual-accounts",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({currency:$("currency").value,destinationAddress:$("address").value.trim()})});
+  const data=await api("/api/bridge/self/virtual-accounts",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({currency:$("currency").value})});
   show(data);$("refresh").disabled=false;
 }catch(e){show({error:e.message});}finally{$("create").disabled=!bridgeCustomerId||currentEnvironment!=="Sandbox"}};
 $("refresh").onclick=async()=>{try{const data=await api("/api/bridge/self/virtual-accounts");show(data);}catch(e){show({error:e.message});}};

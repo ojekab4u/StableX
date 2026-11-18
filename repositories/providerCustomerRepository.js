@@ -87,6 +87,16 @@ export async function saveBridgeCustomerStatus({
   return result.rows[0] || null;
 }
 
+// Maps an inbound Bridge customer ID back to the StableX customer it belongs to.
+export async function findCustomerIdByBridgeId(providerCustomerId) {
+  const result = await getPool().query(
+    `SELECT customer_id AS "customerId" FROM provider_customers
+     WHERE provider='Bridge' AND provider_customer_id=$1 LIMIT 1`,
+    [providerCustomerId]
+  );
+  return result.rows[0]?.customerId || null;
+}
+
 export async function getBridgeOnboarding(customerId) {
   const result = await getPool().query(
     `SELECT customer_id AS "customerId",
