@@ -37,6 +37,7 @@ import { bridgeSelfServeRouter } from "./routes/bridgeSelfServeRoutes.js";
 import { honeycoinWebhookRouter } from "./routes/honeycoinWebhookRoutes.js";
 import { paytrieRouter } from "./routes/paytrieRoutes.js";
 import { netcoinsRouter } from "./routes/netcoinsRoutes.js";
+import { ndaxRouter } from "./routes/ndaxRoutes.js";
 import { linkioRouter } from "./routes/linkioRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
@@ -498,6 +499,7 @@ app.use("/api/bridge/self", bridgeSelfServeRouter);
 app.use("/api/webhooks/honeycoin", honeycoinWebhookRouter);
 app.use("/api/paytrie", paytrieRouter);
 app.use("/api/netcoins", netcoinsRouter);
+app.use("/api/ndax", ndaxRouter);
 app.use("/api/linkio", linkioRouter);
 
 // Handle unknown API endpoints
