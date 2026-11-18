@@ -12,8 +12,12 @@ import {
 } from "../services/nombaService.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { rateLimitByAccount } from "../middleware/rateLimitByAccount.js";
 
 export const nombaRouter = Router();
+
+// Bank name lookups reveal account holders, so cap them per account.
+const bankLookupLimit = rateLimitByAccount({ windowMs: 10 * 60 * 1000, max: 10, label: "bank lookup" });
 const fail = (res, e) => res.status(e.statusCode || 503).json({ error: e.message });
 
 function requireOperator(req, res, next) {
@@ -78,7 +82,7 @@ nombaRouter.get("/virtual-accounts/:refId/details", requireAuth, async (req, res
 
 // Verify a recipient bank account before payout (returns the holder's name).
 // Requires a session so account names cannot be looked up anonymously.
-nombaRouter.post("/bank-lookup", requireAuth, async (req, res) => {
+nombaRouter.post("/bank-lookup", requireAuth, bankLookupLimit, async (req, res) => {
   try {
     const result = await lookupNombaBankAccount(req.body?.accountNumber, req.body?.bankCode);
     return res.json({ lookup: result });
