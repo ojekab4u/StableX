@@ -29,7 +29,7 @@ import {
   getNdaxWithdrawFee,
 } from "../services/providers/ndaxService.js";
 import { listAllCashOuts, getCashOutPayoutPlan, completeCashOut } from "../services/cashOutService.js";
-import { fundWalletFromNdax, checkFunding, listAllFundings } from "../services/fundService.js";
+import { fundWalletFromNdax, checkFunding, listAllFundings, createFundClaim, listFundClaims, matchDepositsToClaims } from "../services/fundService.js";
 import { quoteFund } from "../config/fees.js";
 
 export const ndaxRouter = Router();
@@ -262,6 +262,15 @@ ndaxRouter.post("/fund/:fundingId/check", requireOperator, async (req, res) => {
 ndaxRouter.get("/fundings", requireOperator, async (req, res) => {
   try {
     return res.json({ fundings: await listAllFundings({ state: req.query.state }) });
+  } catch (error) { return fail(res, error); }
+});
+
+// Scans Ndax CAD deposits against open customer claims and runs the buy +
+// credit for each match. Gated like every execution call.
+ndaxRouter.post("/fund/match", requireOperator, async (req, res) => {
+  if (!requireConfirm(req, res)) return;
+  try {
+    return res.json(await matchDepositsToClaims());
   } catch (error) { return fail(res, error); }
 });
 

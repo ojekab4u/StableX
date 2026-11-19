@@ -5,6 +5,7 @@ import {
 } from "../services/walletService.js";
 import { requestCashOut, listCashOuts } from "../services/cashOutService.js";
 import { transferInternal, listTransfers } from "../services/transferService.js";
+import { createFundClaim, listFundClaims } from "../services/fundService.js";
 import { getNdaxRate } from "../services/providers/ndaxService.js";
 import { quoteCashOut, quoteFund } from "../config/fees.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
@@ -175,6 +176,27 @@ customerRouter.post("/me/transfer", async (req, res) => {
 customerRouter.get("/me/transfers", async (req, res) => {
   const customerId = req.account.accountId;
   try { return res.json({ customerId, transfers: await listTransfers(customerId) }); }
+  catch (error) { return fail(res, error); }
+});
+
+// "I sent CAD by Interac" — matched against the shared Ndax account by the
+// operator's scan, then funded through the normal buy path.
+customerRouter.post("/me/fund-claims", async (req, res) => {
+  const customerId = req.account.accountId;
+  try {
+    const result = await createFundClaim({
+      customerId,
+      cadAmount: req.body?.cadAmount,
+      reference: req.body?.reference,
+      idempotencyKey: req.body?.idempotencyKey,
+    });
+    return res.json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+customerRouter.get("/me/fund-claims", async (req, res) => {
+  const customerId = req.account.accountId;
+  try { return res.json({ customerId, claims: await listFundClaims(customerId) }); }
   catch (error) { return fail(res, error); }
 });
 

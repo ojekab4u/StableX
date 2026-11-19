@@ -152,6 +152,9 @@
       <div><button id="fundBtn" disabled>Fund wallet</button></div>
       <div><button class="secondary" id="fundCheckBtn" disabled>Check fill &amp; credit</button></div>
     </div>
+    <div class="row">
+      <div><button class="secondary" id="matchBtn" disabled>Scan deposits &amp; match claims</button></div>
+    </div>
     <p class="error" id="fundError"></p>
     <p class="ok" id="fundOk" hidden></p>
     <h3 style="font-size:.95rem;margin-bottom:0">Recent fundings</h3>
@@ -233,7 +236,7 @@ async function connect() {
     renderReadiness(readiness);
     connected = true;
     $("refreshBtn").disabled = false;
-    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn", "queueBtn"]) $(id).disabled = false;
+    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn", "queueBtn", "matchBtn"]) $(id).disabled = false;
     await refreshAll();
     loadFundings();
     loadQueue();
@@ -650,6 +653,21 @@ $("fundCad").addEventListener("input", () => {
 });
 $("queueBtn").addEventListener("click", loadQueue);
 $("eftMethod").addEventListener("change", loadQueue);
+$("matchBtn").addEventListener("click", async () => {
+  setError("fundError", "");
+  $("matchBtn").disabled = true;
+  try {
+    const data = await api("/api/ndax/fund/match", { method: "POST", body: JSON.stringify({ confirm: true }) });
+    $("fundOk").hidden = false;
+    $("fundOk").textContent = `Scanned ${data.scanned} CAD deposit(s), matched ${data.matched.length}.`;
+    showRaw("match", data);
+    loadFundings();
+  } catch (error) {
+    setError("fundError", error.message);
+  } finally {
+    $("matchBtn").disabled = false;
+  }
+});
 $("operatorToken").addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
 
 // Funding rows re-render, so the per-row Check button is delegated.

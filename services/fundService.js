@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getPool } from "../db/pool.js";
 import { postProviderCredit } from "./walletService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
-import { getNdaxRate, sendNdaxOrder, getNdaxOrderStatus } from "./providers/ndaxService.js";
+import { getNdaxRate, sendNdaxOrder, getNdaxOrderStatus, listNdaxDeposits } from "./providers/ndaxService.js";
 import { NDAX_FEES } from "../config/fees.js";
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -200,8 +200,7 @@ export async function fundWalletFromNdax({ customerId, cadAmount, depositReferen
 
 // Re-checks a funding whose order did not fill within the first few seconds,
 // then credits on a fill. Safe to call repeatedly.
-export async function checkFunding(fundingId) {
-  if (!fundingId) throw fail("A fundingId is required.");
+export async function checkFunding(fundingId) {  if (!fundingId) throw fail("A fundingId is required.");
   const funding = await getFunding(fundingId);
   if (!funding) throw fail(`No funding ${fundingId}.`, 404);
   if (funding.state === "CREDITED") {
@@ -222,4 +221,129 @@ export async function checkFunding(fundingId) {
   }
   const credit = await creditFilledOrder({ ...funding, orderId: funding.orderId }, status);
   return { funding: await getFunding(fundingId), ...credit };
+}
+
+// ------------------------------------------------------- self-serve claims
+
+// Pure matcher: the best open claim for a deposit, or null. Claims whose
+// amount differs by more than the tolerance never match. Ambiguous ties go
+// to the oldest claim.
+export function pickClaimForDeposit(deposit, claims, tolerance = 0.02) {
+  const candidates = claims
+    .filter((c) => c.state === "OPEN")
+    .map((c) => ({ claim: c, diff: Math.abs(Number(c.cadAmount) - Number(deposit.amount)) }))
+    .filter((x) => x.diff <= tolerance)
+    .sort((a, b) => a.diff - b.diff || new Date(a.claim.createdAt) - new Date(b.claim.createdAt));
+  return candidates.length ? candidates[0].claim : null;
+}
+
+function rowToClaim(row) {
+  return {
+    claimId: row.claim_id,
+    customerId: row.customer_id,
+    cadAmount: Number(row.cad_amount),
+    reference: row.reference,
+    state: row.state,
+    matchedDepositId: row.matched_deposit_id,
+    error: row.metadata?.error || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// The customer tells us CAD is on the way (or already sent). The claim is
+// matched automatically when a Ndax CAD deposit of that size appears.
+export async function createFundClaim({ customerId, cadAmount, reference, idempotencyKey } = {}) {
+  if (!customerId || typeof customerId !== "string") throw fail("customerId is required.");
+  const value = Number(cadAmount);
+  if (!Number.isFinite(value) || value <= 0) throw fail("A positive CAD amount is required.");
+  if (Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) throw fail("CAD amount supports up to 2 decimal places.");
+  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 255) {
+    throw fail("An idempotencyKey is required.");
+  }
+
+  const gate = await getCustomerGateStatus(customerId);
+  if (!gate.gate.approved) throw fail("Complete and pass identity verification before funding a wallet.", 403);
+
+  const claimId = randomUUID();
+  const result = await getPool().query(
+    `INSERT INTO fund_claims(claim_id,customer_id,cad_amount,reference,state,idempotency_key)
+     VALUES($1,$2,$3,$4,'OPEN',$5)
+     ON CONFLICT (customer_id, idempotency_key) DO NOTHING
+     RETURNING *`,
+    [claimId, customerId, value, reference ? String(reference).slice(0, 255) : null, idempotencyKey]
+  );
+  if (!result.rowCount) {
+    const existing = await getPool().query(
+      "SELECT * FROM fund_claims WHERE customer_id=$1 AND idempotency_key=$2",
+      [customerId, idempotencyKey]
+    );
+    return { duplicate: true, claim: rowToClaim(existing.rows[0]) };
+  }
+  return { duplicate: false, claim: rowToClaim(result.rows[0]) };
+}
+
+export async function listFundClaims(customerId) {
+  const result = await getPool().query(
+    "SELECT * FROM fund_claims WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 50",
+    [customerId]
+  );
+  return result.rows.map(rowToClaim);
+}
+
+// Scans Ndax CAD deposits, matches them against open claims, and funds the
+// wallets through the normal buy path. Each deposit funds at most one claim;
+// the state guard on the UPDATE keeps two scans from claiming the same pair.
+export async function matchDepositsToClaims() {
+  const deposits = (await listNdaxDeposits()).filter(
+    (d) => d.currency === "CAD" && Number(d.amount) > 0 && String(d.status) === "FullyProcessed" && d.depositId
+  );
+
+  const used = await getPool().query(
+    `SELECT matched_deposit_id FROM fund_claims
+     WHERE matched_deposit_id IS NOT NULL AND state='MATCHED'`
+  );
+  const usedIds = new Set(used.rows.map((r) => Number(r.matched_deposit_id)));
+
+  const open = (await getPool().query(
+    "SELECT * FROM fund_claims WHERE state='OPEN' ORDER BY created_at ASC LIMIT 200"
+  )).rows.map(rowToClaim);
+
+  const matched = [];
+  const unmatched = [];
+  for (const deposit of deposits) {
+    if (usedIds.has(Number(deposit.depositId))) continue;
+    const claim = pickClaimForDeposit(deposit, open);
+    if (!claim) {
+      unmatched.push(deposit);
+      continue;
+    }
+
+    const locked = await getPool().query(
+      `UPDATE fund_claims SET state='MATCHED', matched_deposit_id=$2, updated_at=NOW()
+       WHERE claim_id=$1 AND state='OPEN'
+       RETURNING customer_id`,
+      [claim.claimId, deposit.depositId]
+    );
+    if (!locked.rowCount) continue; // another scan matched it first
+
+    try {
+      const funding = await fundWalletFromNdax({
+        customerId: locked.rows[0].customer_id,
+        cadAmount: Number(deposit.amount),
+        depositReference: `Ndax deposit ${deposit.depositId}`,
+        idempotencyKey: `deposit:${deposit.depositId}`,
+      });
+      matched.push({ claim: claim.claimId, depositId: deposit.depositId, funding });
+    } catch (error) {
+      // Give the claim back so a later scan can retry; record why it failed.
+      await getPool().query(
+        `UPDATE fund_claims SET state='OPEN', matched_deposit_id=NULL,
+         metadata = metadata || $2::jsonb, updated_at=NOW() WHERE claim_id=$1`,
+        [claim.claimId, JSON.stringify({ error: error.message })]
+      );
+      unmatched.push({ depositId: deposit.depositId, error: error.message });
+    }
+  }
+  return { scanned: deposits.length, matched, unmatched };
 }
