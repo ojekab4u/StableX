@@ -508,6 +508,37 @@ app.use("/api", (req, res) => {
 });
 
 
+import { matchDepositsToClaims } from "./services/fundService.js";
+
+const FUND_MATCH_INTERVAL_MS = 60_000;
+let fundMatchTimer = null;
+
+function startFundMatcher() {
+  if (!process.env.NDAX_EXECUTION_ENABLED) {
+    console.log("Fund matcher idle (NDAX_EXECUTION_ENABLED not set).");
+    return;
+  }
+  fundMatchTimer = setInterval(async () => {
+    try {
+      const result = await matchDepositsToClaims();
+      for (const match of result.matched) {
+        console.log(`[fund-match] claim ${match.claim} funded from deposit ${match.depositId}`);
+      }
+      const failed = result.unmatched.filter((u) => u.error);
+      if (failed.length) {
+        console.error(`[fund-match] ${failed.length} match(es) failed and claims returned to the queue`);
+      }
+    } catch (error) {
+      console.error("[fund-match] scan failed:", error.message);
+    }
+  }, FUND_MATCH_INTERVAL_MS);
+  console.log(`Fund matcher running every ${FUND_MATCH_INTERVAL_MS / 1000}s.`);
+}
+
+function stopFundMatcher() {
+  if (fundMatchTimer) clearInterval(fundMatchTimer);
+}
+
 async function startServer() {
   if (process.env.DATABASE_URL) {
     try {
@@ -527,6 +558,8 @@ async function startServer() {
     console.log("Quote mode: DEMO (no live prices or transactions)");
     console.log(`Solana RPC: ${rpcUrl}`);
   });
+
+  startFundMatcher();
 }
 
 startServer();
