@@ -175,6 +175,15 @@
     <p class="ok" id="queueOk" hidden></p>
   </section>
 
+  <section>
+    <h2>10 · Treasury audit</h2>
+    <div class="row">
+      <div><button class="secondary" id="auditBtn" disabled>Load audit</button></div>
+      <div><span class="hint" id="auditSummary"></span></div>
+    </div>
+    <div id="auditList"></div>
+  </section>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -236,10 +245,11 @@ async function connect() {
     renderReadiness(readiness);
     connected = true;
     $("refreshBtn").disabled = false;
-    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn", "queueBtn", "matchBtn"]) $(id).disabled = false;
+    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn", "queueBtn", "matchBtn", "auditBtn"]) $(id).disabled = false;
     await refreshAll();
     loadFundings();
     loadQueue();
+    loadAudit();
     startPolling();
   } catch (error) {
     connected = false;
@@ -637,6 +647,31 @@ document.addEventListener("click", (event) => {
   if (done) completePayout(done.getAttribute("data-complete"));
 });
 
+// ------------------------------------------------------------------ audit
+
+async function loadAudit() {
+  try {
+    const data = await api("/api/ndax/audit");
+    const s = data.summary || {};
+    $("auditSummary").textContent = `cash-outs ${s.stablexCashOuts} · fundings ${s.stablexFunds} · dashboard ${s.dashboard} · unexplained ${s.unexplained}`;
+    const rows = data.events || [];
+    $("auditList").innerHTML = rows.length ? `
+      <table><tr><th>Time</th><th>Type</th><th>Source</th><th>Customer</th><th>Detail</th><th>State</th></tr>
+      ${rows.slice(0, 40).map((e) => `<tr>
+        <td>${e.at ? new Date(e.at).toLocaleString() : "—"}</td>
+        <td>${esc(e.type)}</td>
+        <td><strong>${esc(e.source)}</strong></td>
+        <td class="mono">${e.customerId ? esc(e.customerId.slice(0, 8)) : "—"}</td>
+        <td>${esc(e.detail)}</td>
+        <td>${esc(e.state || "—")}</td>
+      </tr>`).join("")}</table>`
+      : `<p class="hint">No movements yet.</p>`;
+    showRaw("audit", data);
+  } catch (error) {
+    $("auditList").innerHTML = `<p class="error">${error.message}</p>`;
+  }
+}
+
 // ------------------------------------------------------------------- wiring
 
 $("connectBtn").addEventListener("click", connect);
@@ -652,6 +687,7 @@ $("fundCad").addEventListener("input", () => {
   fundQuoteTimer = setTimeout(loadFundQuote, 400);
 });
 $("queueBtn").addEventListener("click", loadQueue);
+$("auditBtn").addEventListener("click", loadAudit);
 $("eftMethod").addEventListener("change", loadQueue);
 $("matchBtn").addEventListener("click", async () => {
   setError("fundError", "");

@@ -403,6 +403,31 @@ export async function listNdaxDeposits(accountId = DEFAULT_ACCOUNT_ID()) {
   }));
 }
 
+// Full trade history. ClientOrderId is the discriminator between orders the
+// StableX backend placed (non-zero, derived from a database record) and
+// orders a human placed in the dashboard (0).
+export async function listNdaxTrades(accountId = DEFAULT_ACCOUNT_ID()) {
+  const rows = await ndaxFetch("GetTradesHistory", { params: { omsId: OMS_ID, accountId: Number(accountId) }, signed: true });
+  let symbols = new Map();
+  try {
+    for (const i of await listNdaxInstruments()) symbols.set(Number(i.InstrumentId), i.Symbol);
+  } catch { /* decorative */ }
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    tradeId: row.TradeId ?? null,
+    orderId: row.OrderId ?? null,
+    clientOrderId: Number(row.ClientOrderId ?? 0),
+    symbol: symbols.get(Number(row.InstrumentId)) || row.InstrumentId || null,
+    side: row.Side ?? null,
+    quantity: Number(row.Quantity ?? 0),
+    price: Number(row.Price ?? 0),
+    value: Number(row.Value ?? 0),
+    fee: Number(row.Fee ?? 0),
+    feeProductId: row.FeeProductId ?? null,
+    userName: row.UserName || null,
+    tradeTime: row.TradeTimeMS ? new Date(row.TradeTimeMS).toISOString() : null,
+  }));
+}
+
 export async function listNdaxWithdrawals(accountId = DEFAULT_ACCOUNT_ID()) {
   // NOTE: the endpoint is GetWithdrawTickets, not GetWithdraws (the latter 404s).
   const rows = await ndaxFetch("GetWithdrawTickets", { params: { omsId: OMS_ID, accountId: Number(accountId) }, signed: true });
@@ -410,16 +435,24 @@ export async function listNdaxWithdrawals(accountId = DEFAULT_ACCOUNT_ID()) {
   try {
     for (const p of await listNdaxProducts()) symbolByProduct.set(Number(p.ProductId), String(p.Product));
   } catch { /* decorative */ }
-  return (Array.isArray(rows) ? rows : []).map((row) => ({
-    withdrawId: row.WithdrawId ?? row.TicketId ?? null,
-    productId: row.ProductId ?? null,
-    currency: symbolByProduct.get(Number(row.ProductId)) || row.ProductSymbol || null,
-    amount: Number(row.Amount ?? 0),
-    status: row.TicketStatus ?? row.Status ?? null,
-    fee: row.Fee ?? null,
-    updateTimeStamp: row.LastUpdateTimeStamp ?? null,
-    info: parseJsonField(row.WithdrawInfo),
-  }));
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const form = parseJsonField(row.TemplateForm) || {};
+    return {
+      withdrawId: row.WithdrawId ?? row.TicketId ?? null,
+      productId: row.ProductId ?? row.AssetId ?? null,
+      currency: symbolByProduct.get(Number(row.ProductId)) || row.AssetName || row.ProductSymbol || null,
+      amount: Number(row.Amount ?? 0),
+      status: row.TicketStatus ?? row.Status ?? null,
+      fee: row.FeeAmt ?? row.Fee ?? null,
+      updateTimeStamp: row.LastUpdateTimeStamp ?? null,
+      createdTimestamp: row.CreatedTimestamp ?? null,
+      platform: form.Platform || null,
+      externalAddress: form.ExternalAddress || null,
+      requestUserName: row.RequestUserName || null,
+      requestIP: row.RequestIP || null,
+      info: parseJsonField(row.WithdrawInfo),
+    };
+  });
 }
 
 // Withdraw templates describe what fields a payout needs (CAD = bank fields).
@@ -546,8 +579,12 @@ export function planNdaxOrder({ side, quantity, book, instrument, limitPrice } =
 }
 
 // Places a real order. Throws unless the execution flag is on.
-export async function sendNdaxOrder({ side, quantity, limitPrice, orderType = 2, timeInForce = 1, clientOrderId = 0 } = {}) {
+export async function sendNdaxOrder({ side, quantity, limitPrice, orderType = 2, timeInForce = 1, clientOrderId } = {}) {
   assertExecutionEnabled();
+
+  // A non-zero client order id marks the order as backend-placed (the
+  // dashboard leaves it 0), which is what the audit trail reads.
+  const cid = Number(clientOrderId) || parseInt(crypto.randomUUID().replace(/-/g, "").slice(0, 12), 16);
 
   const instrument = await resolveNdaxInstrument(EXEC_BASE, EXEC_QUOTE);
   if (!instrument || String(instrument.Product1Symbol || "").toUpperCase() !== EXEC_BASE) {
@@ -569,7 +606,7 @@ export async function sendNdaxOrder({ side, quantity, limitPrice, orderType = 2,
       OrderType: Number(orderType),
       Side: plan.sideCode,
       TimeInForce: Number(timeInForce),
-      ClientOrderId: Number(clientOrderId) || 0,
+      ClientOrderId: cid,
       OrderIdOCO: 0,
       UseDisplayQuantity: false,
       PegPriceType: 3,

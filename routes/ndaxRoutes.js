@@ -31,6 +31,7 @@ import {
 import { listAllCashOuts, getCashOutPayoutPlan, completeCashOut } from "../services/cashOutService.js";
 import { fundWalletFromNdax, checkFunding, listAllFundings, createFundClaim, listFundClaims, matchDepositsToClaims } from "../services/fundService.js";
 import { quoteFund } from "../config/fees.js";
+import { getNdaxAudit } from "../services/auditService.js";
 
 export const ndaxRouter = Router();
 
@@ -271,6 +272,13 @@ ndaxRouter.post("/fund/match", requireOperator, async (req, res) => {
   if (!requireConfirm(req, res)) return;
   try {
     return res.json(await matchDepositsToClaims());
+  } catch (error) { return fail(res, error); }
+});
+
+// Every movement on the shared account, labelled by who made it happen.
+ndaxRouter.get("/audit", requireOperator, async (_req, res) => {
+  try {
+    return res.json(await getNdaxAudit());
   } catch (error) { return fail(res, error); }
 });
 
