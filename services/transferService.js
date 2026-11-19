@@ -1,139 +1,40 @@
-import { randomUUID } from "node:crypto";
-import { getPool } from "../db/pool.js";
-
-const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
-
-const PROVIDER = "STABLEX_INTERNAL";
-
-// USDC supports 6 decimals.
-export function validateTransferRequest({ amount, idempotencyKey, toEmail } = {}) {
-  const value = Number(amount);
-  if (!Number.isFinite(value) || value <= 0) throw fail("A positive amount is required.");
-  if (Math.abs(value * 1e6 - Math.round(value * 1e6)) > 1e-6) {
-    throw fail("Amount supports up to 6 decimal places.");
-  }
-  if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.length > 255) {
-    throw fail("An idempotencyKey is required.");
-  }
-  const email = String(toEmail || "").trim().toLowerCase();
-  if (!email || email.length > 255 || !email.includes("@")) {
-    throw fail("A valid recipient email is required.");
-  }
-  return { amount: value, idempotencyKey, toEmail: email };
+import { createHash, randomUUID } from "node:crypto";
+import { encryptBeneficiaryDetails,decryptBeneficiaryDetails,fingerprintBeneficiary } from "./beneficiaryCrypto.js";
+import { saveBeneficiary,readBeneficiaries,saveTransfer,readTransfer,readTransfers,updateTransferStatus } from "../repositories/transferRepository.js";
+import { getCustomerGateStatus } from "./complianceService.js";
+const currency=/^[A-Z0-9]{3,12}$/;
+function customer(id){if(typeof id!=="string"||!/^[A-Za-z0-9._:-]{2,128}$/.test(id)){const e=new Error("A valid customerId is required.");e.statusCode=400;throw e;}}
+export async function createBeneficiary({customerId,details}) {
+ customer(customerId);if(!details||typeof details!=="object"||Array.isArray(details)){const e=new Error("Beneficiary details must be an object.");e.statusCode=400;throw e;}
+ const fields=["name","country","currency","accountNumber","iban","bankName","bankCode","walletAddress","network","email"],clean={};
+ for(const k of fields)if(details[k]!==undefined){if(typeof details[k]!=="string"||!details[k].trim()||details[k].length>200){const e=new Error(`Invalid beneficiary field: ${k}.`);e.statusCode=400;throw e;}clean[k]=details[k].trim();}
+ if(!clean.name||!clean.country||!clean.currency||!(clean.accountNumber||clean.iban||clean.walletAddress)){const e=new Error("Provide name, country, currency and accountNumber, IBAN or walletAddress.");e.statusCode=400;throw e;}
+ clean.currency=clean.currency.toUpperCase();if(!currency.test(clean.currency)){const e=new Error("Invalid beneficiary currency.");e.statusCode=400;throw e;}
+ const record=await saveBeneficiary({id:randomUUID(),customerId,encrypted:encryptBeneficiaryDetails(clean),fingerprint:fingerprintBeneficiary(clean)});
+ return {beneficiaryId:record.id,details:decryptBeneficiaryDetails(record.encrypted)};
 }
-
-// Moves USDC between two StableX customers inside one database transaction:
-// the sender is debited and the recipient credited together, or neither.
-// Idempotent on (provider, providerEventId) via the transfer idempotencyKey.
-export async function transferInternal({ fromCustomerId, toEmail, amount, idempotencyKey } = {}) {
-  if (!fromCustomerId || typeof fromCustomerId !== "string") throw fail("customerId is required.");
-  const request = validateTransferRequest({ amount, idempotencyKey, toEmail });
-
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-
-    const existing = await client.query(
-      `SELECT entry_id AS "entryId" FROM wallet_ledger
-       WHERE provider=$1 AND provider_event_id=$2`,
-      [PROVIDER, `${request.idempotencyKey}:out`]
-    );
-    if (existing.rowCount) {
-      await client.query("COMMIT");
-      return { duplicate: true, amount: request.amount };
-    }
-
-    const recipient = await client.query(
-      `SELECT account_id AS "accountId", full_name AS "fullName", status
-       FROM accounts WHERE email=$1`,
-      [request.toEmail]
-    );
-    if (!recipient.rowCount) throw fail(`No StableX account for ${request.toEmail}.`, 404);
-    if (recipient.rows[0].status !== "ACTIVE") {
-      throw fail(`The account for ${request.toEmail} is not active.`, 409);
-    }
-    const toCustomerId = recipient.rows[0].accountId;
-    if (toCustomerId === fromCustomerId) throw fail("You cannot transfer to your own account.");
-
-    const senderWallet = await client.query(
-      `SELECT wallet_id, COALESCE((
-         SELECT SUM(amount) FROM wallet_ledger
-         WHERE wallet_id=w.wallet_id AND status='POSTED'
-       ),0) AS balance
-       FROM wallet_accounts w
-       WHERE customer_id=$1 AND asset_code='USDC' AND status='ACTIVE'
-       FOR UPDATE`,
-      [fromCustomerId]
-    );
-    if (!senderWallet.rowCount) throw fail("You have no active USDC wallet.", 404);
-    if (Number(senderWallet.rows[0].balance) < request.amount) {
-      throw fail("Insufficient USDC balance for this transfer.", 409);
-    }
-
-    const recipientWallet = await client.query(
-      `SELECT wallet_id FROM wallet_accounts
-       WHERE customer_id=$1 AND asset_code='USDC' AND status='ACTIVE'`,
-      [toCustomerId]
-    );
-    if (!recipientWallet.rowCount) {
-      throw fail(`${recipient.rows[0].fullName} has no USDC wallet yet.`, 404);
-    }
-
-    const transferId = randomUUID();
-    await client.query(
-      `INSERT INTO wallet_ledger(entry_id,wallet_id,customer_id,asset_code,entry_type,amount,reference,provider,provider_event_id,metadata)
-       VALUES($1,$2,$3,'USDC','WITHDRAWAL',$4,$5,$6,$7,$8::jsonb)`,
-      [randomUUID(), senderWallet.rows[0].wallet_id, fromCustomerId, -request.amount,
-       `Transfer to ${request.toEmail} (${transferId})`, PROVIDER,
-       `${request.idempotencyKey}:out`, JSON.stringify({ transferId, toCustomerId })]
-    );
-    await client.query(
-      `INSERT INTO wallet_ledger(entry_id,wallet_id,customer_id,asset_code,entry_type,amount,reference,provider,provider_event_id,metadata)
-       VALUES($1,$2,$3,'USDC','DEPOSIT',$4,$5,$6,$7,$8::jsonb)`,
-      [randomUUID(), recipientWallet.rows[0].wallet_id, toCustomerId, request.amount,
-       `Transfer from ${request.toEmail} (${transferId})`, PROVIDER,
-       `${request.idempotencyKey}:in`, JSON.stringify({ transferId, fromCustomerId })]
-    );
-
-    const balance = await client.query(
-      `SELECT COALESCE(SUM(amount),0)::text AS balance FROM wallet_ledger
-       WHERE wallet_id=$1 AND status='POSTED'`,
-      [senderWallet.rows[0].wallet_id]
-    );
-    await client.query("COMMIT");
-    return {
-      duplicate: false,
-      transferId,
-      amount: request.amount,
-      currency: "USDC",
-      to: { customerId: toCustomerId, email: request.toEmail, name: recipient.rows[0].fullName },
-      fromBalance: Number(balance.rows[0].balance),
-    };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    // A concurrent retry of the same idempotencyKey lands on the unique
-    // (provider, provider_event_id) index.
-    if (error.code === "23505" && error.constraint && String(error.constraint).includes("wallet_ledger")) {
-      return { duplicate: true, amount: request.amount };
-    }
-    throw error;
-  } finally {
-    client.release();
-  }
+export async function listBeneficiaries(customerId){customer(customerId);return (await readBeneficiaries(customerId)).map(x=>({beneficiaryId:x.id,details:decryptBeneficiaryDetails(x.encrypted),createdAt:x.createdAt}));}
+export async function createTransfer({customerId,beneficiaryId,from,to,amount,idempotencyKey}) {
+ customer(customerId);const source=String(from||"").trim().toUpperCase(),dest=String(to||"").trim().toUpperCase(),value=Number(amount);
+ if(!/^[0-9a-f-]{36}$/i.test(beneficiaryId||"")||!currency.test(source)||!currency.test(dest)||!Number.isFinite(value)||value<=0||value>1000000){const e=new Error("Provide a valid beneficiary, valid currencies and an amount greater than zero (maximum 1,000,000).");e.statusCode=400;throw e;}
+ if(typeof idempotencyKey!=="string"||idempotencyKey.length<8||idempotencyKey.length>128){const e=new Error("Send an Idempotency-Key header (8–128 characters).");e.statusCode=400;throw e;}
+ const fingerprint=createHash("sha256").update(JSON.stringify({beneficiaryId,from:source,to:dest,amount:value})).digest("hex");
+ return saveTransfer({id:randomUUID(),customerId,beneficiaryId,from:source,to:dest,amount:value,key:idempotencyKey,fingerprint});
 }
-
-// The customer's transfer history, derived from the ledger.
-export async function listTransfers(customerId) {
-  const result = await getPool().query(
-    `SELECT entry_id AS "entryId", amount::text AS amount, reference, created_at AS "createdAt", metadata
-     FROM wallet_ledger
-     WHERE customer_id=$1 AND provider=$2 AND asset_code='USDC'
-     ORDER BY created_at DESC LIMIT 50`,
-    [customerId, PROVIDER]
-  );
-  return result.rows.map((row) => ({
-    ...row,
-    amount: Number(row.amount),
-    direction: Number(row.amount) > 0 ? "IN" : "OUT",
-  }));
+export async function getTransfer(id,customerId){customer(customerId);return readTransfer(id,customerId);}
+export async function getTransfers(customerId){customer(customerId);return readTransfers(customerId);}
+const GATED_STATUSES=["QUOTED","AWAITING_FUNDING","FUNDED","SETTLEMENT_PENDING","COMPLETED"];
+const states=["QUOTED","AWAITING_FUNDING","FUNDED","SETTLEMENT_PENDING","COMPLETED","FAILED","CANCELLED"];
+export async function setTransferStatus({id,customerId,status,actorId,reason}) {
+ customer(customerId);
+ if(GATED_STATUSES.includes(status)){
+  const gate=await getCustomerGateStatus(customerId);
+  if(!gate.gate.approved){
+   const e=new Error(`Compliance gate: transfer lifecycle cannot advance to ${status}. Customer compliance status is ${gate.gate.status}. Submit a compliance case and obtain APPROVED (or operator-approval of a pending case) first. Case/reason: ${gate.gate.caseId||"N/A"}.`);
+   e.statusCode=403;
+   throw e;
+  }
+ }
+ if(!states.includes(status)){const e=new Error("Unsupported transfer status.");e.statusCode=400;throw e;}
+ return updateTransferStatus({id,customerId,status,actorId,reason});
 }

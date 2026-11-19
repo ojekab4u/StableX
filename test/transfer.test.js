@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateTransferRequest } from "../services/transferService.js";
+import { validateTransferRequest } from "../services/internalTransferService.js";
 
 test("a valid transfer request normalizes email and amount", () => {
   const r = validateTransferRequest({ amount: "10.5", idempotencyKey: "k1", toEmail: " Ada@Example.COM " });

@@ -4,7 +4,7 @@ import {
   registerExternalWallet, listExternalWallets,
 } from "../services/walletService.js";
 import { requestCashOut, listCashOuts } from "../services/cashOutService.js";
-import { transferInternal, listTransfers } from "../services/transferService.js";
+import { transferInternal, listTransfers } from "../services/internalTransferService.js";
 import { createFundClaim, listFundClaims } from "../services/fundService.js";
 import { getNdaxRate } from "../services/providers/ndaxService.js";
 import { quoteCashOut, quoteFund } from "../config/fees.js";
