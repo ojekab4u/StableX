@@ -4,6 +4,7 @@ import {
   registerExternalWallet, listExternalWallets,
 } from "../services/walletService.js";
 import { requestCashOut, listCashOuts } from "../services/cashOutService.js";
+import { transferInternal, listTransfers } from "../services/transferService.js";
 import { getNdaxRate } from "../services/providers/ndaxService.js";
 import { quoteCashOut, quoteFund } from "../config/fees.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
@@ -154,6 +155,26 @@ customerRouter.post("/me/cash-out", async (req, res) => {
 customerRouter.get("/me/cash-outs", async (req, res) => {
   const customerId = req.account.accountId;
   try { return res.json({ customerId, cashOuts: await listCashOuts(customerId) }); }
+  catch (error) { return fail(res, error); }
+});
+
+// Customer-to-customer USDC transfer. Same session rules as everything here.
+customerRouter.post("/me/transfer", async (req, res) => {
+  const customerId = req.account.accountId;
+  try {
+    const result = await transferInternal({
+      fromCustomerId: customerId,
+      toEmail: req.body?.toEmail,
+      amount: req.body?.amount,
+      idempotencyKey: req.body?.idempotencyKey,
+    });
+    return res.json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+customerRouter.get("/me/transfers", async (req, res) => {
+  const customerId = req.account.accountId;
+  try { return res.json({ customerId, transfers: await listTransfers(customerId) }); }
   catch (error) { return fail(res, error); }
 });
 

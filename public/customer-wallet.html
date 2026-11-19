@@ -70,6 +70,20 @@
   </table>
 </section>
 
+<section class="panel">
+  <h2>Send to another StableX user</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:8px">
+    <input id="transferEmail" type="email" placeholder="Recipient email" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+    <input id="transferAmount" type="number" step="0.000001" min="0.000001" placeholder="USDC amount" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+    <button id="transferBtn">Send USDC</button>
+  </div>
+  <p class="muted" id="transferMsg" style="margin:0 0 8px"></p>
+  <table>
+    <thead><tr><th>Date</th><th>Direction</th><th class="num">USDC</th><th>Detail</th></tr></thead>
+    <tbody id="transfers"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+  </table>
+</section>
+
 <p class="links"><a href="/bridge-funding.html">Get account details</a> · <a href="/customer-dashboard.html">Dashboard</a></p>
 </main>
 <script>
@@ -179,8 +193,53 @@
     }
   };
 
+  async function loadTransfers() {
+    try {
+      const d = await api("/api/customer/me/transfers");
+      const rows = d.transfers || [];
+      $("transfers").innerHTML = rows.length
+        ? rows.map(t => `<tr>
+            <td>${esc(new Date(t.createdAt).toLocaleString())}</td>
+            <td><strong>${esc(t.direction)}</strong></td>
+            <td class="num">${t.direction === "OUT" ? "−" : "+"}${fmt(Math.abs(t.amount), 3)}</td>
+            <td>${esc(t.reference)}</td></tr>`).join("")
+        : `<tr><td colspan="4" class="empty">No transfers yet.</td></tr>`;
+    } catch (e) {
+      if (e.status === 401) { location.href = "/auth.html"; return; }
+      $("transfers").innerHTML = `<tr><td colspan="4" class="empty">${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  $("transferBtn").onclick = async () => {
+    $("transferMsg").textContent = "";
+    const toEmail = $("transferEmail").value.trim();
+    const amount = Number($("transferAmount").value);
+    if (!toEmail) { $("transferMsg").textContent = "Enter the recipient email."; return; }
+    if (!Number.isFinite(amount) || amount <= 0) { $("transferMsg").textContent = "Enter an amount."; return; }
+    $("transferBtn").disabled = true;
+    try {
+      const r = await fetch("/api/customer/me/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token(), "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail, amount, idempotencyKey: crypto.randomUUID() })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Transfer failed");
+      $("transferMsg").textContent = d.duplicate
+        ? "Already transferred."
+        : `Sent ${fmt(d.amount, 3)} USDC to ${d.to.name} (${d.to.email}). New balance: ${fmt(d.fromBalance, 2)} USDC.`;
+      $("transferEmail").value = "";
+      $("transferAmount").value = "";
+      await Promise.all([load(), loadTransfers()]);
+    } catch (e) {
+      $("transferMsg").textContent = e.message;
+    } finally {
+      $("transferBtn").disabled = false;
+    }
+  };
+
   $("refresh").onclick = load;
-  if (!token()) location.href = "/auth.html"; else { load(); loadCashOuts(); }
+  if (!token()) location.href = "/auth.html"; else { load(); loadCashOuts(); loadTransfers(); }
 })();
 </script>
 </body></html>
