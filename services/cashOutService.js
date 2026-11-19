@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { getPool } from "../db/pool.js";
 import { postWalletDebit, postWalletReversal } from "./walletService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
-import { sendNdaxOrder } from "./providers/ndaxService.js";
+import { sendNdaxOrder, getNdaxOrderStatus } from "./providers/ndaxService.js";
+import { cashOutPayout } from "../config/fees.js";
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
@@ -34,19 +35,35 @@ function rowToCashOut(row) {
     reversalEntryId: row.reversal_entry_id,
     orderId: row.order_id,
     orderStatus: row.order_status,
+    bankDetails: row.bank_details || null,
     error: row.error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-async function insertCashOut({ customerId, cashOutId, amount, idempotencyKey }) {
+// The Ndax EFT/Interac payout template fields, collected from the customer
+// at request time so the operator never types them.
+export function validateBankDetails(bank) {
+  const fields = {
+    FullName: bank?.holder,
+    BankAccountName: bank?.bankName,
+    BankAccountNumber: bank?.accountNumber,
+    BankAddress: bank?.address,
+    SwiftCode: bank?.swift,
+  };
+  const missing = Object.entries(fields).filter(([, v]) => !v || !String(v).trim()).map(([k]) => k);
+  if (missing.length) throw fail(`Missing bank details: ${missing.join(", ")}.`);
+  return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, String(v).trim().slice(0, 140)]));
+}
+
+async function insertCashOut({ customerId, cashOutId, amount, idempotencyKey, bankDetails }) {
   const result = await getPool().query(
-    `INSERT INTO cash_outs(cash_out_id,customer_id,currency,amount,state,idempotency_key)
-     VALUES($1,$2,$3,$4,'DEBITING',$5)
+    `INSERT INTO cash_outs(cash_out_id,customer_id,currency,amount,state,idempotency_key,bank_details)
+     VALUES($1,$2,$3,$4,'DEBITING',$5,$6::jsonb)
      ON CONFLICT (customer_id, idempotency_key) DO NOTHING
      RETURNING *`,
-    [cashOutId, customerId, CASH_OUT_ASSET, amount, idempotencyKey]
+    [cashOutId, customerId, CASH_OUT_ASSET, amount, idempotencyKey, JSON.stringify(bankDetails || null)]
   );
   if (!result.rowCount) {
     const existing = await getPool().query(
@@ -104,15 +121,16 @@ export async function listAllCashOuts({ state } = {}) {
 // holding a debit with nothing to show. A Ndax order that was accepted but
 // later cancelled unfilled is reconciled by the operator; this function only
 // reverses on a rejected or failed send.
-export async function requestCashOut({ customerId, amount, idempotencyKey } = {}) {
+export async function requestCashOut({ customerId, amount, idempotencyKey, bank } = {}) {
   if (!customerId || typeof customerId !== "string") throw fail("customerId is required.");
   const request = validateCashOutRequest({ amount, idempotencyKey });
+  const bankDetails = validateBankDetails(bank);
 
   const gate = await getCustomerGateStatus(customerId);
   if (!gate.gate.approved) throw fail("Complete and pass identity verification before cashing out.", 403);
 
   const cashOutId = randomUUID();
-  const { cashOut, duplicate } = await insertCashOut({ customerId, cashOutId, amount: request.amount, idempotencyKey: request.idempotencyKey });
+  const { cashOut, duplicate } = await insertCashOut({ customerId, cashOutId, amount: request.amount, idempotencyKey: request.idempotencyKey, bankDetails });
   if (duplicate) return { duplicate: true, cashOut };
 
   let debit;
@@ -164,4 +182,44 @@ export async function requestCashOut({ customerId, amount, idempotencyKey } = {}
     wrapped.cashOut = await getCashOut(cashOutId);
     throw wrapped;
   }
+}
+
+// What the operator needs to pay this cash-out out of the CAD pool: the
+// ticket amount, the fee breakdown, and the customer's bank template.
+export async function getCashOutPayoutPlan(cashOutId, payoutMethod = "INTERAC") {
+  const cashOut = await getCashOut(cashOutId);
+  if (!cashOut) throw fail(`No cash-out ${cashOutId}.`, 404);
+  if (cashOut.state !== "ORDER_ACCEPTED") {
+    throw fail(`Cash-out ${cashOutId} is ${cashOut.state}, not payable.`, 409);
+  }
+  if (!cashOut.orderId) throw fail("This cash-out has no Ndax order.");
+  if (!cashOut.bankDetails) throw fail("This cash-out has no bank details recorded.");
+
+  const status = await getNdaxOrderStatus(cashOut.orderId);
+  const state = String(status.state || "").toUpperCase();
+  if (state !== "FULLYEXECUTED" || status.quantityExecuted <= 0) {
+    throw fail(`Ndax order ${cashOut.orderId} is ${state || "unknown"} — nothing executed yet.`, 409);
+  }
+  const method = payoutMethod === "EFT" ? "EFT" : "INTERAC";
+  const plan = cashOutPayout({
+    quantityExecuted: status.quantityExecuted,
+    averagePriceCad: status.averagePrice,
+    payoutMethod: method,
+  });
+  return { cashOut, method, orderState: state, ...plan };
+}
+
+// Operator confirmation that a payout left the pool.
+export async function completeCashOut(cashOutId) {
+  const cashOut = await getCashOut(cashOutId);
+  if (!cashOut) throw fail(`No cash-out ${cashOutId}.`, 404);
+  if (cashOut.state === "PAID") return { cashOut, duplicate: true };
+  if (cashOut.state !== "ORDER_ACCEPTED") {
+    throw fail(`Cash-out ${cashOutId} is ${cashOut.state}; only ORDER_ACCEPTED can be marked paid.`, 409);
+  }
+  await getPool().query(
+    "UPDATE cash_outs SET state='PAID', updated_at=NOW() WHERE cash_out_id=$1",
+    [cashOutId]
+  );
+  return { cashOut: await getCashOut(cashOutId), duplicate: false };
 }

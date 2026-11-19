@@ -28,7 +28,7 @@ import {
   createNdaxWithdrawTicket,
   getNdaxWithdrawFee,
 } from "../services/providers/ndaxService.js";
-import { listAllCashOuts } from "../services/cashOutService.js";
+import { listAllCashOuts, getCashOutPayoutPlan, completeCashOut } from "../services/cashOutService.js";
 import { fundWalletFromNdax, checkFunding, listAllFundings } from "../services/fundService.js";
 import { quoteFund } from "../config/fees.js";
 
@@ -217,6 +217,24 @@ ndaxRouter.get("/fees/withdraw/:productId", requireOperator, async (req, res) =>
 ndaxRouter.get("/cash-outs", requireOperator, async (req, res) => {
   try {
     return res.json({ cashOuts: await listAllCashOuts({ state: req.query.state }) });
+  } catch (error) { return fail(res, error); }
+});
+
+// Everything the operator needs to pay one cash-out: CAD amounts from the
+// actual fill plus the customer's bank template, ready to pre-fill the
+// withdraw form.
+ndaxRouter.get("/cash-out/:cashOutId/payout-plan", requireOperator, async (req, res) => {
+  try {
+    const plan = await getCashOutPayoutPlan(req.params.cashOutId, req.query.payout);
+    const { cashOut, ...rest } = plan;
+    return res.json({ cashOutId: cashOut.cashOutId, customerId: cashOut.customerId, bank: cashOut.bankDetails, ...rest });
+  } catch (error) { return fail(res, error); }
+});
+
+ndaxRouter.post("/cash-out/:cashOutId/complete", requireOperator, async (req, res) => {
+  if (!requireConfirm(req, res)) return;
+  try {
+    return res.json(await completeCashOut(req.params.cashOutId));
   } catch (error) { return fail(res, error); }
 });
 

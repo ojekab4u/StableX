@@ -259,12 +259,16 @@ const schemaStatements = [
     order_id BIGINT,
     order_status VARCHAR(40),
     idempotency_key VARCHAR(255) NOT NULL,
+    bank_details JSONB,
     error TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (customer_id, idempotency_key)
   )`,
+  `ALTER TABLE cash_outs DROP CONSTRAINT IF EXISTS cash_outs_state_check`,
+  `ALTER TABLE cash_outs ADD CONSTRAINT cash_outs_state_check CHECK (state IN ('DEBITING','DEBIT_FAILED','DEBITED','ORDER_ACCEPTED','REVERSED','PAID'))`,
+  `ALTER TABLE cash_outs ADD COLUMN IF NOT EXISTS bank_details JSONB`,
   `CREATE INDEX IF NOT EXISTS cash_outs_customer_idx ON cash_outs (customer_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS cash_outs_state_idx ON cash_outs (state, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS wallet_fundings (

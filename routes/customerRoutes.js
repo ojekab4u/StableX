@@ -142,6 +142,7 @@ customerRouter.post("/me/cash-out", async (req, res) => {
       customerId,
       amount: req.body?.amount,
       idempotencyKey: req.body?.idempotencyKey,
+      bank: req.body?.bank,
     });
     return res.json(result);
   } catch (error) {

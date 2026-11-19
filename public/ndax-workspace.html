@@ -158,6 +158,20 @@
     <div id="fundList"></div>
   </section>
 
+  <section>
+    <h2>9 · Cash-out payout queue</h2>
+    <div class="row">
+      <div><button class="secondary" id="queueBtn" disabled>Refresh queue</button></div>
+      <div>
+        <label style="font-weight:400;font-size:.9rem;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="eftMethod" style="width:auto" /> use EFT (4.99) instead of Interac (1.50)
+        </label>
+      </div>
+    </div>
+    <div id="queueList"></div>
+    <p class="ok" id="queueOk" hidden></p>
+  </section>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -219,9 +233,10 @@ async function connect() {
     renderReadiness(readiness);
     connected = true;
     $("refreshBtn").disabled = false;
-    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn"]) $(id).disabled = false;
+    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn", "queueBtn"]) $(id).disabled = false;
     await refreshAll();
     loadFundings();
+    loadQueue();
     startPolling();
   } catch (error) {
     connected = false;
@@ -556,6 +571,69 @@ async function loadFundings() {
   }
 }
 
+// ------------------------------------------------------------------ queue
+
+async function loadQueue() {
+  try {
+    const data = await api("/api/ndax/cash-outs?state=ORDER_ACCEPTED");
+    const rows = data.cashOuts || [];
+    $("queueList").innerHTML = rows.length ? `
+      <table><tr><th>Cash-out</th><th>Customer</th><th class="num">USDC</th><th>Order</th><th>Bank holder</th><th></th></tr>
+      ${rows.map((c) => `<tr>
+        <td class="mono">${(c.cashOutId || "").slice(0, 8)}</td>
+        <td class="mono">${esc(c.customerId)}</td>
+        <td class="num">${fmt(c.amount, 3)}</td>
+        <td>${c.orderId ?? "—"}</td>
+        <td>${esc(c.bankDetails?.FullName || "—")}</td>
+        <td>
+          <button class="secondary" data-pay="${c.cashOutId}">Pay</button>
+          <button class="secondary" data-complete="${c.cashOutId}">Mark paid</button>
+        </td>
+      </tr>`).join("")}</table>`
+      : `<p class="hint">Queue empty — nothing awaiting payout.</p>`;
+  } catch (error) {
+    $("queueList").innerHTML = `<p class="error">${error.message}</p>`;
+  }
+}
+
+async function payCashOut(cashOutId) {
+  setError("wdError", "");
+  $("queueOk").hidden = true;
+  try {
+    const plan = await api(`/api/ndax/cash-out/${cashOutId}/payout-plan${$("eftMethod").checked ? "?payout=EFT" : ""}`);
+    // Pre-fill the withdraw form (section 6) with everything except the 2FA.
+    $("wdAmount").value = Math.round(plan.ticketAmountCad * 100) / 100;
+    $("wdName").value = plan.bank.FullName || "";
+    $("wdBankName").value = plan.bank.BankAccountName || "";
+    $("wdAccount").value = plan.bank.BankAccountNumber || "";
+    $("wdAddress").value = plan.bank.BankAddress || "";
+    $("wdSwift").value = plan.bank.SwiftCode || "";
+    $("queueOk").hidden = false;
+    $("queueOk").textContent = `Section 6 pre-filled: ticket ${fmt(plan.ticketAmountCad, 2)} CAD, customer receives ${fmt(plan.customerReceivesCad, 2)} CAD after the ${fmt(plan.transferFeeCad, 2)} ${plan.method} fee. Enter the 2FA code and submit.`;
+    document.querySelectorAll("section")[5]?.scrollIntoView({ behavior: "smooth" });
+  } catch (error) {
+    $("queueOk").hidden = false;
+    $("queueOk").textContent = error.message;
+  }
+}
+
+async function completePayout(cashOutId) {
+  try {
+    await api(`/api/ndax/cash-out/${cashOutId}/complete`, { method: "POST", body: JSON.stringify({ confirm: true }) });
+    loadQueue();
+  } catch (error) {
+    $("queueOk").hidden = false;
+    $("queueOk").textContent = error.message;
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const pay = event.target.closest("[data-pay]");
+  if (pay) payCashOut(pay.getAttribute("data-pay"));
+  const done = event.target.closest("[data-complete]");
+  if (done) completePayout(done.getAttribute("data-complete"));
+});
+
 // ------------------------------------------------------------------- wiring
 
 $("connectBtn").addEventListener("click", connect);
@@ -570,6 +648,8 @@ $("fundCad").addEventListener("input", () => {
   clearTimeout(fundQuoteTimer);
   fundQuoteTimer = setTimeout(loadFundQuote, 400);
 });
+$("queueBtn").addEventListener("click", loadQueue);
+$("eftMethod").addEventListener("change", loadQueue);
 $("operatorToken").addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
 
 // Funding rows re-render, so the per-row Check button is delegated.

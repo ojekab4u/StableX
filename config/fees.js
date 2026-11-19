@@ -37,6 +37,26 @@ export function quoteCashOut({ amountUsdc, priceCadPerUsdc, payoutMethod = "INTE
   };
 }
 
+// CAD the company owes the customer from one cash-out order. Ndax takes the
+// trading fee from the CAD proceeds of a sell and the transfer fee from the
+// ticket amount, so the ticket is submitted gross of the transfer fee.
+export function cashOutPayout({ quantityExecuted, averagePriceCad, payoutMethod = "INTERAC" }) {
+  const grossCad = Number(quantityExecuted) * Number(averagePriceCad);
+  const tradeFeeCad = grossCad * NDAX_FEES.tradingRate;
+  const marginCad = grossCad * STABLEX_MARGIN.cashOutPct;
+  const netCad = grossCad - tradeFeeCad - marginCad;
+  const transferFeeCad = payoutFeeCad(payoutMethod);
+  return {
+    grossCad,
+    tradeFeeCad,
+    marginCad,
+    netCad,
+    transferFeeCad,
+    ticketAmountCad: netCad,
+    customerReceivesCad: netCad - transferFeeCad,
+  };
+}
+
 // Fund: the customer sends cadAmount and receives USDC net of fees.
 export function quoteFund({ cadAmount, priceCadPerUsdc }) {
   const grossUsdc = Number(cadAmount) / Number(priceCadPerUsdc);

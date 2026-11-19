@@ -56,6 +56,13 @@
     <button id="cashOutBtn">Cash out</button>
   </div>
   <p class="muted" id="cashOutQuote" style="margin:0 0 8px"></p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:10px">
+    <input id="bankHolder" placeholder="Account holder (full name)" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+    <input id="bankName" placeholder="Bank name" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+    <input id="bankAccount" placeholder="Bank account number" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+    <input id="bankAddress" placeholder="Bank address" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+    <input id="bankSwift" placeholder="Swift code" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px">
+  </div>
   <p class="muted" id="cashOutError" style="color:#b3261e;margin:0 0 8px"></p>
   <table>
     <thead><tr><th>Date</th><th class="num">USDC</th><th>State</th><th>Order</th><th>Detail</th></tr></thead>
@@ -141,15 +148,24 @@
     quoteTimer = setTimeout(loadCashOutQuote, 400);
   });
 
-  $("cashOutBtn").onclick = async () => {    $("cashOutError").textContent = "";
+  $("cashOutBtn").onclick = async () => {
+    $("cashOutError").textContent = "";
     const amount = Number($("cashOutAmount").value);
     if (!Number.isFinite(amount) || amount <= 0) { $("cashOutError").textContent = "Enter an amount."; return; }
+    const bank = {
+      holder: $("bankHolder").value.trim(),
+      bankName: $("bankName").value.trim(),
+      accountNumber: $("bankAccount").value.trim(),
+      address: $("bankAddress").value.trim(),
+      swift: $("bankSwift").value.trim(),
+    };
+    if (Object.values(bank).some((v) => !v)) { $("cashOutError").textContent = "Fill in all bank fields."; return; }
     $("cashOutBtn").disabled = true;
     try {
       const r = await fetch("/api/customer/me/cash-out", {
         method: "POST",
         headers: { Authorization: "Bearer " + token(), "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, idempotencyKey: crypto.randomUUID() })
+        body: JSON.stringify({ amount, idempotencyKey: crypto.randomUUID(), bank })
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Cash out failed");
