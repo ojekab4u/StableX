@@ -55,6 +55,7 @@
     <input id="cashOutAmount" type="number" step="0.001" min="1" placeholder="USDC amount" style="padding:8px;border:1px solid #d5dde5;border-radius:8px;font-size:14px;width:180px">
     <button id="cashOutBtn">Cash out</button>
   </div>
+  <p class="muted" id="cashOutQuote" style="margin:0 0 8px"></p>
   <p class="muted" id="cashOutError" style="color:#b3261e;margin:0 0 8px"></p>
   <table>
     <thead><tr><th>Date</th><th class="num">USDC</th><th>State</th><th>Order</th><th>Detail</th></tr></thead>
@@ -121,8 +122,26 @@
     }
   }
 
-  $("cashOutBtn").onclick = async () => {
-    $("cashOutError").textContent = "";
+  let quoteTimer = null;
+  async function loadCashOutQuote() {
+    const el = $("cashOutQuote");
+    const amount = Number($("cashOutAmount").value);
+    if (!Number.isFinite(amount) || amount <= 0) { el.innerHTML = ""; return; }
+    try {
+      const q = await api(`/api/customer/quote/cash-out/${amount}`);
+      el.innerHTML = `You receive ≈ <strong>${fmt(q.youReceiveCad, 4)} CAD</strong> to your bank`
+        + ` <span style="color:#7a8894">· rate ${fmt(q.priceCadPerUsdc, 4)} · trade fee ${fmt(q.tradeFeeCad, 4)} CAD · transfer fee ${fmt(q.transferFeeCad, 2)} CAD</span>`;
+    } catch (e) {
+      el.innerHTML = `<span style="color:#b3261e">${esc(e.message)}</span>`;
+    }
+  }
+
+  $("cashOutAmount").addEventListener("input", () => {
+    clearTimeout(quoteTimer);
+    quoteTimer = setTimeout(loadCashOutQuote, 400);
+  });
+
+  $("cashOutBtn").onclick = async () => {    $("cashOutError").textContent = "";
     const amount = Number($("cashOutAmount").value);
     if (!Number.isFinite(amount) || amount <= 0) { $("cashOutError").textContent = "Enter an amount."; return; }
     $("cashOutBtn").disabled = true;

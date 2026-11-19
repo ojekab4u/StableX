@@ -3,6 +3,7 @@ import { getPool } from "../db/pool.js";
 import { postProviderCredit } from "./walletService.js";
 import { getCustomerGateStatus } from "./complianceService.js";
 import { getNdaxRate, sendNdaxOrder, getNdaxOrderStatus } from "./providers/ndaxService.js";
+import { NDAX_FEES } from "../config/fees.js";
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
@@ -112,17 +113,26 @@ async function creditFilledOrder(funding, status) {
   if (!Number.isFinite(status.quantityExecuted) || status.quantityExecuted <= 0) {
     return { credited: false, reason: "nothing executed yet" };
   }
+  // The customer receives the fill net of the trading fee (Ndax takes it in
+  // USDC on buys); the fee amount stays with the company in the ledger gap.
+  const netUsdc = status.quantityExecuted * (1 - NDAX_FEES.tradingRate);
   const credit = await postProviderCredit({
     customerId: funding.customerId,
     currency: CREDIT_ASSET,
-    amount: status.quantityExecuted,
+    amount: netUsdc,
     provider: CREDIT_PROVIDER,
     providerEventId: `ndaxfund:${funding.orderId}`,
     reference: `Ndax CAD funding ${funding.fundingId}`,
-    metadata: { fundingId: funding.fundingId, orderId: funding.orderId, averagePrice: status.averagePrice },
+    metadata: {
+      fundingId: funding.fundingId,
+      orderId: funding.orderId,
+      averagePrice: status.averagePrice,
+      grossExecuted: status.quantityExecuted,
+      tradeFeeUsdc: status.quantityExecuted * NDAX_FEES.tradingRate,
+    },
   });
-  await updateFunding(funding.fundingId, { state: "CREDITED", credited_amount: status.quantityExecuted, order_status: status.state });
-  return { credited: credit.credited, duplicate: credit.duplicate, balance: credit.balance, usdcCredited: status.quantityExecuted };
+  await updateFunding(funding.fundingId, { state: "CREDITED", credited_amount: netUsdc, order_status: status.state });
+  return { credited: credit.credited, duplicate: credit.duplicate, balance: credit.balance, usdcCredited: netUsdc };
 }
 
 async function pollFill(orderId) {

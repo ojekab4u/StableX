@@ -144,6 +144,7 @@
       <div><label for="fundCad">CAD deposited</label><input id="fundCad" type="number" min="1" step="0.01" /></div>
     </div>
     <div><label for="fundRef">Deposit reference (from Ndax dashboard)</label><input id="fundRef" placeholder="Interac sender / date" /></div>
+    <p class="hint" id="fundQuote"></p>
     <label style="display:flex;align-items:center;gap:8px;font-weight:600">
       <input type="checkbox" id="fundConfirm" style="width:auto" /> I understand this places a live buy order with real CAD
     </label>
@@ -462,6 +463,19 @@ async function loadWithdrawals() {
 
 let lastFundingId = null;
 
+let fundQuoteTimer = null;
+async function loadFundQuote() {
+  const el = $("fundQuote");
+  const cadAmount = Number($("fundCad").value);
+  if (!connected || !Number.isFinite(cadAmount) || cadAmount <= 0) { el.textContent = ""; return; }
+  try {
+    const q = await api(`/api/ndax/quote/fund/${cadAmount}`);
+    el.textContent = `≈ ${fmt(q.youReceiveUsdc, 4)} USDC credited · gross ${fmt(q.grossUsdc, 4)} · trade fee ${fmt(q.tradeFeeUsdc, 4)} USDC`;
+  } catch (error) {
+    el.textContent = error.message;
+  }
+}
+
 async function fund() {
   setError("fundError", "");
   $("fundOk").hidden = true;
@@ -552,6 +566,10 @@ $("feeBtn").addEventListener("click", checkFee);
 $("wdBtn").addEventListener("click", withdraw);
 $("fundBtn").addEventListener("click", fund);
 $("fundCheckBtn").addEventListener("click", () => checkFill());
+$("fundCad").addEventListener("input", () => {
+  clearTimeout(fundQuoteTimer);
+  fundQuoteTimer = setTimeout(loadFundQuote, 400);
+});
 $("operatorToken").addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
 
 // Funding rows re-render, so the per-row Check button is delegated.

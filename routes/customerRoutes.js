@@ -4,6 +4,8 @@ import {
   registerExternalWallet, listExternalWallets,
 } from "../services/walletService.js";
 import { requestCashOut, listCashOuts } from "../services/cashOutService.js";
+import { getNdaxRate } from "../services/providers/ndaxService.js";
+import { quoteCashOut, quoteFund } from "../config/fees.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
@@ -152,6 +154,42 @@ customerRouter.get("/me/cash-outs", async (req, res) => {
   const customerId = req.account.accountId;
   try { return res.json({ customerId, cashOuts: await listCashOuts(customerId) }); }
   catch (error) { return fail(res, error); }
+});
+
+// Fees are shown before the customer commits. Prices are indicative until
+// the order fills, same as every exchange.
+customerRouter.get("/quote/cash-out/:amount", async (req, res) => {
+  const amount = Number(req.params.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: "A positive USDC amount is required." });
+  }
+  try {
+    const rate = await getNdaxRate({ from: "USDC", to: "CAD", amount });
+    if (!rate.averageFillPrice) {
+      return res.status(400).json({ error: "The order book cannot cover this amount right now." });
+    }
+    const quote = quoteCashOut({
+      amountUsdc: amount,
+      priceCadPerUsdc: rate.averageFillPrice,
+      payoutMethod: req.query.payout === "EFT" ? "EFT" : "INTERAC",
+    });
+    return res.json({ provider: "Ndax", indicative: true, ...quote });
+  } catch (error) { return fail(res, error); }
+});
+
+customerRouter.get("/quote/fund/:cadAmount", async (req, res) => {
+  const cadAmount = Number(req.params.cadAmount);
+  if (!Number.isFinite(cadAmount) || cadAmount <= 0) {
+    return res.status(400).json({ error: "A positive CAD amount is required." });
+  }
+  try {
+    const rate = await getNdaxRate({ from: "CAD", to: "USDC", amount: cadAmount });
+    if (!rate.averageFillPrice) {
+      return res.status(400).json({ error: "The order book cannot cover this amount right now." });
+    }
+    const quote = quoteFund({ cadAmount, priceCadPerUsdc: rate.averageFillPrice });
+    return res.json({ provider: "Ndax", indicative: true, ...quote });
+  } catch (error) { return fail(res, error); }
 });
 
 // Deliberately no public /credit or /debit endpoint. Balances may only change

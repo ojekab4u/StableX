@@ -30,6 +30,7 @@ import {
 } from "../services/providers/ndaxService.js";
 import { listAllCashOuts } from "../services/cashOutService.js";
 import { fundWalletFromNdax, checkFunding, listAllFundings } from "../services/fundService.js";
+import { quoteFund } from "../config/fees.js";
 
 export const ndaxRouter = Router();
 
@@ -243,5 +244,20 @@ ndaxRouter.post("/fund/:fundingId/check", requireOperator, async (req, res) => {
 ndaxRouter.get("/fundings", requireOperator, async (req, res) => {
   try {
     return res.json({ fundings: await listAllFundings({ state: req.query.state }) });
+  } catch (error) { return fail(res, error); }
+});
+
+// What a CAD funding would credit, net of fees, before placing the order.
+ndaxRouter.get("/quote/fund/:cadAmount", requireOperator, async (req, res) => {
+  const cadAmount = Number(req.params.cadAmount);
+  if (!Number.isFinite(cadAmount) || cadAmount <= 0) {
+    return res.status(400).json({ error: "A positive CAD amount is required." });
+  }
+  try {
+    const rate = await getNdaxRate({ from: "CAD", to: "USDC", amount: cadAmount });
+    if (!rate.averageFillPrice) {
+      return res.status(400).json({ error: "The order book cannot cover this amount right now." });
+    }
+    return res.json({ provider: "Ndax", indicative: true, ...quoteFund({ cadAmount, priceCadPerUsdc: rate.averageFillPrice }) });
   } catch (error) { return fail(res, error); }
 });
