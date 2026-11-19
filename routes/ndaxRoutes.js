@@ -3,7 +3,9 @@
 // account-data endpoint requires the StableX operator token because the Ndax
 // account belongs to the operator, not to individual customers.
 //
-// This step is READ-ONLY: no route here places an order or moves funds.
+// This step started read-only. Execution now exists behind two gates: the
+// operator token on every route below, and NDAX_EXECUTION_ENABLED=true in the
+// server environment (checked inside the service). Neither alone moves funds.
 import { Router } from "express";
 import {
   getNdaxReadiness,
@@ -20,7 +22,14 @@ import {
   listNdaxDeposits,
   listNdaxWithdrawals,
   getNdaxWithdrawTemplate,
+  sendNdaxOrder,
+  getNdaxOrderStatus,
+  cancelNdaxOrder,
+  createNdaxWithdrawTicket,
+  getNdaxWithdrawFee,
 } from "../services/providers/ndaxService.js";
+import { listAllCashOuts } from "../services/cashOutService.js";
+import { fundWalletFromNdax, checkFunding, listAllFundings } from "../services/fundService.js";
 
 export const ndaxRouter = Router();
 
@@ -143,5 +152,96 @@ ndaxRouter.get("/withdraw-template/:productId", requireOperator, async (req, res
       productId: Number(req.params.productId),
       template: await getNdaxWithdrawTemplate(req.params.productId, req.query.accountId || undefined),
     });
+  } catch (error) { return fail(res, error); }
+});
+
+// ---- execution (operator token + NDAX_EXECUTION_ENABLED=true) ----
+//
+// Every mutating route requires confirm:true in the body. That is deliberate:
+// a copied curl line or a stray script cannot trade by accident.
+
+function requireConfirm(req, res) {
+  if (req.body?.confirm !== true) {
+    res.status(400).json({ error: "Set confirm:true in the body to perform this live action." });
+    return false;
+  }
+  return true;
+}
+
+// Place an order: body { side: "SELL"|"BUY", quantity, limitPrice?, confirm }
+// Sell converts USDC -> CAD (Direction A). Buy converts CAD -> USDC (Direction B).
+ndaxRouter.post("/execute/order", requireOperator, async (req, res) => {
+  if (!requireConfirm(req, res)) return;
+  try {
+    const { side, quantity, limitPrice, orderType, timeInForce } = req.body || {};
+    const order = await sendNdaxOrder({ side, quantity, limitPrice, orderType, timeInForce });
+    return res.status(201).json({ provider: "Ndax", order });
+  } catch (error) { return fail(res, error); }
+});
+
+// Poll whether the order filled: GET /execute/order/:orderId
+ndaxRouter.get("/execute/order/:orderId", requireOperator, async (req, res) => {
+  try {
+    return res.json({ provider: "Ndax", order: await getNdaxOrderStatus(req.params.orderId) });
+  } catch (error) { return fail(res, error); }
+});
+
+// Unwind a resting order that never filled.
+ndaxRouter.post("/execute/order/:orderId/cancel", requireOperator, async (req, res) => {
+  if (!requireConfirm(req, res)) return;
+  try {
+    return res.json({ provider: "Ndax", cancel: await cancelNdaxOrder(req.params.orderId) });
+  } catch (error) { return fail(res, error); }
+});
+
+// CAD -> bank payout: body { amount, template: {...bank fields}, twoFACode, confirm }
+ndaxRouter.post("/execute/withdraw/cad", requireOperator, async (req, res) => {
+  if (!requireConfirm(req, res)) return;
+  try {
+    const { amount, template, twoFACode } = req.body || {};
+    const ticket = await createNdaxWithdrawTicket({ amount, template, twoFACode });
+    return res.status(201).json({ provider: "Ndax", ticket });
+  } catch (error) { return fail(res, error); }
+});
+
+// What the payout costs before we commit to it.
+ndaxRouter.get("/fees/withdraw/:productId", requireOperator, async (req, res) => {
+  try {
+    return res.json({ provider: "Ndax", fee: await getNdaxWithdrawFee(req.params.productId) });
+  } catch (error) { return fail(res, error); }
+});
+
+// Customer cash-out requests created by /api/customer/me/cash-out. The ones
+// in ORDER_ACCEPTED state have CAD proceeds waiting for the payout above.
+ndaxRouter.get("/cash-outs", requireOperator, async (req, res) => {
+  try {
+    return res.json({ cashOuts: await listAllCashOuts({ state: req.query.state }) });
+  } catch (error) { return fail(res, error); }
+});
+
+// Direction B: convert CAD already sitting on Ndax into USDC and credit a
+// customer wallet. Operator-driven because a shared-account CAD deposit has
+// no customer identity attached; the operator supplies customerId plus the
+// deposit reference from the Ndax dashboard.
+ndaxRouter.post("/fund/wallet", requireOperator, async (req, res) => {
+  if (!requireConfirm(req, res)) return;
+  try {
+    const { customerId, cadAmount, depositReference, idempotencyKey } = req.body || {};
+    const result = await fundWalletFromNdax({ customerId, cadAmount, depositReference, idempotencyKey });
+    return res.json(result);
+  } catch (error) { return fail(res, error); }
+});
+
+// Re-checks a funding whose order had not filled on the first poll, then
+// credits the wallet once the fill is confirmed.
+ndaxRouter.post("/fund/:fundingId/check", requireOperator, async (req, res) => {
+  try {
+    return res.json(await checkFunding(req.params.fundingId));
+  } catch (error) { return fail(res, error); }
+});
+
+ndaxRouter.get("/fundings", requireOperator, async (req, res) => {
+  try {
+    return res.json({ fundings: await listAllFundings({ state: req.query.state }) });
   } catch (error) { return fail(res, error); }
 });

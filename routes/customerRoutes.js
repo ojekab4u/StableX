@@ -3,6 +3,7 @@ import {
   createWallet, listWallets, listEligibleWalletAssets, getWalletLedger,
   registerExternalWallet, listExternalWallets,
 } from "../services/walletService.js";
+import { requestCashOut, listCashOuts } from "../services/cashOutService.js";
 import { getCustomerGateStatus } from "../services/complianceService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
@@ -45,7 +46,7 @@ customerRouter.get("/me/overview", async (req, res) => {
           depositId: meta.depositId || entry.reference,
         };
       });
-    return res.json({ wallets, deposits });
+    return res.json({ customerId, wallets, deposits });
   } catch (error) { return fail(res, error); }
 });
 
@@ -127,6 +128,29 @@ customerRouter.get("/external-wallets/:customerId", async (req, res) => {
   const customerId = req.params.customerId;
   if (!isOwnCustomer(req, res, customerId)) return;
   try { return res.json({ customerId, wallets: await listExternalWallets(customerId) }); }
+  catch (error) { return fail(res, error); }
+});
+
+// Direction A cash out: debit the wallet, sell USDC on Ndax. The CAD payout
+// to the customer's bank is completed by the operator with a 2FA code.
+customerRouter.post("/me/cash-out", async (req, res) => {
+  const customerId = req.account.accountId;
+  try {
+    const result = await requestCashOut({
+      customerId,
+      amount: req.body?.amount,
+      idempotencyKey: req.body?.idempotencyKey,
+    });
+    return res.json(result);
+  } catch (error) {
+    if (error.cashOut) return res.status(error.statusCode || 503).json({ error: error.message, cashOut: error.cashOut });
+    return fail(res, error);
+  }
+});
+
+customerRouter.get("/me/cash-outs", async (req, res) => {
+  const customerId = req.account.accountId;
+  try { return res.json({ customerId, cashOuts: await listCashOuts(customerId) }); }
   catch (error) { return fail(res, error); }
 });
 

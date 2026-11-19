@@ -248,6 +248,43 @@ const schemaStatements = [
     processed_at TIMESTAMPTZ
   )`,
   `CREATE INDEX IF NOT EXISTS paytrie_webhook_events_received_idx ON paytrie_webhook_events (received_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS cash_outs (
+    cash_out_id UUID PRIMARY KEY,
+    customer_id VARCHAR(128) NOT NULL,
+    currency VARCHAR(12) NOT NULL,
+    amount NUMERIC(24,8) NOT NULL CHECK (amount > 0),
+    state VARCHAR(32) NOT NULL CHECK (state IN ('DEBITING','DEBIT_FAILED','DEBITED','ORDER_ACCEPTED','REVERSED')),
+    ledger_entry_id UUID,
+    reversal_entry_id UUID,
+    order_id BIGINT,
+    order_status VARCHAR(40),
+    idempotency_key VARCHAR(255) NOT NULL,
+    error TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (customer_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS cash_outs_customer_idx ON cash_outs (customer_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS cash_outs_state_idx ON cash_outs (state, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS wallet_fundings (
+    funding_id UUID PRIMARY KEY,
+    customer_id VARCHAR(128) NOT NULL,
+    currency VARCHAR(12) NOT NULL,
+    cad_amount NUMERIC(24,8) NOT NULL CHECK (cad_amount > 0),
+    credited_amount NUMERIC(24,8),
+    state VARCHAR(32) NOT NULL CHECK (state IN ('NEW','PLACED','FILL_PENDING','CREDITED','ORDER_FAILED')),
+    order_id BIGINT,
+    order_status VARCHAR(40),
+    deposit_reference VARCHAR(255),
+    idempotency_key VARCHAR(255) NOT NULL,
+    error TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (customer_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS wallet_fundings_customer_idx ON wallet_fundings (customer_id, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS paytrie_webhook_config (
     config_id VARCHAR(32) PRIMARY KEY CHECK (config_id='default'),
     webhook_url TEXT NOT NULL,
@@ -267,7 +304,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config", "cash_outs", "wallet_fundings"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

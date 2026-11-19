@@ -115,6 +115,117 @@ export async function postProviderCredit({ customerId, currency, amount, provide
   finally { client.release(); }
 }
 
+// Debits a wallet for a controlled outflow. Idempotent on
+// (provider, providerEventId): a retried debit returns the first result.
+// The wallet row is locked so two concurrent debits cannot both pass the
+// balance check.
+export async function postWalletDebit({ customerId, currency, amount, provider, providerEventId, reference, metadata = {} }) {
+  const assetCode = String(currency || "").toUpperCase();
+  const value = Number(amount);
+  if (!customerId || !assetCode || !Number.isFinite(value) || value <= 0 || !provider || !providerEventId) {
+    throw fail("A customer, asset, positive amount and unique provider event reference are required.");
+  }
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const wallet = await client.query(
+      "SELECT wallet_id FROM wallet_accounts WHERE customer_id=$1 AND asset_code=$2 AND status='ACTIVE' FOR UPDATE",
+      [customerId, assetCode]
+    );
+    if (!wallet.rowCount) throw fail(`No active ${assetCode} wallet exists for this customer.`, 404);
+    const walletId = wallet.rows[0].wallet_id;
+
+    const prior = await client.query(
+      `SELECT entry_id AS "entryId", customer_id, asset_code, amount::text AS amount
+       FROM wallet_ledger WHERE provider=$1 AND provider_event_id=$2`,
+      [provider, providerEventId]
+    );
+    if (prior.rowCount) {
+      const row = prior.rows[0];
+      if (row.customer_id !== customerId || row.asset_code !== assetCode || Number(row.amount) !== -value) {
+        throw fail("Provider event ID was already used for a different debit. Manual reconciliation is required.", 409);
+      }
+      const balance = await client.query(
+        "SELECT COALESCE(SUM(amount),0)::text AS balance FROM wallet_ledger WHERE wallet_id=$1 AND status='POSTED'",
+        [walletId]
+      );
+      await client.query("COMMIT");
+      return { debited: false, duplicate: true, customerId, currency: assetCode, entryId: row.entryId, balance: Number(balance.rows[0].balance) };
+    }
+
+    const balance = await client.query(
+      "SELECT COALESCE(SUM(amount),0)::text AS balance FROM wallet_ledger WHERE wallet_id=$1 AND status='POSTED'",
+      [walletId]
+    );
+    if (Number(balance.rows[0].balance) < value) {
+      throw fail(`Insufficient ${assetCode} balance for this debit.`, 409);
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO wallet_ledger(entry_id,wallet_id,customer_id,asset_code,entry_type,amount,reference,provider,provider_event_id,metadata)
+       VALUES($1,$2,$3,$4,'WITHDRAWAL',$5,$6,$7,$8,$9::jsonb)
+       RETURNING entry_id AS "entryId"`,
+      [randomUUID(), walletId, customerId, assetCode, -value, reference || providerEventId, provider, providerEventId, JSON.stringify(metadata)]
+    );
+    const after = await client.query(
+      "SELECT COALESCE(SUM(amount),0)::text AS balance FROM wallet_ledger WHERE wallet_id=$1 AND status='POSTED'",
+      [walletId]
+    );
+    await client.query("COMMIT");
+    return { debited: true, duplicate: false, customerId, currency: assetCode, entryId: inserted.rows[0].entryId, balance: Number(after.rows[0].balance) };
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
+
+// Reverses a posted debit with an equal and opposite REVERSAL entry. The
+// original entry stays POSTED so history shows both sides. Idempotent the
+// same way as postWalletDebit.
+export async function postWalletReversal({ customerId, currency, amount, provider, providerEventId, reference, metadata = {} }) {
+  const assetCode = String(currency || "").toUpperCase();
+  const value = Number(amount);
+  if (!customerId || !assetCode || !Number.isFinite(value) || value <= 0 || !provider || !providerEventId) {
+    throw fail("A customer, asset, positive amount and unique provider event reference are required.");
+  }
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const wallet = await client.query(
+      "SELECT wallet_id FROM wallet_accounts WHERE customer_id=$1 AND asset_code=$2 AND status='ACTIVE' FOR UPDATE",
+      [customerId, assetCode]
+    );
+    if (!wallet.rowCount) throw fail(`No active ${assetCode} wallet exists for this customer.`, 404);
+    const walletId = wallet.rows[0].wallet_id;
+
+    const prior = await client.query(
+      `SELECT entry_id AS "entryId", customer_id, asset_code, amount::text AS amount
+       FROM wallet_ledger WHERE provider=$1 AND provider_event_id=$2`,
+      [provider, providerEventId]
+    );
+    if (prior.rowCount) {
+      const row = prior.rows[0];
+      if (row.customer_id !== customerId || row.asset_code !== assetCode || Number(row.amount) !== value) {
+        throw fail("Provider event ID was already used for a different reversal. Manual reconciliation is required.", 409);
+      }
+      await client.query("COMMIT");
+      return { reversed: false, duplicate: true, customerId, currency: assetCode, entryId: row.entryId };
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO wallet_ledger(entry_id,wallet_id,customer_id,asset_code,entry_type,amount,reference,provider,provider_event_id,metadata)
+       VALUES($1,$2,$3,$4,'REVERSAL',$5,$6,$7,$8,$9::jsonb)
+       RETURNING entry_id AS "entryId"`,
+      [randomUUID(), walletId, customerId, assetCode, value, reference || providerEventId, provider, providerEventId, JSON.stringify(metadata)]
+    );
+    const after = await client.query(
+      "SELECT COALESCE(SUM(amount),0)::text AS balance FROM wallet_ledger WHERE wallet_id=$1 AND status='POSTED'",
+      [walletId]
+    );
+    await client.query("COMMIT");
+    return { reversed: true, duplicate: false, customerId, currency: assetCode, entryId: inserted.rows[0].entryId, balance: Number(after.rows[0].balance) };
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
+
 export async function registerExternalWallet({ customerId, address, chainId, walletProvider, signature, message }) {
   if (!isAddress(address)) throw fail("A valid EVM wallet address is required.");
   const chain = Number(chainId);

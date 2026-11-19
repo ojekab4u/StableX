@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StableX — CAD Leg Workspace (Ndax)</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body { margin: 0 auto; max-width: 860px; padding: 24px; background: #f8fafc; color: #1e293b; }
+  h1 { font-size: 1.4rem; } .sub { color: #64748b; font-size: .95rem; margin-bottom: 24px; }
+  section { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  h2 { font-size: 1.05rem; margin-top: 0; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .95rem; }
+  button { margin-top: 14px; background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; font-size: .95rem; cursor: pointer; }
+  button.secondary { background: #64748b; }
+  button.danger { background: #dc2626; }
+  button:disabled { opacity: .5; cursor: default; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+  .ON { background: #dcfce7; color: #166534; } .OFF { background: #fee2e2; color: #991b1b; }
+  .WARN { background: #fef9c3; color: #854d0e; } .IDLE { background: #e2e8f0; color: #475569; }
+  pre { background: #f1f5f9; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: .78rem; }
+  .error { color: #b91c1c; font-size: .9rem; margin-top: 10px; white-space: pre-wrap; }
+  .ok { color: #166534; font-size: .9rem; margin-top: 10px; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 10px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+  .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+  .stat .k { font-size: .75rem; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+  .stat .v { font-size: 1.15rem; font-weight: 700; margin-top: 4px; }
+  .hint { font-size: .82rem; color: #64748b; margin-top: 8px; line-height: 1.5; }
+  .flow { font-size: .85rem; color: #475569; background: #f8fafc; border-left: 3px solid #2563eb; padding: 8px 12px; margin-bottom: 14px; }
+  .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 150px; }
+</style>
+</head>
+<body>
+  <h1>CAD Leg Workspace <span id="execBadge" class="badge IDLE">not connected</span></h1>
+
+  <section>
+    <h2>1 · Connection</h2>
+    <label for="operatorToken">StableX operator token</label>
+    <input id="operatorToken" type="password" autocomplete="off" placeholder="STABLEX_OPERATOR_TOKEN value" />
+    <div class="row">
+      <div><button id="connectBtn">Connect</button></div>
+      <div><button class="secondary" id="refreshBtn" disabled>Refresh</button></div>
+    </div>
+    <p class="error" id="connError"></p>
+    <div id="readyOut" hidden></div>
+  </section>
+
+  <section>
+    <h2>2 · Balances</h2>
+    <div class="grid" id="balanceGrid"><div class="stat"><div class="k">Status</div><div class="v">—</div></div></div>
+    <p class="hint" id="holdHint" hidden></p>
+    <p class="error" id="balError"></p>
+  </section>
+
+  <section>
+    <h2>3 · USDC / CAD market</h2>
+    <div class="grid" id="marketGrid"><div class="stat"><div class="k">Best bid</div><div class="v">—</div></div></div>
+    <p class="hint" id="bookHint"></p>
+    <p class="error" id="mktError"></p>
+  </section>
+
+  <section>
+    <h2>4 · Direction A — cash out (USDC → CAD)</h2>
+    <div class="row">
+      <div>
+        <label for="sellQty">USDC to sell</label>
+        <input id="sellQty" type="number" min="1" step="0.001" value="10" />
+      </div>
+      <div>
+        <label for="sellPrice">Limit price (CAD per USDC)</label>
+        <input id="sellPrice" type="number" min="0.01" step="0.0001" placeholder="auto = best bid" />
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+      <input type="checkbox" id="sellConfirm" style="width:auto" /> I understand this places a live order with real funds
+    </label>
+    <button id="sellBtn" disabled>Sell USDC</button>
+    <p class="error" id="sellError"></p>
+    <p class="ok" id="sellOk" hidden></p>
+    <div id="sellOrder" hidden></div>
+  </section>
+
+  <section>
+    <h2>5 · Direction B — fund (CAD → USDC)</h2>
+    <div class="row">
+      <div>
+        <label for="buyQty">USDC to buy</label>
+        <input id="buyQty" type="number" min="1" step="0.001" value="10" />
+      </div>
+      <div>
+        <label for="buyPrice">Limit price (CAD per USDC)</label>
+        <input id="buyPrice" type="number" min="0.01" step="0.0001" placeholder="auto = best ask" />
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+      <input type="checkbox" id="buyConfirm" style="width:auto" /> I understand this places a live order with real funds
+    </label>
+    <button id="buyBtn" disabled>Buy USDC</button>
+    <p class="error" id="buyError"></p>
+    <p class="ok" id="buyOk" hidden></p>
+    <div id="buyOrder" hidden></div>
+  </section>
+
+  <section>
+    <h2>6 · CAD payout (Ndax → bank)</h2>
+    <div class="grid">
+      <div><label for="wdAmount">Amount (CAD)</label><input id="wdAmount" type="number" min="1" step="0.01" /></div>
+      <div><label for="wd2fa">2FA code</label><input id="wd2fa" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits" /></div>
+    </div>
+    <div class="grid">
+      <div><label for="wdName">Full name</label><input id="wdName" placeholder="Account holder" /></div>
+      <div><label for="wdBankName">Bank account name</label><input id="wdBankName" placeholder="Bank" /></div>
+      <div><label for="wdAccount">Bank account number</label><input id="wdAccount" /></div>
+      <div><label for="wdAddress">Bank address</label><input id="wdAddress" /></div>
+      <div><label for="wdSwift">Swift code</label><input id="wdSwift" /></div>
+    </div>
+    <div class="row">
+      <div><button class="secondary" id="feeBtn" disabled>Check fee</button></div>
+      <div><span id="feeOut" class="hint"></span></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+      <input type="checkbox" id="wdConfirm" style="width:auto" /> I understand this sends real money to the bank account above
+    </label>
+    <button id="wdBtn" disabled>Withdraw CAD</button>
+    <p class="error" id="wdError"></p>
+    <p class="ok" id="wdOk" hidden></p>
+    <h3 style="font-size:.95rem;margin-bottom:0">Recent withdrawal tickets</h3>
+    <div id="wdList"></div>
+  </section>
+
+  <section>
+    <h2>7 · Raw responses</h2>
+    <pre id="raw" hidden></pre>
+  </section>
+
+  <section>
+    <h2>8 · Fund wallet (CAD deposit → USDC)</h2>
+    <div class="grid">
+      <div><label for="fundCustomer">Customer ID</label><input id="fundCustomer" placeholder="customerId" /></div>
+      <div><label for="fundCad">CAD deposited</label><input id="fundCad" type="number" min="1" step="0.01" /></div>
+    </div>
+    <div><label for="fundRef">Deposit reference (from Ndax dashboard)</label><input id="fundRef" placeholder="Interac sender / date" /></div>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+      <input type="checkbox" id="fundConfirm" style="width:auto" /> I understand this places a live buy order with real CAD
+    </label>
+    <div class="row">
+      <div><button id="fundBtn" disabled>Fund wallet</button></div>
+      <div><button class="secondary" id="fundCheckBtn" disabled>Check fill &amp; credit</button></div>
+    </div>
+    <p class="error" id="fundError"></p>
+    <p class="ok" id="fundOk" hidden></p>
+    <h3 style="font-size:.95rem;margin-bottom:0">Recent fundings</h3>
+    <div id="fundList"></div>
+  </section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let token = "";
+let connected = false;
+let pollers = [];
+
+function showRaw(label, data) {
+  $("raw").hidden = false;
+  $("raw").textContent = `// ${label} @ ${new Date().toLocaleTimeString()}\n` + JSON.stringify(data, null, 2);
+}
+
+async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (token) headers.Authorization = "Bearer " + token;
+  if (options.body) headers["Content-Type"] = "application/json";
+  const response = await fetch(path, { ...options, headers });
+  const data = await response.json().catch(() => ({ error: "Invalid server response" }));
+  if (!response.ok) {
+    const detail = [data.error, data.providerCode ? `(${data.providerCode})` : ""].filter(Boolean).join(" ");
+    throw new Error(detail || `Request failed (${response.status})`);
+  }
+  return data;
+}
+
+function setError(id, message) {
+  const el = $(id);
+  el.textContent = message || "";
+}
+
+function fmt(value, digits = 4) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : "—";
+}
+
+// Ndax stamps arrive either as an ISO string or as .NET ticks (100ns units
+// since 0001-01-01). Render both without exploding on either.
+function formatStamp(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "string" && isNaN(Number(value))) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+  }
+  const ticks = Number(value);
+  if (!Number.isFinite(ticks) || ticks <= 0) return String(value);
+  const ms = ticks / 10000 - 62135596800000;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+}
+
+// ---------------------------------------------------------------- connection
+
+async function connect() {
+  token = $("operatorToken").value.trim();
+  setError("connError", "");
+  if (!token) { setError("connError", "Enter the operator token first."); return; }
+  try {
+    const readiness = await api("/api/ndax/readiness");
+    renderReadiness(readiness);
+    connected = true;
+    $("refreshBtn").disabled = false;
+    for (const id of ["sellBtn", "buyBtn", "wdBtn", "feeBtn", "fundBtn", "fundCheckBtn"]) $(id).disabled = false;
+    await refreshAll();
+    loadFundings();
+    startPolling();
+  } catch (error) {
+    connected = false;
+    setError("connError", error.message);
+  }
+}
+
+function renderReadiness(readiness) {
+  const badge = $("execBadge");
+  const on = readiness.executionEnabled === true;
+  badge.className = "badge " + (on ? "ON" : "OFF");
+  badge.textContent = on ? "execution enabled" : "read-only";
+
+  $("readyOut").hidden = false;
+  $("readyOut").innerHTML = `
+    <div class="grid">
+      <div class="stat"><div class="k">Configured</div><div class="v">${readiness.configured ? "yes" : "no"}</div></div>
+      <div class="stat"><div class="k">Account</div><div class="v">${readiness.accountId || "—"}</div></div>
+      <div class="stat"><div class="k">Environment</div><div class="v">${readiness.environment || "—"}</div></div>
+      <div class="stat"><div class="k">Execution</div><div class="v">${on ? "ON" : "OFF"}</div></div>
+    </div>`;
+  showRaw("readiness", readiness);
+}
+
+async function refreshAll() {
+  if (!connected) return;
+  await Promise.all([loadBalances(), loadMarket()]);
+}
+
+async function loadBalances() {
+  try {
+    const data = await api("/api/ndax/balances?nonZero=true");
+    const rows = data.balances || [];
+    $("balanceGrid").innerHTML = rows.length ? rows.map((b) => `
+      <div class="stat">
+        <div class="k">${b.currency}</div>
+        <div class="v">${fmt(b.amount, 6)}</div>
+        <div class="hint">available ${fmt(b.availableBalance, 6)} · held ${fmt(b.hold, 6)}</div>
+      </div>`).join("") : `<div class="stat"><div class="k">Balances</div><div class="v">all zero</div></div>`;
+
+    const blocked = rows.find((b) => Number(b.availableBalance) > 0 && Number(b.availableBalance) < 1);
+    const fullyHeld = rows.find((b) => Number(b.amount) > 0 && Number(b.availableBalance) === 0);
+    if (fullyHeld) {
+      $("holdHint").hidden = false;
+      $("holdHint").innerHTML = `${fullyHeld.currency} held ${fmt(fullyHeld.amount, 6)}, available ${fmt(fullyHeld.availableBalance, 6)}.`;
+    } else if (blocked) {
+      $("holdHint").hidden = false;
+      $("holdHint").innerHTML = `${blocked.currency} available ${fmt(blocked.availableBalance, 6)} of ${fmt(blocked.amount, 6)}. Minimum order 1.`;
+    } else {
+      $("holdHint").hidden = true;
+    }
+    setError("balError", "");
+    showRaw("balances", data);
+  } catch (error) {
+    setError("balError", error.message);
+  }
+}
+
+async function loadMarket() {
+  try {
+    const data = await api("/api/ndax/orderbook/USDC/CAD?depth=20");
+    const bid = data.bestBid, ask = data.bestAsk;
+    const spread = bid && ask ? Number((ask - bid).toFixed(4)) : null;
+    $("marketGrid").innerHTML = `
+      <div class="stat"><div class="k">Best bid</div><div class="v">${fmt(bid)}</div></div>
+      <div class="stat"><div class="k">Best ask</div><div class="v">${fmt(ask)}</div></div>
+      <div class="stat"><div class="k">Spread</div><div class="v">${fmt(spread)}</div></div>
+      <div class="stat"><div class="k">Session</div><div class="v" style="font-size:.95rem">${(data.instrument && data.instrument.sessionStatus) || "—"}</div></div>`;
+    $("bookHint").textContent = `bids ${data.bidLevels} · asks ${data.askLevels}`;
+
+    // Prefill the price boxes the first time so the operator sees the price
+    // they are about to trade at, then leave their edits alone.
+    if (bid && !$("sellPrice").value) $("sellPrice").placeholder = `auto = ${fmt(bid)}`;
+    if (ask && !$("buyPrice").value) $("buyPrice").placeholder = `auto = ${fmt(ask)}`;
+    setError("mktError", "");
+    showRaw("orderbook", data);
+  } catch (error) {
+    setError("mktError", error.message);
+  }
+}
+
+function startPolling() {
+  pollers.forEach(clearInterval);
+  pollers = [setInterval(refreshAll, 10000)];
+}
+
+// ------------------------------------------------------------------ trading
+
+async function placeOrder(side) {
+  const prefix = side === "SELL" ? "sell" : "buy";
+  const qty = Number($(prefix + "Qty").value);
+  const price = $(prefix + "Price").value === "" ? undefined : Number($(prefix + "Price").value);
+  const confirmed = $(prefix + "Confirm").checked;
+
+  setError(prefix + "Error", "");
+  $(prefix + "Ok").hidden = true;
+  $(prefix + "Order").hidden = true;
+
+  if (!Number.isFinite(qty) || qty <= 0) { setError(prefix + "Error", "Enter a quantity above 0."); return; }
+  if (!confirmed) { setError(prefix + "Error", "Tick the confirmation box first — this is a live order."); return; }
+
+  const button = $(prefix + "Btn");
+  button.disabled = true;
+  try {
+    const body = { side, quantity: qty, confirm: true };
+    if (price !== undefined) body.limitPrice = price;
+    const data = await api("/api/ndax/execute/order", { method: "POST", body: JSON.stringify(body) });
+    const order = data.order;
+    $(prefix + "Ok").hidden = false;
+    $(prefix + "Ok").textContent = `${side} accepted · order ${order.orderId} · ${order.quantity} USDC @ ${order.limitPrice} (${order.priceSource})`;
+    showRaw("place order", data);
+    pollOrder(order.orderId, prefix);
+  } catch (error) {
+    setError(prefix + "Error", error.message);
+    showRaw("place order failed", { side, quantity: qty, error: error.message });
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function pollOrder(orderId, prefix) {
+  const container = $(prefix + "Order");
+  container.hidden = false;
+  const tick = async () => {
+    try {
+      const data = await api(`/api/ndax/execute/order/${orderId}`);
+      const o = data.order;
+      container.innerHTML = `
+        <table><tr><th>Order</th><th>State</th><th>Side</th><th>Qty</th><th>Filled</th><th>Avg price</th></tr>
+        <tr><td>${o.orderId}</td><td>${o.state || "—"}</td><td>${o.side || "—"}</td>
+        <td>${fmt(o.quantity, 3)}</td><td>${fmt(o.quantityExecuted, 3)}</td><td>${fmt(o.averagePrice)}</td></tr></table>
+        <button class="danger" data-cancel="${o.orderId}">Cancel this order</button>`;
+      showRaw("order status", data);
+      const state = String(o.state || "").toLowerCase();
+      if (state === "rejected" || state === "canceled" || state === "cancelled") clearInterval(tick.interval);
+      if (Number(o.quantityExecuted) >= Number(o.quantity) && Number(o.quantity) > 0) clearInterval(tick.interval);
+    } catch (error) {
+      container.innerHTML = `<p class="error">${error.message}</p>`;
+      clearInterval(tick.interval);
+    }
+  };
+  tick.interval = setInterval(tick, 3000);
+  tick();
+  pollers.push(tick.interval);
+}
+
+async function cancelOrder(orderId) {
+  try {
+    const data = await api(`/api/ndax/execute/order/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ confirm: true }) });
+    showRaw("cancel", data);
+  } catch (error) {
+    setError("sellError", error.message);
+    setError("buyError", error.message);
+  }
+}
+
+// The order panel re-renders every few seconds, so cancel is delegated.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-cancel]");
+  if (button) cancelOrder(button.getAttribute("data-cancel"));
+});
+
+// ----------------------------------------------------------------- payout
+
+async function checkFee() {
+  setError("wdError", "");
+  try {
+    const data = await api("/api/ndax/fees/withdraw/7");
+    const fee = data.fee && Number(data.fee.FeeAmount);
+    $("feeOut").textContent = Number.isFinite(fee) ? `Ndax charges ${fee} CAD to withdraw CAD.` : JSON.stringify(data.fee);
+    showRaw("withdraw fee", data);
+  } catch (error) { setError("wdError", error.message); }
+}
+
+async function withdraw() {
+  setError("wdError", "");
+  $("wdOk").hidden = true;
+
+  const amount = Number($("wdAmount").value);
+  const twoFACode = $("wd2fa").value.trim();
+  const confirmed = $("wdConfirm").checked;
+
+  if (!Number.isFinite(amount) || amount <= 0) { setError("wdError", "Enter an amount above 0."); return; }
+  if (!twoFACode) { setError("wdError", "Enter the 2FA code you were given. It expires quickly, so submit straight away."); return; }
+  if (!confirmed) { setError("wdError", "Tick the confirmation box first — this sends real money."); return; }
+
+  const template = {
+    FullName: $("wdName").value.trim(),
+    BankAccountName: $("wdBankName").value.trim(),
+    BankAccountNumber: $("wdAccount").value.trim(),
+    BankAddress: $("wdAddress").value.trim(),
+    SwiftCode: $("wdSwift").value.trim(),
+  };
+  const missing = Object.entries(template).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) { setError("wdError", "Missing bank fields: " + missing.join(", ")); return; }
+
+  const button = $("wdBtn");
+  button.disabled = true;
+  try {
+    const data = await api("/api/ndax/execute/withdraw/cad", {
+      method: "POST",
+      body: JSON.stringify({ amount, template, twoFACode, confirm: true }),
+    });
+    $("wdOk").hidden = false;
+    $("wdOk").textContent = "Withdrawal ticket submitted. Confirm it in the list below before treating it as sent.";
+    $("wd2fa").value = "";
+    showRaw("withdraw", data);
+    loadWithdrawals();
+  } catch (error) {
+    setError("wdError", error.message);
+    showRaw("withdraw failed", { amount, error: error.message });
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadWithdrawals() {
+  try {
+    const data = await api("/api/ndax/withdrawals");
+    const rows = data.withdrawals || [];
+    $("wdList").innerHTML = rows.length ? `
+      <table><tr><th>Ticket</th><th>Currency</th><th>Amount</th><th>Fee</th><th>Status</th><th>Updated</th></tr>
+      ${rows.slice(0, 10).map((w) => `<tr>
+        <td>${w.withdrawId ?? "—"}</td>
+        <td>${w.currency ?? w.productId ?? "—"}</td>
+        <td>${fmt(w.amount, 4)}</td>
+        <td>${w.fee ?? "—"}</td>
+        <td>${w.status ?? "—"}</td>
+        <td>${formatStamp(w.updateTimeStamp)}</td>
+      </tr>`).join("")}</table>`
+      : `<p class="hint">No withdrawal tickets yet.</p>`;
+    showRaw("withdrawals", data);
+  } catch (error) {
+    $("wdList").innerHTML = `<p class="error">${error.message}</p>`;
+  }
+}
+
+// ------------------------------------------------------------- fund wallet
+
+let lastFundingId = null;
+
+async function fund() {
+  setError("fundError", "");
+  $("fundOk").hidden = true;
+
+  const customerId = $("fundCustomer").value.trim();
+  const cadAmount = Number($("fundCad").value);
+  const depositReference = $("fundRef").value.trim();
+  const confirmed = $("fundConfirm").checked;
+
+  if (!customerId) { setError("fundError", "Enter the customerId to credit."); return; }
+  if (!Number.isFinite(cadAmount) || cadAmount <= 0) { setError("fundError", "Enter the CAD amount deposited."); return; }
+  if (!confirmed) { setError("fundError", "Tick the confirmation box first — this places a real buy order."); return; }
+
+  const button = $("fundBtn");
+  button.disabled = true;
+  try {
+    const data = await api("/api/ndax/fund/wallet", {
+      method: "POST",
+      body: JSON.stringify({ customerId, cadAmount, depositReference, idempotencyKey: crypto.randomUUID(), confirm: true }),
+    });
+    lastFundingId = data.funding && data.funding.fundingId;
+    $("fundCheckBtn").disabled = !lastFundingId;
+    const f = data.funding || {};
+    $("fundOk").hidden = false;
+    $("fundOk").textContent = data.credited
+      ? `Credited ${fmt(data.usdcCredited, 3)} USDC to ${customerId}.`
+      : `Order state: ${f.state || "—"}. If the fill is pending, use Check fill & credit.`;
+    showRaw("fund", data);
+    loadFundings();
+  } catch (error) {
+    setError("fundError", error.message);
+    showRaw("fund failed", { customerId, cadAmount, error: error.message });
+    loadFundings();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function checkFill(fundingId) {
+  const id = fundingId || lastFundingId;
+  if (!id) { setError("fundError", "No funding selected."); return; }
+  setError("fundError", "");
+  try {
+    const data = await api(`/api/ndax/fund/${id}/check`, { method: "POST" });
+    const f = data.funding || {};
+    $("fundOk").hidden = false;
+    $("fundOk").textContent = data.credited
+      ? `Credited ${fmt(data.usdcCredited ?? f.creditedAmount, 3)} USDC.`
+      : `Order state: ${f.orderStatus || f.state || "—"} — nothing credited yet.`;
+    showRaw("fund check", data);
+    loadFundings();
+  } catch (error) {
+    setError("fundError", error.message);
+    loadFundings();
+  }
+}
+
+async function loadFundings() {
+  try {
+    const data = await api("/api/ndax/fundings");
+    const rows = data.fundings || [];
+    $("fundList").innerHTML = rows.length ? `
+      <table><tr><th>Funding</th><th>Customer</th><th class="num">CAD</th><th class="num">USDC credited</th><th>State</th><th>Order</th><th>Updated</th><th></th></tr>
+      ${rows.slice(0, 10).map((f) => `<tr>
+        <td class="mono">${(f.fundingId || "").slice(0, 8)}</td>
+        <td class="mono">${esc(f.customerId)}</td>
+        <td class="num">${fmt(f.cadAmount, 2)}</td>
+        <td class="num">${f.creditedAmount === null ? "—" : fmt(f.creditedAmount, 3)}</td>
+        <td><strong>${f.state}</strong></td>
+        <td>${f.orderId ?? "—"}</td>
+        <td>${formatStamp(f.updatedAt)}</td>
+        <td>${["PLACED", "FILL_PENDING"].includes(f.state) ? `<button class="secondary" data-check="${f.fundingId}">Check</button>` : ""}</td>
+      </tr>`).join("")}</table>`
+      : `<p class="hint">No fundings yet.</p>`;
+    showRaw("fundings", data);
+  } catch (error) {
+    $("fundList").innerHTML = `<p class="error">${error.message}</p>`;
+  }
+}
+
+// ------------------------------------------------------------------- wiring
+
+$("connectBtn").addEventListener("click", connect);
+$("refreshBtn").addEventListener("click", refreshAll);
+$("sellBtn").addEventListener("click", () => placeOrder("SELL"));
+$("buyBtn").addEventListener("click", () => placeOrder("BUY"));
+$("feeBtn").addEventListener("click", checkFee);
+$("wdBtn").addEventListener("click", withdraw);
+$("fundBtn").addEventListener("click", fund);
+$("fundCheckBtn").addEventListener("click", () => checkFill());
+$("operatorToken").addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+
+// Funding rows re-render, so the per-row Check button is delegated.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-check]");
+  if (button) checkFill(button.getAttribute("data-check"));
+});
+
+(async function init() {
+  try {
+    const readiness = await fetch("/api/ndax/readiness").then((r) => r.json());
+    renderReadiness(readiness);
+  } catch (error) { setError("connError", error.message); }
+})();
+</script>
+</body>
+</html>
