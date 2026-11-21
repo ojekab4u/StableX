@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StableX × Cashtella — Flow Map</title>
+<title>Cashtella — Rails and Flow Map</title>
 <style>
   body { font-family: "Segoe UI", Arial, sans-serif; background: #f4f6f8; color: #1c2733; margin: 0; padding: 24px; }
   main { max-width: 1060px; margin: 0 auto; }
@@ -27,11 +27,11 @@
 </style>
 </head>
 <body><main>
-<h1>StableX × Cashtella — flow map</h1>
+<h1>Cashtella — rails and flow map</h1>
 <p class="muted">The full possible flows with Circle, Fincra, Bridge, Nomba and Ndax. Customers see one wallet and three actions: fund, send/convert, cash out.</p>
 
 <section class="panel">
-  <svg viewBox="0 0 1020 620" role="img" aria-label="StableX flow map">
+  <svg viewBox="0 0 1020 620" role="img" aria-label="Cashtella flow map">
     <defs>
       <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path d="M0,0 L10,5 L0,10 z" fill="#7a8894"/>
@@ -53,7 +53,7 @@
     <!-- hub -->
     <rect class="node hub" x="385" y="265" width="250" height="90" rx="10"/>
     <text class="lbl" x="510" y="305" text-anchor="middle" fill="#fff">USDC / USDT</text>
-    <text class="subw" x="510" y="328" text-anchor="middle">central hub — StableX ledger</text>
+    <text class="subw" x="510" y="328" text-anchor="middle">central hub — Cashtella ledger</text>
 
     <!-- user on-chain wallet top-left -->
     <rect class="node" x="60" y="60" width="240" height="80" rx="10"/>
@@ -125,7 +125,7 @@
       <tr><td><strong>Fund — on-chain</strong></td><td class="path">any wallet → USDC on Base → credited</td><td>Base · Circle Wallets</td><td><span class="badge LIVE">LIVE</span></td></tr>
       <tr><td><strong>Create in-app wallet</strong></td><td class="path">email/PIN sign-in → wallet minted → own address on Base</td><td>Circle Wallets</td><td><span class="badge DOC">DOC</span> testnet today</td></tr>
       <tr><td><strong>Convert</strong></td><td class="path">any currency ⇄ USDC ⇄ target, quote locked before confirm</td><td>Fincra · CPN · Ndax</td><td><span class="badge DOC">DOC</span> + Ndax <span class="badge LIVE">LIVE</span></td></tr>
-      <tr><td><strong>Send USDC</strong></td><td class="path">to any StableX user or any on-chain address</td><td>ledger · Base</td><td><span class="badge LIVE">LIVE</span></td></tr>
+      <tr><td><strong>Send USDC</strong></td><td class="path">to any platform user or any on-chain address</td><td>ledger · Base</td><td><span class="badge LIVE">LIVE</span></td></tr>
       <tr><td><strong>Cash out — global</strong></td><td class="path">ledger debit → CPN quote → USDC on-chain → local fiat at receiver's bank, 60+ countries</td><td>Circle CPN</td><td><span class="badge ONBOARD">ONBOARDING</span> Cashtella as originating FI</td></tr>
       <tr><td><strong>Cash out — CAD</strong></td><td class="path">ledger debit → Fincra Interac payout to recipient email → webhook</td><td>Fincra</td><td><span class="badge DOC">DOC</span></td></tr>
       <tr><td><strong>Cash out — Africa</strong></td><td class="path">ledger debit → bank / mobile-money payout</td><td>Fincra · Nomba</td><td>NGN <span class="badge LIVE">LIVE</span> · others <span class="badge DOC">DOC</span></td></tr>
@@ -137,7 +137,7 @@
 <section class="panel">
   <h2 style="margin-top:0">Who holds what</h2>
   <ul>
-    <li><strong>StableX ledger</strong> — the truth of who owns what; every customer balance is a USDC entry here.</li>
+    <li><strong>Cashtella ledger</strong> — the truth of who owns what; every customer balance is a USDC entry here.</li>
     <li><strong>USDC pool</strong> — Base hot wallet + CPN operational wallet (+ Ndax for the market leg).</li>
     <li><strong>CAD pool</strong> — Fincra CAD wallet. <strong>NGN/GHS/KES/TZS pools</strong> — Fincra/Nomba wallets.</li>
     <li><strong>Bridge custody</strong> — transient USD/EUR/GBP until converted to USDC.</li>

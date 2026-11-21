@@ -25,14 +25,21 @@ export function getPool() {
       console.error("Unexpected PostgreSQL pool error:", error.message);
     });
     const acquire = pool.connect.bind(pool);
-    pool.connect = async (...args) => {
-      const client = await acquire(...args);
-      if (!client.listenerCount("error")) {
-        client.on("error", (error) => {
-          console.error("PostgreSQL client connection dropped:", error.message);
-        });
+    pool.connect = (...args) => {
+      const attach = (client) => {
+        if (client && !client.listenerCount("error")) {
+          client.on("error", (error) => {
+            console.error("PostgreSQL client connection dropped:", error.message);
+          });
+        }
+        return client;
+      };
+      // Support both promise and callback callers.
+      if (typeof args[0] === "function") {
+        const callback = args[0];
+        return acquire((err, client, release) => callback(err, attach(client), release));
       }
-      return client;
+      return acquire(...args).then(attach);
     };
   }
 
