@@ -285,6 +285,16 @@ const schemaStatements = [
     UNIQUE (customer_id, idempotency_key)
   )`,
   `CREATE INDEX IF NOT EXISTS fund_claims_open_idx ON fund_claims (state, cad_amount, created_at)`,
+  `CREATE TABLE IF NOT EXISTS fincra_webhook_events (
+    event_id VARCHAR(255) PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL,
+    processing_status VARCHAR(40) NOT NULL DEFAULT 'RECEIVED',
+    payload JSONB NOT NULL,
+    error_message TEXT,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS fincra_webhook_events_received_idx ON fincra_webhook_events (received_at DESC)`,
   `CREATE TABLE IF NOT EXISTS wallet_fundings (
     funding_id UUID PRIMARY KEY,
     customer_id VARCHAR(128) NOT NULL,
@@ -322,7 +332,7 @@ export async function initializeDatabase() {
       await client.query(statement);
     }
     await client.query("COMMIT");
-    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config", "cash_outs", "wallet_fundings", "fund_claims"] };
+    return { initialized: true, tables: ["orchestration_intents", "provider_events", "audit_logs", "beneficiaries", "transfers", "transfer_events", "compliance_cases", "routing_quotes", "wallet_accounts", "wallet_ledger", "payment_details", "external_wallets", "provider_customers", "accounts", "verification_codes", "auth_sessions", "paytrie_customer_sessions", "paytrie_customers", "paytrie_webhook_events", "paytrie_webhook_config", "cash_outs", "wallet_fundings", "fund_claims", "fincra_webhook_events"] };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

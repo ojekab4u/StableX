@@ -40,6 +40,7 @@ import { netcoinsRouter } from "./routes/netcoinsRoutes.js";
 import { ndaxRouter } from "./routes/ndaxRoutes.js";
 import { linkioRouter } from "./routes/linkioRoutes.js";
 import { circleRouter } from "./routes/circleRoutes.js";
+import { fincraRouter, fincraWebhookRouter } from "./routes/fincraRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
 const app = express();
@@ -503,6 +504,8 @@ app.use("/api/netcoins", netcoinsRouter);
 app.use("/api/ndax", ndaxRouter);
 app.use("/api/linkio", linkioRouter);
 app.use("/api/circle", circleRouter);
+app.use("/api/fincra", fincraRouter);
+app.use("/api/webhooks/fincra", fincraWebhookRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
