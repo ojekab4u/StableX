@@ -19,9 +19,21 @@ export function getPool() {
       ...(isNeon ? { ssl: { rejectUnauthorized: false } } : {}),
     });
 
+    // Managed Postgres (Neon) drops idle TLS connections. A reset arriving on
+    // a pooled client must be logged and discarded, never crash the process.
     pool.on("error", (error) => {
       console.error("Unexpected PostgreSQL pool error:", error.message);
     });
+    const acquire = pool.connect.bind(pool);
+    pool.connect = async (...args) => {
+      const client = await acquire(...args);
+      if (!client.listenerCount("error")) {
+        client.on("error", (error) => {
+          console.error("PostgreSQL client connection dropped:", error.message);
+        });
+      }
+      return client;
+    };
   }
 
   return pool;

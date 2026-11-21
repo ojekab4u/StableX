@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StableX × Cashtella — Corridor Map</title>
+<title>StableX × Cashtella — Flow Map</title>
 <style>
   body { font-family: "Segoe UI", Arial, sans-serif; background: #f4f6f8; color: #1c2733; margin: 0; padding: 24px; }
   main { max-width: 1060px; margin: 0 auto; }
@@ -18,8 +18,8 @@
   th { font-size: 12px; color: #5b6b7b; text-transform: uppercase; letter-spacing: .03em; }
   .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
   .LIVE { background: #e3f5e8; color: #1c7a37; }
-  .TEST { background: #fff3d6; color: #8a6100; }
-  .PLANNED { background: #eceff2; color: #5b6b7b; }
+  .DOC { background: #e8f0fd; color: #2f6fde; }
+  .ONBOARD { background: #fff3d6; color: #8a6100; }
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; margin-top: 8px; }
   .path { font-family: Consolas, monospace; font-size: 12px; color: #40506a; }
   ul { margin: 6px 0; padding-left: 18px; }
@@ -27,132 +27,122 @@
 </style>
 </head>
 <body><main>
-<h1>StableX × Cashtella — corridor map</h1>
-<p class="muted">What is achievable with the providers already integrated. StableX is the working environment; production runs on Cashtella infrastructure. Diagram: money flow only.</p>
+<h1>StableX × Cashtella — flow map</h1>
+<p class="muted">The full possible flows with Circle, Fincra, Bridge, Nomba and Ndax. Customers see one wallet and three actions: fund, send/convert, cash out.</p>
 
 <section class="panel">
-  <svg viewBox="0 0 1020 560" role="img" aria-label="USDC hub corridor map">
+  <svg viewBox="0 0 1020 620" role="img" aria-label="StableX flow map">
     <defs>
       <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path d="M0,0 L10,5 L0,10 z" fill="#7a8894"/>
       </marker>
     </defs>
     <style>
-      .node { fill:#fff; stroke:#c8d2dc; rx:10; }
+      .node { fill:#fff; stroke:#c8d2dc; }
       .hub { fill:#2f6fde; }
+      .out { fill:#f2f7ff; stroke:#9dbcf0; }
       .lbl { font: 600 15px "Segoe UI", sans-serif; fill:#1c2733; }
       .sub { font: 12px "Segoe UI", sans-serif; fill:#5b6b7b; }
       .subw { font: 12px "Segoe UI", sans-serif; fill:#dbe7ff; }
       .edge { stroke:#7a8894; stroke-width:1.6; fill:none; marker-start:url(#arr); marker-end:url(#arr); }
-      .planned-edge { stroke:#9aa7b3; stroke-dasharray:6 5; }
+      .in-edge { stroke:#1c7a37; marker-start:url(#arr); }
+      .out-edge { stroke:#b3541e; marker-end:url(#arr); }
       .edge-lbl { font: 11.5px "Segoe UI", sans-serif; fill:#40506a; }
     </style>
 
     <!-- hub -->
-    <rect class="node hub" x="385" y="245" width="250" height="90" rx="10"/>
-    <text class="lbl" x="510" y="285" text-anchor="middle" fill="#fff">USDC / USDT</text>
-    <text class="subw" x="510" y="308" text-anchor="middle">central hub — StableX ledger</text>
+    <rect class="node hub" x="385" y="265" width="250" height="90" rx="10"/>
+    <text class="lbl" x="510" y="305" text-anchor="middle" fill="#fff">USDC / USDT</text>
+    <text class="subw" x="510" y="328" text-anchor="middle">central hub — StableX ledger</text>
 
-    <!-- CAD above -->
-    <rect class="node" x="400" y="55" width="220" height="62" rx="10"/>
-    <text class="lbl" x="510" y="82" text-anchor="middle">CAD</text>
-    <text class="sub" x="510" y="102" text-anchor="middle">Ndax — order book + bank rails</text>
-    <line class="edge" x1="510" y1="120" x2="510" y2="242"/>
-    <text class="edge-lbl" x="522" y="185">buy / sell USDC-CAD</text>
-    <text class="edge-lbl" x="522" y="201">Interac in · Interac / EFT out</text>
+    <!-- user on-chain wallet top-left -->
+    <rect class="node" x="60" y="60" width="240" height="80" rx="10"/>
+    <text class="lbl" x="180" y="90" text-anchor="middle">Customer on-chain wallet</text>
+    <text class="sub" x="180" y="110" text-anchor="middle">Circle Wallets — email/PIN sign-in</text>
+    <text class="sub" x="180" y="127" text-anchor="middle">or MetaMask · Base</text>
+    <line class="edge in-edge" x1="265" y1="145" x2="420" y2="262"/>
 
-    <!-- NGN beside -->
-    <rect class="node" x="60" y="245" width="230" height="90" rx="10"/>
-    <text class="lbl" x="175" y="285" text-anchor="middle">NGN</text>
-    <text class="sub" x="175" y="305" text-anchor="middle">Nomba — bank payouts</text>
-    <text class="sub" x="175" y="322" text-anchor="middle">Linkio / Bridge — on-ramp</text>
-    <line class="edge" x1="292" y1="290" x2="382" y2="290"/>
-    <text class="edge-lbl" x="337" y="278" text-anchor="middle">in / out</text>
+    <!-- Bridge top -->
+    <rect class="node" x="430" y="55" width="240" height="80" rx="10"/>
+    <text class="lbl" x="550" y="82" text-anchor="middle">USD · EUR · GBP</text>
+    <text class="sub" x="550" y="102" text-anchor="middle">Bridge virtual accounts</text>
+    <text class="sub" x="550" y="119" text-anchor="middle">deposit converts to USDC</text>
+    <line class="edge in-edge" x1="550" y1="138" x2="550" y2="262"/>
 
-    <!-- Bridge fiat left-top -->
-    <rect class="node" x="60" y="70" width="230" height="72" rx="10"/>
-    <text class="lbl" x="175" y="98" text-anchor="middle">USD · EUR · GBP</text>
-    <text class="sub" x="175" y="118" text-anchor="middle">Bridge virtual accounts</text>
-    <line class="edge" x1="175" y1="145" x2="175" y2="242" style="marker-start:none"/>
-    <line class="edge" x1="292" y1="120" x2="430" y2="242" style="marker-end:none"/>
-    <text class="edge-lbl" x="330" y="185">deposits convert to USDC</text>
+    <!-- Fincra collections left -->
+    <rect class="node" x="60" y="290" width="250" height="100" rx="10"/>
+    <text class="lbl" x="185" y="318" text-anchor="middle">Fincra collections</text>
+    <text class="sub" x="185" y="338" text-anchor="middle">NGN · GHS · KES · TZS virtual accounts</text>
+    <text class="sub" x="185" y="355" text-anchor="middle">CAD Interac alias — autodeposit</text>
+    <text class="sub" x="185" y="372" text-anchor="middle">collection webhook names the payer</text>
+    <line class="edge in-edge" x1="312" y1="340" x2="382" y2="340"/>
 
-    <!-- Base on-chain right -->
-    <rect class="node" x="740" y="245" width="230" height="90" rx="10"/>
-    <text class="lbl" x="855" y="285" text-anchor="middle">On-chain USDC</text>
-    <text class="sub" x="855" y="305" text-anchor="middle">Base — any wallet worldwide</text>
-    <text class="sub" x="855" y="322" text-anchor="middle">deposit / withdraw 24/7</text>
-    <line class="edge" x1="638" y1="290" x2="737" y2="290"/>
+    <!-- CPN out right -->
+    <rect class="node out" x="740" y="120" width="250" height="120" rx="10"/>
+    <text class="lbl" x="865" y="150" text-anchor="middle">Circle CPN — fiat payouts</text>
+    <text class="sub" x="865" y="170" text-anchor="middle">send USDC on-chain → BFI pays</text>
+    <text class="sub" x="865" y="187" text-anchor="middle">local fiat in 60+ countries</text>
+    <text class="sub" x="865" y="204" text-anchor="middle">quotes lock FX · no prefunding</text>
+    <text class="sub" x="865" y="221" text-anchor="middle">Cashtella = originating FI</text>
+    <line class="edge out-edge" x1="638" y1="300" x2="800" y2="225" style="marker-start:none"/>
+    <text class="edge-lbl" x="720" y="245">USDC out</text>
 
-    <!-- planned bottom -->
-    <rect class="node" x="340" y="440" width="340" height="66" rx="10" stroke-dasharray="6 5"/>
-    <text class="lbl" x="510" y="467" text-anchor="middle">KES · ZAR · other African fiat</text>
-    <text class="sub" x="510" y="487" text-anchor="middle">Nomba (enablement) · Fincra (onboarding)</text>
-    <line class="edge planned-edge" x1="510" y1="338" x2="510" y2="437"/>
-    <text class="edge-lbl" x="522" y="395">planned</text>
+    <!-- Fincra payouts bottom-right -->
+    <rect class="node out" x="720" y="420" width="270" height="110" rx="10"/>
+    <text class="lbl" x="855" y="448" text-anchor="middle">Fincra payouts · Nomba</text>
+    <text class="sub" x="855" y="468" text-anchor="middle">CAD Interac to any recipient email</text>
+    <text class="sub" x="855" y="485" text-anchor="middle">NGN · GHS · KES · TZS · ZAR banks</text>
+    <text class="sub" x="855" y="502" text-anchor="middle">mobile money · stablecoin payouts</text>
+    <line class="edge out-edge" x1="620" y1="357" x2="745" y2="445" style="marker-start:none"/>
+
+    <!-- Ndax + swap engines bottom -->
+    <rect class="node" x="330" y="500" width="360" height="80" rx="10" stroke-dasharray="6 5"/>
+    <text class="lbl" x="510" y="528" text-anchor="middle">Conversion engines</text>
+    <text class="sub" x="510" y="548" text-anchor="middle">Fincra conversions · CPN quotes · Ndax USDC/CAD book</text>
+    <text class="sub" x="510" y="565" text-anchor="middle">any local ⇄ USDC ⇄ target, priced before the customer confirms</text>
+    <line class="edge" x1="510" y1="358" x2="510" y2="497"/>
+
+    <!-- CCTP note top-right corner -->
+    <rect class="node" x="740" y="30" width="250" height="56" rx="10"/>
+    <text class="lbl" x="865" y="55" text-anchor="middle">CCTP</text>
+    <text class="sub" x="865" y="73" text-anchor="middle">USDC moves across chains, burn-and-mint</text>
+    <line class="edge" x1="865" y1="88" x2="865" y2="117" style="marker-start:none"/>
   </svg>
   <div class="legend">
-    <span><span class="badge LIVE">LIVE</span> tested with real money</span>
-    <span><span class="badge TEST">IN TEST</span> code complete, waiting on provider</span>
-    <span><span class="badge PLANNED">PLANNED</span> provider not yet onboarded</span>
+    <span><span class="badge LIVE">LIVE</span> verified by test</span>
+    <span><span class="badge DOC">DOCUMENTED</span> provider docs confirm, not yet executed</span>
+    <span><span class="badge ONBOARD">ONBOARDING</span> needs Cashtella's account/approval</span>
   </div>
 </section>
 
 <section class="panel">
-  <h2 style="margin-top:0">Corridors where money movement is possible</h2>
+  <h2 style="margin-top:0">The three customer flows</h2>
   <div class="scroll">
   <table>
-    <thead><tr><th>Corridor</th><th>Path</th><th>Providers</th><th>Status</th></tr></thead>
+    <thead><tr><th>Flow</th><th>Path</th><th>Providers</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td><strong>CAD → USDC</strong></td><td class="path">Interac / EFT in → buy on USDC/CAD book</td><td>Ndax</td><td><span class="badge LIVE">LIVE</span></td></tr>
-      <tr><td><strong>USDC → CAD</strong></td><td class="path">sell on book → Interac / EFT to bank</td><td>Ndax</td><td><span class="badge LIVE">LIVE</span> payout pending first ticket</td></tr>
-      <tr><td><strong>USD/EUR/GBP → USDC</strong></td><td class="path">virtual account deposit → instant convert</td><td>Bridge</td><td><span class="badge LIVE">LIVE</span> in production</td></tr>
-      <tr><td><strong>USDC → any wallet</strong></td><td class="path">on-chain transfer on Base, 24/7</td><td>Base</td><td><span class="badge LIVE">LIVE</span></td></tr>
-      <tr><td><strong>USDC → NGN</strong></td><td class="path">Nomba payout to Nigerian bank accounts</td><td>Nomba</td><td><span class="badge LIVE">LIVE</span></td></tr>
-      <tr><td><strong>NGN → USDC</strong></td><td class="path">naira on-ramp into the hub</td><td>Bridge-by-LINK</td><td><span class="badge TEST">IN TEST</span> IP allowlist pending</td></tr>
-      <tr><td><strong>NGN → CAD</strong></td><td class="path">on-ramp → hub → Ndax sell → CAD bank</td><td>Linkio + Ndax</td><td><span class="badge TEST">IN TEST</span></td></tr>
-      <tr><td><strong>CAD → NGN</strong></td><td class="path">Interac in → hub → Nomba payout</td><td>Ndax + Nomba</td><td><span class="badge LIVE">LIVE</span></td></tr>
-      <tr><td><strong>USDC → KES / ZAR</strong></td><td class="path">Nomba corridor enablement</td><td>Nomba</td><td><span class="badge PLANNED">PLANNED</span></td></tr>
-      <tr><td><strong>Other African fiat</strong></td><td class="path">hub ↔ local rails via Fincra</td><td>Fincra</td><td><span class="badge PLANNED">PLANNED</span></td></tr>
+      <tr><td><strong>Fund — fiat rails</strong></td><td class="path">local bank → virtual account / Interac alias → webhook → USDC credited</td><td>Bridge · Fincra</td><td><span class="badge LIVE">LIVE</span> pattern proven (Bridge) + <span class="badge DOC">DOC</span></td></tr>
+      <tr><td><strong>Fund — on-chain</strong></td><td class="path">any wallet → USDC on Base → credited</td><td>Base · Circle Wallets</td><td><span class="badge LIVE">LIVE</span></td></tr>
+      <tr><td><strong>Create in-app wallet</strong></td><td class="path">email/PIN sign-in → wallet minted → own address on Base</td><td>Circle Wallets</td><td><span class="badge DOC">DOC</span> testnet today</td></tr>
+      <tr><td><strong>Convert</strong></td><td class="path">any currency ⇄ USDC ⇄ target, quote locked before confirm</td><td>Fincra · CPN · Ndax</td><td><span class="badge DOC">DOC</span> + Ndax <span class="badge LIVE">LIVE</span></td></tr>
+      <tr><td><strong>Send USDC</strong></td><td class="path">to any StableX user or any on-chain address</td><td>ledger · Base</td><td><span class="badge LIVE">LIVE</span></td></tr>
+      <tr><td><strong>Cash out — global</strong></td><td class="path">ledger debit → CPN quote → USDC on-chain → local fiat at receiver's bank, 60+ countries</td><td>Circle CPN</td><td><span class="badge ONBOARD">ONBOARDING</span> Cashtella as originating FI</td></tr>
+      <tr><td><strong>Cash out — CAD</strong></td><td class="path">ledger debit → Fincra Interac payout to recipient email → webhook</td><td>Fincra</td><td><span class="badge DOC">DOC</span></td></tr>
+      <tr><td><strong>Cash out — Africa</strong></td><td class="path">ledger debit → bank / mobile-money payout</td><td>Fincra · Nomba</td><td>NGN <span class="badge LIVE">LIVE</span> · others <span class="badge DOC">DOC</span></td></tr>
     </tbody>
   </table>
   </div>
 </section>
 
 <section class="panel">
-  <h2 style="margin-top:0">Cost per leg</h2>
+  <h2 style="margin-top:0">Who holds what</h2>
   <ul>
-    <li><strong>Ndax (CAD):</strong> 0.20% per trade · 1.50 CAD Interac payout (≤10,000/day) · 4.99 CAD EFT payout · 0 CAD Interac deposit</li>
-    <li><strong>Bridge (USD/EUR/GBP):</strong> conversion fee at deposit; per-customer account details planned before live</li>
-    <li><strong>Nomba / Linkio (NGN):</strong> per-transfer fees per provider schedule</li>
-    <li><strong>Base (on-chain):</strong> network gas only, typically cents</li>
+    <li><strong>StableX ledger</strong> — the truth of who owns what; every customer balance is a USDC entry here.</li>
+    <li><strong>USDC pool</strong> — Base hot wallet + CPN operational wallet (+ Ndax for the market leg).</li>
+    <li><strong>CAD pool</strong> — Fincra CAD wallet. <strong>NGN/GHS/KES/TZS pools</strong> — Fincra/Nomba wallets.</li>
+    <li><strong>Bridge custody</strong> — transient USD/EUR/GBP until converted to USDC.</li>
+    <li><strong>Rule:</strong> ledger sums per currency must always explain the provider pools; the audit trail labels every movement by source.</li>
   </ul>
-  <p class="muted">Benchmark: Pesa promo rate 976 NGN/CAD vs mid-market ≈943–952. Our CAD→NGN stack ≈ Ndax 0.20% + NGN leg spread + payout fee.</p>
-</section>
-
-<section class="panel">
-  <h2 style="margin-top:0">What each actor gets</h2>
-  <ul>
-    <li><strong>Individual:</strong> one account → fund from a local rail → USDC wallet → send anywhere on the map → cash out to a local bank.</li>
-    <li><strong>Business:</strong> same, plus virtual account details in their own name for receiving, and volume corridors for paying suppliers, staff, or partners abroad.</li>
-    <li><strong>Providers are plumbing.</strong> Customers see one wallet, one send screen, one cash-out screen. Adding a country adds a provider; the app surface stays the same.</li>
-  </ul>
-</section>
-
-<section class="panel">
-  <h2 style="margin-top:0">Customer experience — three screens</h2>
-  <ul>
-    <li><strong>Fund</strong> — customer picks a local method: Interac (CAD), virtual account (USD/EUR/GBP), naira on-ramp, or an on-chain transfer. Money arrives as USDC in their wallet.</li>
-    <li><strong>Wallet</strong> — USDC balance. Send to any StableX user, any external on-chain wallet, or hold.</li>
-    <li><strong>Cash out</strong> — pick country and currency. The backend sells on the best available rail and pays the customer's bank.</li>
-  </ul>
-  <p class="muted">Business and individual flows are identical. A business adds virtual account details in its own name for receiving, and higher-volume corridors for paying suppliers, staff, or partners. Adding a country adds a provider; the three screens never change.</p>
-</section>
-
-<section class="panel">
-  <h2 style="margin-top:0">Rail under evaluation — Breez SDK</h2>
-  <p>Not integrated. Under evaluation as a <strong>global deposit rail</strong>: the Breez SDK (non-custodial, Lightning Network) can route payments from a Bitcoin or Cash App balance so the recipient receives USDC on a supported chain — coverage for corridors where no fiat provider is integrated yet.</p>
-  <p class="muted">Open questions before a decision: custody model versus our custodial ledger, fee structure, and regional availability/licensing.</p>
 </section>
 
 </main></body></html>
