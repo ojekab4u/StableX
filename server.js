@@ -39,6 +39,7 @@ import { paytrieRouter } from "./routes/paytrieRoutes.js";
 import { netcoinsRouter } from "./routes/netcoinsRoutes.js";
 import { ndaxRouter } from "./routes/ndaxRoutes.js";
 import { linkioRouter } from "./routes/linkioRoutes.js";
+import { circleRouter } from "./routes/circleRoutes.js";
 import { checkDatabaseConnection } from "./db/pool.js";
 import { initializeDatabase } from "./db/initialize.js";
 const app = express();
@@ -501,6 +502,7 @@ app.use("/api/paytrie", paytrieRouter);
 app.use("/api/netcoins", netcoinsRouter);
 app.use("/api/ndax", ndaxRouter);
 app.use("/api/linkio", linkioRouter);
+app.use("/api/circle", circleRouter);
 
 // Handle unknown API endpoints
 app.use("/api", (req, res) => {
