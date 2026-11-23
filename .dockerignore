@@ -1,0 +1,6 @@
+# Never bake secrets or local noise into an image.
+.env
+node_modules
+.git
+test
+*.log

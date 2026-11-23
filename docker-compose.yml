@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    ports:
+      # Host 3100 -> container 3000 so it never clashes with your dev server.
+      - "3100:3000"
+    env_file:
+      # Read at runtime, never baked into the image.
+      - .env
+    environment:
+      - NDAX_EXECUTION_ENABLED=true
+    depends_on:
+      - db
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=stablex
+      - POSTGRES_PASSWORD=stablex_local
+      - POSTGRES_DB=stablex
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
