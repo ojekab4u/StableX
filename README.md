@@ -1,6 +1,6 @@
 # StableX — Currency Exchange Comparison Demo
 
-StableX is a demo-first currency exchange comparison application built with Node.js and Express. It allows users to compare estimated exchange offers for USDT, USDC, and NGN, review fees and estimated returns, select a provider, and check connectivity to Solana Devnet.
+StableX is a currency exchange and cross-boarder payment intended application built with Node.js and Express purpursely to to explore different payment providers and learn how to communicate with their APIs. This current version of the README is currently not updated, watch out for new version after couple of cleanups. 
 
 > **Important:** Exchange rates and provider offers are simulated. The application does not execute real exchanges, process payments, or transfer cryptocurrency.
 
